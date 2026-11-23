@@ -10,6 +10,13 @@
 #include <functional>
 #include <vector>
 
+struct ClipboardData {
+    std::vector<std::pair<qds::core::Variable, qds::core::Vec2>> variables;
+    std::vector<std::pair<qds::core::Connection, qds::core::Route>> connections;
+
+    bool empty() const { return variables.empty(); }
+};
+
 class DocumentController : public QObject
 {
     Q_OBJECT
@@ -26,6 +33,8 @@ public:
     void removeVariables(const std::vector<qds::core::EntityId> &ids);
     bool renameVariable(qds::core::EntityId id, const QString &name);
     void setEquation(qds::core::EntityId id, const QString &equation);
+    void setUnit(qds::core::EntityId id, const QString &unit);
+    void setComment(qds::core::EntityId id, const QString &comment);
     void moveVariables(const std::vector<std::pair<qds::core::EntityId, QPointF>> &positions);
     qds::core::ConnectionId createConnection(
         qds::core::EntityId from,
@@ -38,6 +47,8 @@ public:
         qds::core::EntityId to);
     void setRoute(qds::core::ConnectionId id, const qds::core::Route &route);
     void replaceDocument(qds::core::Document document);
+    ClipboardData copyVariables(const std::vector<qds::core::EntityId> &ids) const;
+    std::vector<qds::core::EntityId> pasteClipboard(const ClipboardData &clipboard, const QPointF &offset);
 
 signals:
     void documentChanged(const qds::core::ChangeSet &changeSet);

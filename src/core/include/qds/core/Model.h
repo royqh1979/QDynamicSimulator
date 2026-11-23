@@ -50,6 +50,8 @@ public:
     bool removeVariable(EntityId id);
     bool renameVariable(EntityId id, const std::string &newName);
     bool setEquation(EntityId id, const std::string &equation);
+    bool setUnit(EntityId id, const std::string &unit);
+    bool setComment(EntityId id, const std::string &comment);
 
     ConnectionId addConnection(Connection connection);
     bool canConnect(EntityId from, EntityId to, ConnectionType type) const;

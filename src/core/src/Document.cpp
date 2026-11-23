@@ -85,6 +85,16 @@ bool Document::setEquation(EntityId id, const std::string &equation)
     return m_model.setEquation(id, equation);
 }
 
+bool Document::setUnit(EntityId id, const std::string &unit)
+{
+    return m_model.setUnit(id, unit);
+}
+
+bool Document::setComment(EntityId id, const std::string &comment)
+{
+    return m_model.setComment(id, comment);
+}
+
 bool Document::setPosition(EntityId id, Vec2 position)
 {
     if (!m_model.variable(id))

@@ -42,6 +42,8 @@ public:
     bool renameSelected(const QString &newName);
     bool setSelectedEquation(const QString &equation);
     const qds::core::Variable *selectedVariable() const;
+    std::vector<qds::core::EntityId> selectedVariableIds() const;
+    std::vector<qds::core::EntityId> findVariables(const QString &text) const;
     void selectAllItems();
     void alignSelected(Qt::Alignment alignment);
     void distributeSelected(bool horizontal);

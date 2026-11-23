@@ -130,6 +130,28 @@ bool Model::setEquation(EntityId id, const std::string &equation)
     return false;
 }
 
+bool Model::setUnit(EntityId id, const std::string &unit)
+{
+    for (Variable &variable : m_variables) {
+        if (variable.id == id) {
+            variable.unit = unit;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Model::setComment(EntityId id, const std::string &comment)
+{
+    for (Variable &variable : m_variables) {
+        if (variable.id == id) {
+            variable.comment = comment;
+            return true;
+        }
+    }
+    return false;
+}
+
 ConnectionId Model::addConnection(Connection connection)
 {
     if ((connection.id != 0 && this->connection(connection.id))

@@ -1,23 +1,39 @@
 #include "MainWindow.h"
 
+#include "DiagramItems.h"
 #include "DiagramView.h"
 #include "DocumentController.h"
+#include "EquationEditor.h"
+#include "MiniMapView.h"
 #include <qds/io/XmileFile.h>
+#include <qds/core/Validation.h>
 
 #include <QAction>
 #include <QActionGroup>
 #include <QCloseEvent>
+#include <QDir>
 #include <QDockWidget>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QKeySequence>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QSettings>
+#include <QStandardPaths>
 #include <QStatusBar>
+#include <QTimer>
 #include <QToolBar>
+#include <QVBoxLayout>
+
+namespace {
+
+ClipboardData clipboard;
+
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -33,6 +49,16 @@ MainWindow::MainWindow(QWidget *parent)
         setDirty(!clean);
     });
     connect(m_scene, &QGraphicsScene::selectionChanged, this, &MainWindow::updatePropertyEditor);
+    connect(m_controller, &DocumentController::documentChanged, this, &MainWindow::refreshValidation);
+
+    QSettings settings;
+    const QStringList recent = settings.value(QStringLiteral("recentFiles")).toStringList();
+    for (int index = recent.size() - 1; index >= 0; --index)
+        m_recentFiles.add(recent[index]);
+    updateRecentFiles();
+    m_autoSaveTimer = new QTimer(this);
+    connect(m_autoSaveTimer, &QTimer::timeout, this, &MainWindow::autoSave);
+    m_autoSaveTimer->start(10000);
 
     setCurrentFile(QString());
     statusBar()->showMessage(tr("选择工具可拖动元素；滚轮缩放画布"), 5000);
@@ -51,6 +77,9 @@ bool MainWindow::openFile(const QString &fileName)
     m_controller->replaceDocument(std::move(document));
     setCurrentFile(fileName);
     setDirty(false);
+    m_recentFiles.add(fileName);
+    updateRecentFiles();
+    QFile::remove(recoveryFileName());
     if (!m_scene->items().isEmpty())
         m_view->centerOn(m_scene->itemsBoundingRect().center());
     updatePropertyEditor();
@@ -59,10 +88,13 @@ bool MainWindow::openFile(const QString &fileName)
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    if (maybeSave())
+    if (maybeSave()) {
+        if (!m_dirty)
+            QFile::remove(recoveryFileName());
         event->accept();
-    else
+    } else {
         event->ignore();
+    }
 }
 
 void MainWindow::createActions()
@@ -81,6 +113,7 @@ void MainWindow::createActions()
     connect(openAction, &QAction::triggered, this, &MainWindow::open);
     fileMenu->addAction(openAction);
     fileToolBar->addAction(openAction);
+    m_recentMenu = fileMenu->addMenu(tr("最近文件"));
 
     QAction *saveAction = new QAction(tr("保存(&S)"), this);
     saveAction->setShortcut(QKeySequence::Save);
@@ -165,6 +198,40 @@ void MainWindow::createActions()
     connect(selectAllAction, &QAction::triggered, m_scene, &DiagramScene::selectAllItems);
     editMenu->addAction(selectAllAction);
 
+    auto copySelection = [this]() {
+        clipboard = m_controller->copyVariables(m_scene->selectedVariableIds());
+    };
+    auto pasteSelection = [this]() {
+        const auto ids = m_controller->pasteClipboard(clipboard, QPointF(20.0, 20.0));
+        m_scene->clearSelection();
+        for (qds::core::EntityId id : ids) {
+            if (VariableItem *item = m_scene->variableItem(id))
+                item->setSelected(true);
+        }
+    };
+    QAction *copyAction = new QAction(tr("复制"), this);
+    copyAction->setShortcut(QKeySequence::Copy);
+    connect(copyAction, &QAction::triggered, this, copySelection);
+    editMenu->addAction(copyAction);
+    QAction *cutAction = new QAction(tr("剪切"), this);
+    cutAction->setShortcut(QKeySequence::Cut);
+    connect(cutAction, &QAction::triggered, this, [this, copySelection]() {
+        copySelection();
+        m_scene->removeSelected();
+    });
+    editMenu->addAction(cutAction);
+    QAction *pasteAction = new QAction(tr("粘贴"), this);
+    pasteAction->setShortcut(QKeySequence::Paste);
+    connect(pasteAction, &QAction::triggered, this, pasteSelection);
+    editMenu->addAction(pasteAction);
+    QAction *duplicateAction = new QAction(tr("重复创建"), this);
+    duplicateAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_D));
+    connect(duplicateAction, &QAction::triggered, this, [this, copySelection, pasteSelection]() {
+        copySelection();
+        pasteSelection();
+    });
+    editMenu->addAction(duplicateAction);
+
     auto addAlignAction = [this, editMenu](const QString &text, Qt::Alignment alignment) {
         QAction *action = new QAction(text, this);
         connect(action, &QAction::triggered, this, [this, alignment]() {
@@ -243,9 +310,13 @@ void MainWindow::createPropertyPanel()
     QWidget *panel = new QWidget(dock);
     QFormLayout *layout = new QFormLayout(panel);
     m_nameEdit = new QLineEdit(panel);
-    m_equationEdit = new QLineEdit(panel);
+    m_equationEdit = new EquationEditor(panel);
+    m_unitEdit = new QLineEdit(panel);
+    m_commentEdit = new QLineEdit(panel);
     layout->addRow(tr("名称"), m_nameEdit);
     layout->addRow(tr("方程"), m_equationEdit);
+    layout->addRow(tr("单位"), m_unitEdit);
+    layout->addRow(tr("说明"), m_commentEdit);
     dock->setWidget(panel);
     addDockWidget(Qt::RightDockWidgetArea, dock);
 
@@ -257,10 +328,58 @@ void MainWindow::createPropertyPanel()
             updatePropertyEditor();
         }
     });
-    connect(m_equationEdit, &QLineEdit::editingFinished, this, [this]() {
+    connect(m_equationEdit, &EquationEditor::editingFinished, this, [this]() {
         m_scene->setSelectedEquation(m_equationEdit->text());
     });
+    connect(m_unitEdit, &QLineEdit::editingFinished, this, [this]() {
+        if (m_scene->selectedVariable())
+            m_controller->setUnit(m_scene->selectedVariable()->id, m_unitEdit->text());
+    });
+    connect(m_commentEdit, &QLineEdit::editingFinished, this, [this]() {
+        if (m_scene->selectedVariable())
+            m_controller->setComment(m_scene->selectedVariable()->id, m_commentEdit->text());
+    });
+
+    QDockWidget *issuesDock = new QDockWidget(tr("模型检查"), this);
+    m_issueList = new QListWidget(issuesDock);
+    issuesDock->setWidget(m_issueList);
+    addDockWidget(Qt::BottomDockWidgetArea, issuesDock);
+    connect(m_issueList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
+        const qds::core::EntityId id = item->data(Qt::UserRole).toULongLong();
+        if (VariableItem *variable = m_scene->variableItem(id)) {
+            m_scene->clearSelection();
+            variable->setSelected(true);
+            m_view->centerOn(variable);
+        }
+    });
+
+    QDockWidget *navigationDock = new QDockWidget(tr("导航"), this);
+    QWidget *navigation = new QWidget(navigationDock);
+    QVBoxLayout *navigationLayout = new QVBoxLayout(navigation);
+    QLineEdit *searchEdit = new QLineEdit(navigation);
+    searchEdit->setPlaceholderText(tr("搜索变量名称"));
+    navigationLayout->addWidget(searchEdit);
+    MiniMapView *miniMap = new MiniMapView(m_scene, navigation);
+    navigationLayout->addWidget(miniMap);
+    navigationDock->setWidget(navigation);
+    addDockWidget(Qt::LeftDockWidgetArea, navigationDock);
+    connect(searchEdit, &QLineEdit::textChanged, this, [this](const QString &text) {
+        m_scene->clearSelection();
+        const auto matches = m_scene->findVariables(text);
+        bool first = true;
+        for (qds::core::EntityId id : matches) {
+            VariableItem *item = m_scene->variableItem(id);
+            if (!item)
+                continue;
+            item->setSelected(true);
+            if (first) {
+                m_view->centerOn(item);
+                first = false;
+            }
+        }
+    });
     updatePropertyEditor();
+    refreshValidation();
 }
 
 void MainWindow::newFile()
@@ -295,6 +414,8 @@ bool MainWindow::save()
             return false;
         }
         m_scene->setSelectedEquation(m_equationEdit->text());
+        m_controller->setUnit(m_scene->selectedVariable()->id, m_unitEdit->text());
+        m_controller->setComment(m_scene->selectedVariable()->id, m_commentEdit->text());
     }
     return m_fileName.isEmpty() ? saveAs() : saveFile(m_fileName);
 }
@@ -323,6 +444,9 @@ bool MainWindow::saveFile(const QString &fileName)
     setCurrentFile(fileName);
     m_controller->undoStack()->setClean();
     setDirty(false);
+    m_recentFiles.add(fileName);
+    updateRecentFiles();
+    QFile::remove(recoveryFileName());
     statusBar()->showMessage(tr("已保存 %1").arg(QFileInfo(fileName).fileName()), 5000);
     return true;
 }
@@ -393,11 +517,91 @@ void MainWindow::setTool(DiagramScene::Tool tool)
     }
 }
 
+void MainWindow::updateRecentFiles()
+{
+    if (!m_recentMenu)
+        return;
+    m_recentMenu->clear();
+    for (const QString &fileName : m_recentFiles.files()) {
+        QAction *action = new QAction(QFileInfo(fileName).fileName(), m_recentMenu);
+        action->setToolTip(fileName);
+        connect(action, &QAction::triggered, this, [this, fileName]() {
+            if (maybeSave())
+                openFile(fileName);
+        });
+        m_recentMenu->addAction(action);
+    }
+    m_recentMenu->setEnabled(!m_recentFiles.files().isEmpty());
+    QSettings settings;
+    settings.setValue(QStringLiteral("recentFiles"), m_recentFiles.files());
+}
+
+QString MainWindow::recoveryFileName() const
+{
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/recovery.xmile");
+}
+
+void MainWindow::autoSave()
+{
+    if (!m_dirty)
+        return;
+    const QString path = recoveryFileName();
+    if (!QDir().mkpath(QFileInfo(path).absolutePath()))
+        return;
+    QString error;
+    if (!qds::io::saveXmile(path, m_controller->document(), &error))
+        statusBar()->showMessage(tr("自动保存失败：%1").arg(error), 5000);
+}
+
+void MainWindow::offerRecovery()
+{
+    const QString path = recoveryFileName();
+    if (!QFile::exists(path))
+        return;
+    const auto choice = QMessageBox::question(
+        this, tr("恢复模型"), tr("检测到上次会话的自动保存副本，是否恢复？"));
+    if (choice != QMessageBox::Yes)
+        return;
+    qds::core::Document document;
+    QString error;
+    if (!qds::io::loadXmile(path, document, &error)) {
+        QMessageBox::warning(this, tr("恢复失败"), error);
+        return;
+    }
+    m_controller->replaceDocument(std::move(document));
+    setCurrentFile(QString());
+    setDirty(true);
+}
+
 void MainWindow::updatePropertyEditor()
 {
     const qds::core::Variable *variable = m_scene->selectedVariable();
     m_nameEdit->setEnabled(variable != nullptr);
     m_equationEdit->setEnabled(variable != nullptr);
+    m_unitEdit->setEnabled(variable != nullptr);
+    m_commentEdit->setEnabled(variable != nullptr);
     m_nameEdit->setText(variable ? QString::fromStdString(variable->name) : QString());
     m_equationEdit->setText(variable ? QString::fromStdString(variable->equation) : QString());
+    QStringList completionWords;
+    for (const qds::core::Variable &entry : m_controller->document().model().variables())
+        completionWords.append(QString::fromStdString(entry.name));
+    m_equationEdit->setCompletionWords(completionWords);
+    m_unitEdit->setText(variable ? QString::fromStdString(variable->unit) : QString());
+    m_commentEdit->setText(variable ? QString::fromStdString(variable->comment) : QString());
+}
+
+void MainWindow::refreshValidation()
+{
+    if (!m_issueList)
+        return;
+    m_issueList->clear();
+    const auto issues = qds::core::validateDocument(m_controller->document());
+    for (const auto &issue : issues) {
+        const qds::core::Variable *variable = m_controller->document().variable(issue.entityId);
+        const QString name = variable ? QString::fromStdString(variable->name) : tr("模型");
+        const QString severity = issue.severity == qds::core::IssueSeverity::Error ? tr("错误") : tr("警告");
+        QListWidgetItem *item = new QListWidgetItem(
+            tr("%1 [%2]: %3").arg(name, severity, QString::fromStdString(issue.message)), m_issueList);
+        item->setData(Qt::UserRole, static_cast<qulonglong>(issue.entityId));
+    }
 }

@@ -1,4 +1,5 @@
 #include <qds/core/Document.h>
+#include <qds/core/Validation.h>
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -44,6 +45,10 @@ int main(int argc, char **argv)
     const qint64 moveNs = timer.nsecsElapsed();
 
     timer.restart();
+    const auto issues = validateDocument(document);
+    const qint64 validationNs = timer.nsecsElapsed();
+
+    timer.restart();
     for (EntityId id : ids)
         document.removeVariable(id);
     const qint64 removeNs = timer.nsecsElapsed();
@@ -53,6 +58,7 @@ int main(int argc, char **argv)
                         << "connect," << count - 1 << "," << connectNs / 1e6 << "," << connectNs / 1000.0 / (count - 1) << "\n"
                         << "lookup," << count * 10 << "," << lookupNs / 1e6 << "," << lookupNs / 1000.0 / (count * 10) << "\n"
                         << "move," << count << "," << moveNs / 1e6 << "," << moveNs / 1000.0 / count << "\n"
+                        << "validate," << count << "," << validationNs / 1e6 << "," << validationNs / 1000.0 / count << "\n"
                         << "remove," << count << "," << removeNs / 1e6 << "," << removeNs / 1000.0 / count << "\n";
     return checksum == 0 || !document.model().variables().empty() ? 1 : 0;
 }

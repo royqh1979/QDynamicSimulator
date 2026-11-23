@@ -1,4 +1,5 @@
 #include <qds/core/Document.h>
+#include <qds/core/Validation.h>
 
 #include <QtTest>
 
@@ -17,6 +18,8 @@ private slots:
     void clearDocument();
     void entityAndConnectionTypes();
     void reconnectConnection();
+    void metadata();
+    void validation();
 };
 
 void TestDocument::createAndLookup()
@@ -157,6 +160,45 @@ void TestDocument::reconnectConnection()
     QCOMPARE(document.connection(id)->from, second);
     QVERIFY(!document.reconnectConnection(id, 9999, auxiliary));
     QCOMPARE(document.connection(id)->from, second);
+}
+
+void TestDocument::metadata()
+{
+    Document document;
+    const EntityId id = document.createVariable(VariableType::Stock);
+    QVERIFY(document.setUnit(id, "people"));
+    QVERIFY(document.setComment(id, "Population stock"));
+    QCOMPARE(document.variable(id)->unit, std::string("people"));
+    QCOMPARE(document.variable(id)->comment, std::string("Population stock"));
+    QVERIFY(!document.setUnit(9999, "x"));
+    QVERIFY(!document.setComment(9999, "x"));
+}
+
+void TestDocument::validation()
+{
+    Document document;
+    const EntityId stock = document.createVariable(VariableType::Stock);
+    const EntityId first = document.createVariable(VariableType::Auxiliary);
+    const EntityId second = document.createVariable(VariableType::Auxiliary);
+    document.setEquation(stock, "100");
+    document.setEquation(first, "Missing + 1");
+    document.createConnection(first, second, ConnectionType::Information);
+    document.createConnection(second, first, ConnectionType::Information);
+    const auto issues = validateDocument(document);
+    bool undefined = false;
+    bool cycle = false;
+    bool unused = false;
+    for (const ModelIssue &issue : issues) {
+        undefined = undefined || issue.message.find("Undefined variable") != std::string::npos;
+        cycle = cycle || issue.message.find("cycle") != std::string::npos;
+        unused = unused || issue.severity == IssueSeverity::Warning;
+    }
+    QVERIFY(undefined);
+    QVERIFY(cycle);
+    QVERIFY(unused);
+
+    document.setEquation(first, "EXP(1) + ");
+    QVERIFY(!validateDocument(document).empty());
 }
 
 QTEST_APPLESS_MAIN(TestDocument)

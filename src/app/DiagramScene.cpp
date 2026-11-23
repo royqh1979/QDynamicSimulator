@@ -89,6 +89,26 @@ const qds::core::Variable *DiagramScene::selectedVariable() const
     return item ? m_controller->document().variable(item->id()) : nullptr;
 }
 
+std::vector<EntityId> DiagramScene::selectedVariableIds() const
+{
+    std::vector<EntityId> ids;
+    for (QGraphicsItem *item : selectedItems()) {
+        if (VariableItem *variable = qgraphicsitem_cast<VariableItem *>(item))
+            ids.push_back(variable->id());
+    }
+    return ids;
+}
+
+std::vector<EntityId> DiagramScene::findVariables(const QString &text) const
+{
+    std::vector<EntityId> matches;
+    for (const qds::core::Variable &variable : m_controller->document().model().variables()) {
+        if (QString::fromStdString(variable.name).contains(text, Qt::CaseInsensitive))
+            matches.push_back(variable.id);
+    }
+    return matches;
+}
+
 void DiagramScene::selectAllItems()
 {
     const QList<QGraphicsItem *> allItems = items();

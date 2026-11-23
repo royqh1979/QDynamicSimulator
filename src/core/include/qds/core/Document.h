@@ -53,6 +53,8 @@ public:
     bool removeVariable(EntityId id);
     bool renameVariable(EntityId id, const std::string &newName);
     bool setEquation(EntityId id, const std::string &equation);
+    bool setUnit(EntityId id, const std::string &unit);
+    bool setComment(EntityId id, const std::string &comment);
     bool setPosition(EntityId id, Vec2 position);
 
     ConnectionId createConnection(EntityId from, EntityId to, ConnectionType type = ConnectionType::Information);

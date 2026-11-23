@@ -7,8 +7,14 @@ add_library(qds-editor STATIC
     DiagramView.h
     DocumentController.cpp
     DocumentController.h
+    EquationEditor.cpp
+    EquationEditor.h
     MainWindow.cpp
     MainWindow.h
+    MiniMapView.cpp
+    MiniMapView.h
+    RecentFiles.cpp
+    RecentFiles.h
     Routing.cpp
     Routing.h
 )

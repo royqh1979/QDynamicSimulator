@@ -2,6 +2,9 @@
 #include "DiagramScene.h"
 #include "DiagramView.h"
 #include "DocumentController.h"
+#include "EquationEditor.h"
+#include "MiniMapView.h"
+#include "RecentFiles.h"
 #include "Routing.h"
 
 #include <QGraphicsSceneMouseEvent>
@@ -30,6 +33,9 @@ private slots:
     void reconnectUndo();
     void boundaryEndpoints();
     void spatialIndexAndRouter();
+    void equationEditor();
+    void clipboardOperations();
+    void recentSearchAndMiniMap();
 };
 
 void TestEditor::createUndoRedo()
@@ -54,6 +60,12 @@ void TestEditor::renameAndEquationUndo()
     const EntityId id = controller.createVariable(VariableType::Stock, QPointF());
     QVERIFY(controller.renameVariable(id, QStringLiteral("Population")));
     controller.setEquation(id, QStringLiteral("100"));
+    controller.setUnit(id, QStringLiteral("people"));
+    controller.setComment(id, QStringLiteral("Population stock"));
+    QCOMPARE(controller.document().variable(id)->unit, std::string("people"));
+    QCOMPARE(controller.document().variable(id)->comment, std::string("Population stock"));
+    controller.undoStack()->undo();
+    controller.undoStack()->undo();
     QCOMPARE(scene.variableItem(id)->name(), QStringLiteral("Population"));
     controller.undoStack()->undo();
     QCOMPARE(controller.document().variable(id)->equation, std::string());
@@ -328,6 +340,67 @@ void TestEditor::spatialIndexAndRouter()
         }
     }
     QVERIFY(!collision);
+}
+
+void TestEditor::equationEditor()
+{
+    EquationEditor editor;
+    editor.setCompletionWords({QStringLiteral("Population"), QStringLiteral("Flow")});
+    editor.setText(QStringLiteral("EXP(1) + Population"));
+    QCOMPARE(editor.text(), QStringLiteral("EXP(1) + Population"));
+    QSignalSpy finishedSpy(&editor, &EquationEditor::editingFinished);
+    QTest::keyClick(&editor, Qt::Key_Return);
+    QCOMPARE(finishedSpy.count(), 1);
+}
+
+void TestEditor::clipboardOperations()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
+    const EntityId auxiliary = controller.createVariable(VariableType::Auxiliary, QPointF(100.0, 0.0));
+    controller.setEquation(stock, QStringLiteral("100"));
+    controller.createConnection(stock, auxiliary);
+    const ClipboardData clipboard = controller.copyVariables({stock, auxiliary});
+    QCOMPARE(clipboard.variables.size(), std::size_t(2));
+    QCOMPARE(clipboard.connections.size(), std::size_t(1));
+    const auto pasted = controller.pasteClipboard(clipboard, QPointF(20.0, 20.0));
+    QCOMPARE(pasted.size(), std::size_t(2));
+    QCOMPARE(controller.document().model().variables().size(), std::size_t(4));
+    QCOMPARE(controller.document().model().connections().size(), std::size_t(2));
+    QCOMPARE(controller.document().diagram().position(pasted[0]), Vec2({20.0, 20.0}));
+    QVERIFY(controller.document().variable(pasted[0])->name != "Stock");
+    controller.undoStack()->undo();
+    QCOMPARE(controller.document().model().variables().size(), std::size_t(2));
+    controller.undoStack()->redo();
+    QCOMPARE(controller.document().model().variables().size(), std::size_t(4));
+
+    DocumentController other;
+    const auto crossDocument = other.pasteClipboard(clipboard, QPointF());
+    QCOMPARE(crossDocument.size(), std::size_t(2));
+    QCOMPARE(other.document().model().connections().size(), std::size_t(1));
+}
+
+void TestEditor::recentSearchAndMiniMap()
+{
+    RecentFiles recent;
+    for (int index = 0; index < 10; ++index)
+        recent.add(QStringLiteral("R:/model%1.xmile").arg(index));
+    QCOMPARE(recent.files().size(), 8);
+    QCOMPARE(recent.files().front(), QStringLiteral("R:/model9.xmile"));
+    recent.add(QStringLiteral("R:/model8.xmile"));
+    QCOMPARE(recent.files().front(), QStringLiteral("R:/model8.xmile"));
+    QCOMPARE(recent.files().size(), 8);
+
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    controller.createVariable(VariableType::Stock, QPointF());
+    const EntityId population = controller.createVariable(VariableType::Stock, QPointF(100.0, 100.0));
+    controller.renameVariable(population, QStringLiteral("Population"));
+    QCOMPARE(scene.findVariables(QStringLiteral("pop")).size(), std::size_t(1));
+    QCOMPARE(scene.findVariables(QStringLiteral("pop")).front(), population);
+    MiniMapView miniMap(&scene);
+    QCOMPARE(miniMap.scene(), &scene);
 }
 
 QTEST_MAIN(TestEditor)

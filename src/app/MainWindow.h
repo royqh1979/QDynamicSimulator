@@ -1,13 +1,18 @@
 #pragma once
 
 #include "DiagramScene.h"
+#include "RecentFiles.h"
 
 #include <QMainWindow>
 
 class QCloseEvent;
 class QLineEdit;
+class QListWidget;
+class QMenu;
+class QTimer;
 class DiagramView;
 class DocumentController;
+class EquationEditor;
 
 class MainWindow : public QMainWindow
 {
@@ -16,6 +21,7 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     bool openFile(const QString &fileName);
+    void offerRecovery();
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -33,12 +39,22 @@ private:
     void setDirty(bool dirty);
     void setTool(DiagramScene::Tool tool);
     void updatePropertyEditor();
+    void refreshValidation();
+    void updateRecentFiles();
+    void autoSave();
+    QString recoveryFileName() const;
 
     DocumentController *m_controller;
     DiagramScene *m_scene;
     DiagramView *m_view;
     QLineEdit *m_nameEdit = nullptr;
-    QLineEdit *m_equationEdit = nullptr;
+    EquationEditor *m_equationEdit = nullptr;
+    QLineEdit *m_unitEdit = nullptr;
+    QLineEdit *m_commentEdit = nullptr;
+    QListWidget *m_issueList = nullptr;
+    QMenu *m_recentMenu = nullptr;
+    QTimer *m_autoSaveTimer = nullptr;
+    RecentFiles m_recentFiles;
     QString m_fileName;
     bool m_dirty = false;
 };

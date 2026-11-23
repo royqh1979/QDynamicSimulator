@@ -30,6 +30,8 @@ void TestXmileFile::zipRoundTrip()
     const EntityId note = document.createVariable(VariableType::Annotation, {100.0, 300.0});
     QVERIFY(document.renameVariable(stock, "库存 & Population"));
     document.setEquation(stock, "100");
+    document.setUnit(stock, "people");
+    document.setComment(stock, "Population stock");
     document.setEquation(flow, "辅助变量 * 0.5");
     QVERIFY(document.renameVariable(auxiliary, "辅助变量"));
     const ConnectionId inflow = document.createConnection(flow, stock, ConnectionType::MaterialFlow);
@@ -39,6 +41,8 @@ void TestXmileFile::zipRoundTrip()
     document.createConnection(note, stock, ConnectionType::Annotation);
     Route route;
     route.manual = true;
+    route.locked = true;
+    route.mode = RouteMode::Bezier;
     route.controlPoints = {{200.0, 100.0}};
     document.setRoute(inflow, route);
 
@@ -55,6 +59,8 @@ void TestXmileFile::zipRoundTrip()
     const Variable *loadedStock = loaded.model().variableByName("库存 & Population");
     QVERIFY(loadedStock);
     QCOMPARE(loadedStock->equation, std::string("100"));
+    QCOMPARE(loadedStock->unit, std::string("people"));
+    QCOMPARE(loadedStock->comment, std::string("Population stock"));
     QCOMPARE(loaded.diagram().position(loadedStock->id), Vec2({120.5, 80.25}));
     QCOMPARE(loaded.model().variableByName("Flow")->equation, std::string("辅助变量 * 0.5"));
     QVERIFY(loaded.model().variableByName("Cloud"));
@@ -66,6 +72,8 @@ void TestXmileFile::zipRoundTrip()
         if (connection.from == loadedFlow->id && connection.to == loadedStock->id) {
             routeFound = true;
             QVERIFY(loaded.diagram().route(connection.id).controlPoints == std::vector<Vec2>({{200.0, 100.0}}));
+            QCOMPARE(loaded.diagram().route(connection.id).mode, RouteMode::Bezier);
+            QVERIFY(loaded.diagram().route(connection.id).locked);
         }
     }
     QVERIFY(routeFound);

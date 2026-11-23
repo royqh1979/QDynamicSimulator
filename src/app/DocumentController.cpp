@@ -3,6 +3,7 @@
 #include <QUndoCommand>
 
 #include <memory>
+#include <unordered_map>
 #include <utility>
 
 using qds::core::ChangeSet;
@@ -212,6 +213,44 @@ void DocumentController::setEquation(EntityId id, const QString &equation)
         });
 }
 
+void DocumentController::setUnit(EntityId id, const QString &unit)
+{
+    const Variable *variable = m_document.variable(id);
+    if (!variable || variable->unit == unit.toStdString())
+        return;
+    const std::string before = variable->unit;
+    const std::string after = unit.toStdString();
+    pushCommand(
+        tr("Edit unit"),
+        [this, id, before]() {
+            m_document.setUnit(id, before);
+            notify(entityChange(id, false));
+        },
+        [this, id, after]() {
+            m_document.setUnit(id, after);
+            notify(entityChange(id, false));
+        });
+}
+
+void DocumentController::setComment(EntityId id, const QString &comment)
+{
+    const Variable *variable = m_document.variable(id);
+    if (!variable || variable->comment == comment.toStdString())
+        return;
+    const std::string before = variable->comment;
+    const std::string after = comment.toStdString();
+    pushCommand(
+        tr("Edit comment"),
+        [this, id, before]() {
+            m_document.setComment(id, before);
+            notify(entityChange(id, false));
+        },
+        [this, id, after]() {
+            m_document.setComment(id, after);
+            notify(entityChange(id, false));
+        });
+}
+
 void DocumentController::moveVariables(const std::vector<std::pair<EntityId, QPointF>> &positions)
 {
     m_undoStack.beginMacro(tr("Move variables"));
@@ -340,6 +379,60 @@ void DocumentController::replaceDocument(Document document)
     ChangeSet change;
     change.documentReset = true;
     notify(change);
+}
+
+ClipboardData DocumentController::copyVariables(const std::vector<EntityId> &ids) const
+{
+    ClipboardData clipboard;
+    std::unordered_map<EntityId, bool> copied;
+    for (EntityId id : ids) {
+        const Variable *variable = m_document.variable(id);
+        if (!variable || copied.count(id))
+            continue;
+        copied[id] = true;
+        clipboard.variables.emplace_back(*variable, m_document.diagram().position(id));
+    }
+    for (const Connection &connection : m_document.model().connections()) {
+        if (copied.count(connection.from) && copied.count(connection.to))
+            clipboard.connections.emplace_back(connection, m_document.diagram().route(connection.id));
+    }
+    return clipboard;
+}
+
+std::vector<EntityId> DocumentController::pasteClipboard(const ClipboardData &clipboard, const QPointF &offset)
+{
+    std::vector<EntityId> createdIds;
+    if (clipboard.empty())
+        return createdIds;
+    m_undoStack.beginMacro(tr("Paste variables"));
+    std::unordered_map<EntityId, EntityId> idMap;
+    for (const auto &entry : clipboard.variables) {
+        Variable source = entry.first;
+        std::string base = source.name;
+        std::string unique = base;
+        for (int suffix = 2; m_document.model().variableByName(unique); ++suffix)
+            unique = base + " " + std::to_string(suffix);
+        const qds::core::Vec2 sourcePosition = entry.second;
+        const EntityId id = createVariable(
+            source.type,
+            QPointF(sourcePosition.x + offset.x(), sourcePosition.y + offset.y()));
+        renameVariable(id, QString::fromStdString(unique));
+        setEquation(id, QString::fromStdString(source.equation));
+        setUnit(id, QString::fromStdString(source.unit));
+        setComment(id, QString::fromStdString(source.comment));
+        idMap[source.id] = id;
+        createdIds.push_back(id);
+    }
+    for (const auto &entry : clipboard.connections) {
+        const Connection &source = entry.first;
+        if (!idMap.count(source.from) || !idMap.count(source.to))
+            continue;
+        const ConnectionId id = createConnection(idMap[source.from], idMap[source.to], source.type);
+        if (id != 0)
+            setRoute(id, entry.second);
+    }
+    m_undoStack.endMacro();
+    return createdIds;
 }
 
 void DocumentController::pushCommand(const QString &text, const Callback &undo, const Callback &redo)
