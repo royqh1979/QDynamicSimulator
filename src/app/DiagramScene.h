@@ -1,11 +1,18 @@
 #pragma once
 
-#include <qds/core/Model.h>
+#include "Routing.h"
+
+#include <qds/core/ChangeSet.h>
+#include <qds/core/Document.h>
 
 #include <QGraphicsScene>
 #include <QHash>
 
+class DocumentController;
+class QGraphicsLineItem;
 class VariableItem;
+class ConnectionItem;
+class ControlPointHandle;
 
 class DiagramScene : public QGraphicsScene
 {
@@ -17,36 +24,76 @@ public:
         AddStock,
         AddFlow,
         AddAuxiliary,
-        Connect
+        AddConstant,
+        AddExogenous,
+        AddCloud,
+        AddAnnotation,
+        Connect,
+        ConnectMaterial,
+        ConnectAnnotation
     };
 
-    explicit DiagramScene(QObject *parent = nullptr);
+    explicit DiagramScene(DocumentController *controller, QObject *parent = nullptr);
+    ~DiagramScene() override;
 
-    const qds::core::Model &model() const;
-    void setModel(const qds::core::Model &model);
     void setTool(Tool tool);
     Tool tool() const;
+    qds::core::EntityId createVariableAt(qds::core::VariableType type, const QPointF &position);
 
+signals:
+    void editingFinished();
+
+public:
     void removeSelected();
     bool renameSelected(const QString &newName);
     bool setSelectedEquation(const QString &equation);
     const qds::core::Variable *selectedVariable() const;
-
-signals:
-    void contentChanged();
+    std::vector<qds::core::EntityId> selectedVariableIds() const;
+    std::vector<qds::core::EntityId> findVariables(const QString &text) const;
+    void selectAllItems();
+    void alignSelected(Qt::Alignment alignment);
+    void distributeSelected(bool horizontal);
+    void setGridVisible(bool visible);
+    void setSnapEnabled(bool enabled);
+    void setSelectedRouteMode(qds::core::RouteMode mode);
+    void resetSelectedRoute();
+    void rerouteAll();
+    void toggleSelectedRouteLock();
+    QPointF snapPoint(const QPointF &position) const;
+    VariableItem *variableItem(qds::core::EntityId id) const;
+    ConnectionItem *connectionItem(qds::core::ConnectionId id) const;
 
 protected:
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
+    void mouseMoveEvent(QGraphicsSceneMouseEvent *event) override;
+    void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
+    void mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event) override;
+    void drawBackground(QPainter *painter, const QRectF &rect) override;
 
 private:
-    VariableItem *createVariableItem(const qds::core::Variable &variable);
-    void createConnectionItem(const qds::core::Connection &connection);
-    void updateVariablePosition(const QString &name, const QPointF &position);
-    void updateConnections(const QString &name);
-    void removeConnections(const QString &name);
+    void applyChangeSet(const qds::core::ChangeSet &changeSet);
+    VariableItem *createVariableItem(qds::core::EntityId id);
+    ConnectionItem *createConnectionItem(qds::core::ConnectionId id);
+    void updateConnections(qds::core::EntityId id);
+    void updateSceneRect();
+    void finishMove();
+    void syncControlPoints();
+    void previewControlPoint(qds::core::ConnectionId id, int index, const QPointF &position);
+    void finishControlPoint(qds::core::ConnectionId id, int index, const QPointF &position);
+    void removeControlPoint(qds::core::ConnectionId id, int index);
+    void updateAutomaticRoute(ConnectionItem *item);
+    void cancelRubberLine();
 
-    qds::core::Model m_model;
-    QHash<QString, VariableItem *> m_items;
+    DocumentController *m_controller;
+    QHash<qds::core::EntityId, VariableItem *> m_entityItems;
+    QHash<qds::core::ConnectionId, ConnectionItem *> m_connectionItems;
     Tool m_tool = Tool::Select;
-    VariableItem *m_connectionSource = nullptr;
+    qds::core::EntityId m_connectionSource = 0;
+    QGraphicsLineItem *m_rubberLine = nullptr;
+    QList<ControlPointHandle *> m_controlHandles;
+    ObstacleIndex m_obstacles;
+    OrthogonalRouter m_router;
+    bool m_gridVisible = true;
+    bool m_snapEnabled = true;
+    double m_gridSize = 20.0;
 };

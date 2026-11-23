@@ -3,7 +3,8 @@
 ## 当前结构
 
 - `qdynamic-simulator`：Qt Widgets 可执行程序，负责 SFD 画布、变量编辑和后续交互。
-- `qds-core`（别名 `QDS::Core`）：独立纯 C++ 静态库，承载变量、连接、方程与后续仿真能力。
+- `DocumentController` 与 `QUndoStack` 统一处理编辑命令，并通过 ChangeSet 驱动 Scene 增量同步。
+- `qds-core`（别名 `QDS::Core`）：独立纯 C++ 静态库，承载稳定 ID、变量、连接、图形布局和后续仿真能力。
 - `qds-io`（别名 `QDS::IO`）：QtCore I/O 静态库，负责标准 XMILE XML 和 ZIP deflate 容器读写。
 - 应用只能依赖核心库与 I/O 库的公开头文件，核心库不得依赖 Qt 或反向依赖应用。
 

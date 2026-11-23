@@ -118,56 +118,72 @@ bool decompressRaw(const char *input, quint32 inputSize, quint32 outputSize, QBy
     return true;
 }
 
-QByteArray makeZip(const QByteArray &xml)
+QByteArray makeZip(const QByteArray &xml, const QByteArray &workspace)
 {
-    QByteArray compressed;
-    QString ignoredError;
-    if (!compressRaw(xml, compressed, &ignoredError))
-        return {};
-
-    const QByteArray name("model.xmile");
-    const quint32 crc = checksum(xml);
+    struct WrittenEntry {
+        QByteArray name;
+        QByteArray compressed;
+        quint32 crc = 0;
+        quint32 size = 0;
+        quint32 offset = 0;
+    };
+    const QPair<QByteArray, QByteArray> sources[] = {
+        {QByteArray("model.xmile"), xml}, {QByteArray("workspace.xml"), workspace}};
     QByteArray output;
-    append32(output, localHeaderSignature);
-    append16(output, 20);
-    append16(output, 0x0800);
-    append16(output, 8);
-    append16(output, 0);
-    append16(output, 0);
-    append32(output, crc);
-    append32(output, static_cast<quint32>(compressed.size()));
-    append32(output, static_cast<quint32>(xml.size()));
-    append16(output, static_cast<quint16>(name.size()));
-    append16(output, 0);
-    output.append(name);
-    output.append(compressed);
+    std::vector<WrittenEntry> entries;
+    for (const auto &source : sources) {
+        WrittenEntry entry;
+        entry.name = source.first;
+        entry.size = static_cast<quint32>(source.second.size());
+        entry.crc = checksum(source.second);
+        entry.offset = static_cast<quint32>(output.size());
+        QString ignoredError;
+        if (!compressRaw(source.second, entry.compressed, &ignoredError))
+            return {};
+        append32(output, localHeaderSignature);
+        append16(output, 20);
+        append16(output, 0x0800);
+        append16(output, 8);
+        append16(output, 0);
+        append16(output, 0);
+        append32(output, entry.crc);
+        append32(output, static_cast<quint32>(entry.compressed.size()));
+        append32(output, entry.size);
+        append16(output, static_cast<quint16>(entry.name.size()));
+        append16(output, 0);
+        output.append(entry.name);
+        output.append(entry.compressed);
+        entries.push_back(std::move(entry));
+    }
 
     const quint32 centralOffset = static_cast<quint32>(output.size());
-    append32(output, centralHeaderSignature);
-    append16(output, 20);
-    append16(output, 20);
-    append16(output, 0x0800);
-    append16(output, 8);
-    append16(output, 0);
-    append16(output, 0);
-    append32(output, crc);
-    append32(output, static_cast<quint32>(compressed.size()));
-    append32(output, static_cast<quint32>(xml.size()));
-    append16(output, static_cast<quint16>(name.size()));
-    append16(output, 0);
-    append16(output, 0);
-    append16(output, 0);
-    append16(output, 0);
-    append32(output, 0);
-    append32(output, 0);
-    output.append(name);
+    for (const WrittenEntry &entry : entries) {
+        append32(output, centralHeaderSignature);
+        append16(output, 20);
+        append16(output, 20);
+        append16(output, 0x0800);
+        append16(output, 8);
+        append16(output, 0);
+        append16(output, 0);
+        append32(output, entry.crc);
+        append32(output, static_cast<quint32>(entry.compressed.size()));
+        append32(output, entry.size);
+        append16(output, static_cast<quint16>(entry.name.size()));
+        append16(output, 0);
+        append16(output, 0);
+        append16(output, 0);
+        append16(output, 0);
+        append32(output, 0);
+        append32(output, entry.offset);
+        output.append(entry.name);
+    }
 
     const quint32 centralSize = static_cast<quint32>(output.size()) - centralOffset;
     append32(output, endSignature);
     append16(output, 0);
     append16(output, 0);
-    append16(output, 1);
-    append16(output, 1);
+    append16(output, static_cast<quint16>(entries.size()));
+    append16(output, static_cast<quint16>(entries.size()));
     append32(output, centralSize);
     append32(output, centralOffset);
     append16(output, 0);
@@ -221,7 +237,7 @@ bool extractEntry(const QByteArray &archive, const ZipEntry &entry, QByteArray &
     return true;
 }
 
-bool readZip(const QByteArray &archive, QByteArray &xml, QString *errorMessage)
+bool readZip(const QByteArray &archive, QByteArray &xml, QByteArray &workspace, QString *errorMessage)
 {
     if (archive.size() < 22) {
         setError(errorMessage, translate("The XMILE container is too small."));
@@ -245,7 +261,9 @@ bool readZip(const QByteArray &archive, QByteArray &xml, QString *errorMessage)
     const quint32 centralOffset = read32(archive, endOffset + 16);
     int offset = static_cast<int>(centralOffset);
     ZipEntry selected;
+    ZipEntry workspaceEntry;
     bool found = false;
+    bool foundWorkspace = false;
     for (quint16 index = 0; index < entryCount; ++index) {
         if (offset < 0 || offset > archive.size() - 46 || read32(archive, offset) != centralHeaderSignature) {
             setError(errorMessage, translate("The ZIP directory is damaged."));
@@ -268,7 +286,10 @@ bool readZip(const QByteArray &archive, QByteArray &xml, QString *errorMessage)
         }
         entry.name = archive.mid(offset + 46, nameLength);
         const QString name = QString::fromUtf8(entry.name);
-        if (name.compare(QStringLiteral("model.xmile"), Qt::CaseInsensitive) == 0) {
+        if (name.compare(QStringLiteral("workspace.xml"), Qt::CaseInsensitive) == 0) {
+            workspaceEntry = entry;
+            foundWorkspace = true;
+        } else if (name.compare(QStringLiteral("model.xmile"), Qt::CaseInsensitive) == 0) {
             selected = entry;
             found = true;
         } else if (!found && name.endsWith(QStringLiteral(".xmile"), Qt::CaseInsensitive)) {
@@ -282,7 +303,10 @@ bool readZip(const QByteArray &archive, QByteArray &xml, QString *errorMessage)
         setError(errorMessage, translate("The ZIP container does not contain an XMILE document."));
         return false;
     }
-    return extractEntry(archive, selected, xml, errorMessage);
+    if (!extractEntry(archive, selected, xml, errorMessage))
+        return false;
+    workspace.clear();
+    return !foundWorkspace || extractEntry(archive, workspaceEntry, workspace, errorMessage);
 }
 
 QString variableTag(core::VariableType type)
@@ -294,12 +318,20 @@ QString variableTag(core::VariableType type)
         return QStringLiteral("flow");
     case core::VariableType::Auxiliary:
         return QStringLiteral("aux");
+    case core::VariableType::Constant:
+    case core::VariableType::Exogenous:
+        return QStringLiteral("aux");
+    case core::VariableType::Cloud:
+        return QStringLiteral("cloud");
+    case core::VariableType::Annotation:
+        return QStringLiteral("text_box");
     }
     return {};
 }
 
-QByteArray writeXml(const core::Model &model)
+QByteArray writeXml(const core::Document &document)
 {
+    const core::Model &model = document.model();
     QByteArray output;
     QXmlStreamWriter writer(&output);
     writer.setAutoFormatting(true);
@@ -326,20 +358,28 @@ QByteArray writeXml(const core::Model &model)
     writer.writeStartElement(QStringLiteral("model"));
     writer.writeStartElement(QStringLiteral("variables"));
     for (const core::Variable &variable : model.variables()) {
+        if (variable.type == core::VariableType::Cloud || variable.type == core::VariableType::Annotation)
+            continue;
         const QString name = QString::fromStdString(variable.name);
         writer.writeStartElement(variableTag(variable.type));
         writer.writeAttribute(QStringLiteral("name"), name);
         writer.writeTextElement(
             QStringLiteral("eqn"),
             variable.equation.empty() ? QStringLiteral("0") : QString::fromStdString(variable.equation));
+        if (!variable.unit.empty())
+            writer.writeTextElement(QStringLiteral("units"), QString::fromStdString(variable.unit));
+        if (!variable.comment.empty())
+            writer.writeTextElement(QStringLiteral("doc"), QString::fromStdString(variable.comment));
         if (variable.type == core::VariableType::Stock) {
             for (const core::Connection &connection : model.connections()) {
+                if (connection.type != core::ConnectionType::MaterialFlow)
+                    continue;
                 const core::Variable *from = model.variable(connection.from);
                 const core::Variable *to = model.variable(connection.to);
-                if (from && to && from->type == core::VariableType::Flow && connection.to == variable.name)
-                    writer.writeTextElement(QStringLiteral("inflow"), QString::fromStdString(connection.from));
-                if (from && to && to->type == core::VariableType::Flow && connection.from == variable.name)
-                    writer.writeTextElement(QStringLiteral("outflow"), QString::fromStdString(connection.to));
+                if (from && to && from->type == core::VariableType::Flow && connection.to == variable.id)
+                    writer.writeTextElement(QStringLiteral("inflow"), QString::fromStdString(from->name));
+                if (from && to && to->type == core::VariableType::Flow && connection.from == variable.id)
+                    writer.writeTextElement(QStringLiteral("outflow"), QString::fromStdString(to->name));
             }
         }
         writer.writeEndElement();
@@ -351,15 +391,31 @@ QByteArray writeXml(const core::Model &model)
     writer.writeAttribute(QStringLiteral("type"), QStringLiteral("stock_flow"));
     for (const core::Variable &variable : model.variables()) {
         writer.writeStartElement(variableTag(variable.type));
+        const core::Vec2 position = document.diagram().position(variable.id);
         writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(variable.name));
-        writer.writeAttribute(QStringLiteral("x"), QString::number(variable.x, 'g', 15));
-        writer.writeAttribute(QStringLiteral("y"), QString::number(variable.y, 'g', 15));
+        writer.writeAttribute(QStringLiteral("x"), QString::number(position.x, 'g', 15));
+        writer.writeAttribute(QStringLiteral("y"), QString::number(position.y, 'g', 15));
         writer.writeEndElement();
     }
     for (const core::Connection &connection : model.connections()) {
+        const core::Variable *from = model.variable(connection.from);
+        const core::Variable *to = model.variable(connection.to);
+        if (!from || !to)
+            continue;
         writer.writeStartElement(QStringLiteral("connector"));
-        writer.writeTextElement(QStringLiteral("from"), QString::fromStdString(connection.from));
-        writer.writeTextElement(QStringLiteral("to"), QString::fromStdString(connection.to));
+        writer.writeTextElement(QStringLiteral("from"), QString::fromStdString(from->name));
+        writer.writeTextElement(QStringLiteral("to"), QString::fromStdString(to->name));
+        const core::Route &route = document.diagram().route(connection.id);
+        if (!route.controlPoints.empty()) {
+            writer.writeStartElement(QStringLiteral("pts"));
+            for (const core::Vec2 &point : route.controlPoints) {
+                writer.writeStartElement(QStringLiteral("pt"));
+                writer.writeAttribute(QStringLiteral("x"), QString::number(point.x, 'g', 15));
+                writer.writeAttribute(QStringLiteral("y"), QString::number(point.y, 'g', 15));
+                writer.writeEndElement();
+            }
+            writer.writeEndElement();
+        }
         writer.writeEndElement();
     }
     writer.writeEndElement();
@@ -370,11 +426,16 @@ QByteArray writeXml(const core::Model &model)
     return output;
 }
 
-using PendingConnection = std::pair<std::string, std::string>;
+struct PendingConnection {
+    std::string from;
+    std::string to;
+    core::ConnectionType type = core::ConnectionType::Information;
+    core::Route route;
+};
 
 bool parseVariable(
     QXmlStreamReader &reader,
-    core::Model &model,
+    core::Document &model,
     std::vector<PendingConnection> &pendingConnections,
     QString *errorMessage)
 {
@@ -404,6 +465,10 @@ bool parseVariable(
         const QString child = reader.name().toString();
         if (child == QStringLiteral("eqn"))
             variable.equation = reader.readElementText().trimmed().toStdString();
+        else if (child == QStringLiteral("units"))
+            variable.unit = reader.readElementText().trimmed().toStdString();
+        else if (child == QStringLiteral("doc"))
+            variable.comment = reader.readElementText().toStdString();
         else if (child == QStringLiteral("inflow"))
             inflows.append(reader.readElementText().trimmed());
         else if (child == QStringLiteral("outflow"))
@@ -412,20 +477,20 @@ bool parseVariable(
             reader.skipCurrentElement();
     }
 
-    if (!model.addVariable(variable)) {
+    if (model.addVariable(variable) == 0) {
         setError(errorMessage, translate("The model contains a duplicate variable name: %1").arg(name));
         return false;
     }
     for (const QString &flow : inflows)
-        pendingConnections.emplace_back(flow.toStdString(), variable.name);
+        pendingConnections.push_back({flow.toStdString(), variable.name, core::ConnectionType::MaterialFlow});
     for (const QString &flow : outflows)
-        pendingConnections.emplace_back(variable.name, flow.toStdString());
+        pendingConnections.push_back({variable.name, flow.toStdString(), core::ConnectionType::MaterialFlow});
     return true;
 }
 
 bool parseVariables(
     QXmlStreamReader &reader,
-    core::Model &model,
+    core::Document &model,
     std::vector<PendingConnection> &pendingConnections,
     QString *errorMessage)
 {
@@ -447,25 +512,42 @@ bool parseVariables(
 
 void parseConnector(QXmlStreamReader &reader, std::vector<PendingConnection> &pendingConnections)
 {
-    QString from = reader.attributes().value(QStringLiteral("from")).toString();
-    QString to = reader.attributes().value(QStringLiteral("to")).toString();
+    PendingConnection pending;
+    pending.from = reader.attributes().value(QStringLiteral("from")).toString().toStdString();
+    pending.to = reader.attributes().value(QStringLiteral("to")).toString().toStdString();
     while (reader.readNext() != QXmlStreamReader::Invalid) {
         if (reader.isEndElement() && reader.name() == QStringLiteral("connector"))
             break;
         if (!reader.isStartElement())
             continue;
         if (reader.name() == QStringLiteral("from"))
-            from = reader.readElementText().trimmed();
+            pending.from = reader.readElementText().trimmed().toStdString();
         else if (reader.name() == QStringLiteral("to"))
-            to = reader.readElementText().trimmed();
-        else
+            pending.to = reader.readElementText().trimmed().toStdString();
+        else if (reader.name() == QStringLiteral("pts")) {
+            while (reader.readNext() != QXmlStreamReader::Invalid) {
+                if (reader.isEndElement() && reader.name() == QStringLiteral("pts"))
+                    break;
+                if (!reader.isStartElement() || reader.name() != QStringLiteral("pt"))
+                    continue;
+                bool xOk = false;
+                bool yOk = false;
+                const double x = reader.attributes().value(QStringLiteral("x")).toDouble(&xOk);
+                const double y = reader.attributes().value(QStringLiteral("y")).toDouble(&yOk);
+                if (xOk && yOk)
+                    pending.route.controlPoints.push_back({x, y});
+            }
+        } else {
             reader.skipCurrentElement();
+        }
     }
-    if (!from.isEmpty() && !to.isEmpty())
-        pendingConnections.emplace_back(from.toStdString(), to.toStdString());
+    if (!pending.from.empty() && !pending.to.empty()) {
+        pending.route.manual = !pending.route.controlPoints.empty();
+        pendingConnections.push_back(std::move(pending));
+    }
 }
 
-void parseView(QXmlStreamReader &reader, core::Model &model, std::vector<PendingConnection> &pendingConnections)
+void parseView(QXmlStreamReader &reader, core::Document &model, std::vector<PendingConnection> &pendingConnections)
 {
     while (reader.readNext() != QXmlStreamReader::Invalid) {
         if (reader.isEndElement() && reader.name() == QStringLiteral("view"))
@@ -474,25 +556,34 @@ void parseView(QXmlStreamReader &reader, core::Model &model, std::vector<Pending
             continue;
 
         const QString tag = reader.name().toString();
-        if (tag == QStringLiteral("stock") || tag == QStringLiteral("flow") || tag == QStringLiteral("aux")) {
+        if (tag == QStringLiteral("stock") || tag == QStringLiteral("flow") || tag == QStringLiteral("aux")
+            || tag == QStringLiteral("cloud") || tag == QStringLiteral("text_box")) {
             const QXmlStreamAttributes attributes = reader.attributes();
             const std::string name = attributes.value(QStringLiteral("name")).toString().toStdString();
+            const core::Variable *variable = model.model().variableByName(name);
+            if (!variable && (tag == QStringLiteral("cloud") || tag == QStringLiteral("text_box"))) {
+                core::Variable created;
+                created.name = name;
+                created.type = tag == QStringLiteral("cloud") ? core::VariableType::Cloud : core::VariableType::Annotation;
+                const core::EntityId id = model.addVariable(created);
+                variable = model.variable(id);
+            }
             bool xOk = false;
             bool yOk = false;
             const double x = attributes.value(QStringLiteral("x")).toDouble(&xOk);
             const double y = attributes.value(QStringLiteral("y")).toDouble(&yOk);
-            if (xOk && yOk)
-                model.setPosition(name, x, y);
+            if (variable && xOk && yOk)
+                model.setPosition(variable->id, {x, y});
         } else if (tag == QStringLiteral("connector")) {
             parseConnector(reader, pendingConnections);
         }
     }
 }
 
-bool parseXml(const QByteArray &xml, core::Model &model, QString *errorMessage)
+bool parseXml(const QByteArray &xml, core::Document &model, QString *errorMessage)
 {
     QXmlStreamReader reader(xml);
-    core::Model parsed;
+    core::Document parsed;
     std::vector<PendingConnection> pendingConnections;
     bool foundRoot = false;
     bool foundView = false;
@@ -524,14 +615,39 @@ bool parseXml(const QByteArray &xml, core::Model &model, QString *errorMessage)
         return false;
     }
 
-    for (const PendingConnection &connection : pendingConnections)
-        parsed.addConnection(connection.first, connection.second);
+    for (const PendingConnection &connection : pendingConnections) {
+        const core::Variable *from = parsed.model().variableByName(connection.from);
+        const core::Variable *to = parsed.model().variableByName(connection.to);
+        if (!from || !to)
+            continue;
+        core::ConnectionType type = connection.type;
+        if (from->type == core::VariableType::Annotation || to->type == core::VariableType::Annotation)
+            type = core::ConnectionType::Annotation;
+        else if (type == core::ConnectionType::Information
+            && (from->type == core::VariableType::Flow || to->type == core::VariableType::Flow)
+            && (from->type == core::VariableType::Stock || from->type == core::VariableType::Cloud
+                || to->type == core::VariableType::Stock || to->type == core::VariableType::Cloud))
+            type = core::ConnectionType::MaterialFlow;
+        core::ConnectionId id = parsed.createConnection(from->id, to->id, type);
+        if (id == 0) {
+            for (const core::Connection &existing : parsed.model().connections()) {
+                if (existing.from == from->id && existing.to == to->id && existing.type == type) {
+                    id = existing.id;
+                    break;
+                }
+            }
+        }
+        if (id != 0)
+            parsed.setRoute(id, connection.route);
+    }
 
     if (!foundView) {
-        const int count = static_cast<int>(parsed.variables().size());
-        for (int index = 0; index < count; ++index) {
-            const std::string name = parsed.variables()[static_cast<std::size_t>(index)].name;
-            parsed.setPosition(name, 100.0 + (index % 5) * 180.0, 100.0 + (index / 5) * 140.0);
+        const auto &variables = parsed.model().variables();
+        for (std::size_t index = 0; index < variables.size(); ++index) {
+            parsed.setPosition(
+                variables[index].id,
+                {100.0 + static_cast<int>(index % 5) * 180.0,
+                 100.0 + static_cast<int>(index / 5) * 140.0});
         }
     }
 
@@ -539,12 +655,92 @@ bool parseXml(const QByteArray &xml, core::Model &model, QString *errorMessage)
     return true;
 }
 
+QByteArray writeWorkspace(const core::Document &document)
+{
+    QByteArray output;
+    QXmlStreamWriter writer(&output);
+    writer.setAutoFormatting(true);
+    writer.writeStartDocument();
+    writer.writeStartElement(QStringLiteral("qds-workspace"));
+    writer.writeAttribute(QStringLiteral("version"), QStringLiteral("1"));
+    for (const core::Connection &connection : document.model().connections()) {
+        const core::Variable *from = document.variable(connection.from);
+        const core::Variable *to = document.variable(connection.to);
+        if (!from || !to)
+            continue;
+        const core::Route route = document.diagram().route(connection.id);
+        writer.writeStartElement(QStringLiteral("route"));
+        writer.writeAttribute(QStringLiteral("from"), QString::fromStdString(from->name));
+        writer.writeAttribute(QStringLiteral("to"), QString::fromStdString(to->name));
+        const QString mode = route.mode == core::RouteMode::Straight ? QStringLiteral("straight")
+            : route.mode == core::RouteMode::Bezier ? QStringLiteral("bezier") : QStringLiteral("orthogonal");
+        writer.writeAttribute(QStringLiteral("mode"), mode);
+        writer.writeAttribute(QStringLiteral("manual"), QString::number(route.manual ? 1 : 0));
+        writer.writeAttribute(QStringLiteral("locked"), QString::number(route.locked ? 1 : 0));
+        for (const core::Vec2 &point : route.controlPoints) {
+            writer.writeStartElement(QStringLiteral("pt"));
+            writer.writeAttribute(QStringLiteral("x"), QString::number(point.x, 'g', 15));
+            writer.writeAttribute(QStringLiteral("y"), QString::number(point.y, 'g', 15));
+            writer.writeEndElement();
+        }
+        writer.writeEndElement();
+    }
+    writer.writeEndElement();
+    writer.writeEndDocument();
+    return output;
+}
+
+void applyWorkspace(core::Document &document, const QByteArray &xml)
+{
+    QXmlStreamReader reader(xml);
+    while (!reader.atEnd()) {
+        reader.readNext();
+        if (!reader.isStartElement() || reader.name() != QStringLiteral("route"))
+            continue;
+        const QXmlStreamAttributes attributes = reader.attributes();
+        const std::string fromName = attributes.value(QStringLiteral("from")).toString().toStdString();
+        const std::string toName = attributes.value(QStringLiteral("to")).toString().toStdString();
+        const core::Variable *from = document.model().variableByName(fromName);
+        const core::Variable *to = document.model().variableByName(toName);
+        if (!from || !to) {
+            reader.skipCurrentElement();
+            continue;
+        }
+        core::Route route;
+        const QString mode = attributes.value(QStringLiteral("mode")).toString();
+        if (mode == QStringLiteral("straight"))
+            route.mode = core::RouteMode::Straight;
+        else if (mode == QStringLiteral("bezier"))
+            route.mode = core::RouteMode::Bezier;
+        route.manual = attributes.value(QStringLiteral("manual")).toInt() != 0;
+        route.locked = attributes.value(QStringLiteral("locked")).toInt() != 0;
+        while (reader.readNext() != QXmlStreamReader::Invalid) {
+            if (reader.isEndElement() && reader.name() == QStringLiteral("route"))
+                break;
+            if (!reader.isStartElement() || reader.name() != QStringLiteral("pt"))
+                continue;
+            bool xOk = false;
+            bool yOk = false;
+            const double x = reader.attributes().value(QStringLiteral("x")).toDouble(&xOk);
+            const double y = reader.attributes().value(QStringLiteral("y")).toDouble(&yOk);
+            if (xOk && yOk)
+                route.controlPoints.push_back({x, y});
+        }
+        for (const core::Connection &connection : document.model().connections()) {
+            if (connection.from == from->id && connection.to == to->id) {
+                document.setRoute(connection.id, route);
+                break;
+            }
+        }
+    }
+}
+
 } // namespace
 
-bool saveXmile(const QString &fileName, const core::Model &model, QString *errorMessage)
+bool saveXmile(const QString &fileName, const core::Document &model, QString *errorMessage)
 {
     const QByteArray xml = writeXml(model);
-    const QByteArray archive = makeZip(xml);
+    const QByteArray archive = makeZip(xml, writeWorkspace(model));
     if (archive.isEmpty()) {
         setError(errorMessage, translate("Could not create the XMILE ZIP container."));
         return false;
@@ -562,7 +758,7 @@ bool saveXmile(const QString &fileName, const core::Model &model, QString *error
     return true;
 }
 
-bool loadXmile(const QString &fileName, core::Model &model, QString *errorMessage)
+bool loadXmile(const QString &fileName, core::Document &model, QString *errorMessage)
 {
     QFile file(fileName);
     if (!file.open(QIODevice::ReadOnly)) {
@@ -576,13 +772,18 @@ bool loadXmile(const QString &fileName, core::Model &model, QString *errorMessag
     }
 
     QByteArray xml;
+    QByteArray workspace;
     if (contents.startsWith("PK")) {
-        if (!readZip(contents, xml, errorMessage))
+        if (!readZip(contents, xml, workspace, errorMessage))
             return false;
     } else {
         xml = contents;
     }
-    return parseXml(xml, model, errorMessage);
+    if (!parseXml(xml, model, errorMessage))
+        return false;
+    if (!workspace.isEmpty())
+        applyWorkspace(model, workspace);
+    return true;
 }
 
 } // namespace qds::io

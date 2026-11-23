@@ -1,20 +1,25 @@
 #include "DiagramItems.h"
 
 #include <QFontMetrics>
+#include <QGraphicsScene>
+#include <QGraphicsSceneMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QSignalBlocker>
 #include <QStyleOptionGraphicsItem>
 
+#include <algorithm>
 #include <cmath>
-#include <utility>
 
-VariableItem::VariableItem(QString name, qds::core::VariableType variableType, QGraphicsItem *parent)
+VariableItem::VariableItem(const qds::core::Variable &variable, const QPointF &position, QGraphicsItem *parent)
     : QGraphicsObject(parent)
-    , m_name(std::move(name))
-    , m_variableType(variableType)
+    , m_id(variable.id)
+    , m_name(QString::fromStdString(variable.name))
+    , m_variableType(variable.type)
 {
     setFlags(ItemIsMovable | ItemIsSelectable | ItemSendsGeometryChanges);
     setCursor(Qt::OpenHandCursor);
+    setPos(position);
 }
 
 int VariableItem::type() const
@@ -49,15 +54,38 @@ void VariableItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *opti
         painter->drawPolygon(leftValve);
         painter->drawPolygon(rightValve);
         textRect = QRectF(-60.0, 12.0, 120.0, 24.0);
-    } else {
+    } else if (m_variableType == qds::core::VariableType::Auxiliary) {
         const QRectF auxiliaryRect(-45.0, -25.0, 90.0, 50.0);
         painter->drawEllipse(auxiliaryRect);
         textRect = auxiliaryRect.adjusted(5.0, 0.0, -5.0, 0.0);
+    } else if (m_variableType == qds::core::VariableType::Constant) {
+        const QPolygonF diamond({QPointF(0.0, -28.0), QPointF(50.0, 0.0), QPointF(0.0, 28.0), QPointF(-50.0, 0.0)});
+        painter->drawPolygon(diamond);
+        textRect = QRectF(-40.0, -15.0, 80.0, 30.0);
+    } else if (m_variableType == qds::core::VariableType::Exogenous) {
+        const QRectF rect(-50.0, -25.0, 100.0, 50.0);
+        painter->drawRoundedRect(rect, 8.0, 8.0);
+        textRect = rect.adjusted(5.0, 0.0, -5.0, 0.0);
+    } else if (m_variableType == qds::core::VariableType::Cloud) {
+        const QRectF cloudRect(-45.0, -25.0, 90.0, 50.0);
+        painter->setPen(QPen(pen.color(), pen.width(), Qt::DashLine));
+        painter->drawEllipse(cloudRect);
+        textRect = QRectF(-60.0, 28.0, 120.0, 24.0);
+    } else {
+        const QRectF noteRect(-60.0, -25.0, 120.0, 50.0);
+        painter->setBrush(QColor(255, 250, 205));
+        painter->drawRect(noteRect);
+        textRect = noteRect.adjusted(5.0, 0.0, -5.0, 0.0);
     }
 
     painter->setPen(QColor(25, 30, 35));
     const QString label = painter->fontMetrics().elidedText(m_name, Qt::ElideRight, static_cast<int>(textRect.width()));
     painter->drawText(textRect, Qt::AlignCenter, label);
+}
+
+qds::core::EntityId VariableItem::id() const
+{
+    return m_id;
 }
 
 QString VariableItem::name() const
@@ -70,24 +98,71 @@ qds::core::VariableType VariableItem::variableType() const
     return m_variableType;
 }
 
-void VariableItem::setName(const QString &name)
+QPointF VariableItem::boundaryPointToward(const QPointF &target) const
 {
-    m_name = name;
+    const QPointF delta = target - pos();
+    if (delta.isNull())
+        return pos();
+
+    double halfWidth = 60.0;
+    double halfHeight = 25.0;
+    if (m_variableType == qds::core::VariableType::Auxiliary || m_variableType == qds::core::VariableType::Cloud)
+        halfWidth = 45.0;
+    else if (m_variableType == qds::core::VariableType::Constant)
+        halfWidth = 50.0;
+
+    double scale = 0.0;
+    if (m_variableType == qds::core::VariableType::Auxiliary || m_variableType == qds::core::VariableType::Cloud) {
+        scale = 1.0 / std::sqrt(
+            delta.x() * delta.x() / (halfWidth * halfWidth)
+            + delta.y() * delta.y() / (halfHeight * halfHeight));
+    } else if (m_variableType == qds::core::VariableType::Constant) {
+        scale = 1.0 / (std::abs(delta.x()) / halfWidth + std::abs(delta.y()) / halfHeight);
+    } else {
+        const double xScale = std::abs(delta.x()) > 1e-12 ? halfWidth / std::abs(delta.x()) : 1e12;
+        const double yScale = std::abs(delta.y()) > 1e-12 ? halfHeight / std::abs(delta.y()) : 1e12;
+        scale = std::min(xScale, yScale);
+    }
+    return pos() + delta * scale;
+}
+
+void VariableItem::refresh(const qds::core::Variable &variable, const QPointF &position)
+{
+    m_name = QString::fromStdString(variable.name);
+    m_variableType = variable.type;
+    if (pos() != position)
+        setPos(position);
     update();
 }
 
 QVariant VariableItem::itemChange(GraphicsItemChange change, const QVariant &value)
 {
     if (change == ItemPositionHasChanged && scene())
-        emit positionChanged(m_name, value.toPointF());
+        emit positionChanged(m_id, value.toPointF());
     return QGraphicsObject::itemChange(change, value);
 }
 
-ConnectionItem::ConnectionItem(VariableItem *from, VariableItem *to, QGraphicsItem *parent)
+void VariableItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
+{
+    QGraphicsObject::mouseReleaseEvent(event);
+    emit moveFinished(m_id, pos());
+}
+
+ConnectionItem::ConnectionItem(
+    qds::core::ConnectionId id,
+    qds::core::ConnectionType connectionType,
+    VariableItem *from,
+    VariableItem *to,
+    const qds::core::Route &route,
+    QGraphicsItem *parent)
     : QGraphicsItem(parent)
+    , m_id(id)
+    , m_connectionType(connectionType)
     , m_from(from)
     , m_to(to)
+    , m_route(route)
 {
+    setFlag(ItemIsSelectable);
     setZValue(-1.0);
 }
 
@@ -98,43 +173,67 @@ int ConnectionItem::type() const
 
 QRectF ConnectionItem::boundingRect() const
 {
-    return QRectF(line().p1(), line().p2()).normalized().adjusted(-12.0, -12.0, 12.0, 12.0);
+    return geometryPath().boundingRect().adjusted(-12.0, -12.0, 12.0, 12.0);
 }
 
 QPainterPath ConnectionItem::shape() const
 {
-    QPainterPath path(line().p1());
-    path.lineTo(line().p2());
     QPainterPathStroker stroker;
     stroker.setWidth(12.0);
-    return stroker.createStroke(path);
+    return stroker.createStroke(geometryPath());
 }
 
 void ConnectionItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
 {
     painter->setRenderHint(QPainter::Antialiasing);
-    painter->setPen(QPen(QColor(75, 85, 95), 1.4));
-    const QLineF connection = line();
-    if (connection.length() < 1.0)
-        return;
+    QColor color(75, 85, 95);
+    qreal width = 1.4;
+    Qt::PenStyle style = Qt::DashLine;
+    if (m_connectionType == qds::core::ConnectionType::MaterialFlow) {
+        color = QColor(45, 100, 160);
+        width = 2.4;
+        style = Qt::SolidLine;
+    } else if (m_connectionType == qds::core::ConnectionType::Annotation) {
+        color = QColor(150, 120, 40);
+        style = Qt::DotLine;
+    }
+    if (isSelected()) {
+        color = QColor(35, 120, 210);
+        width += 1.0;
+        style = Qt::SolidLine;
+    }
+    painter->setPen(QPen(color, width, style));
+    const QPainterPath path = geometryPath();
+    painter->drawPath(path);
 
-    painter->drawLine(connection);
-    const qreal angle = std::atan2(-connection.dy(), connection.dx());
+    const QVector<QPointF> pathPoints = points();
+    if (pathPoints.size() < 2)
+        return;
+    const QPointF end = pathPoints.back();
+    const int tangentIndex = m_route.mode == qds::core::RouteMode::Bezier && pathPoints.size() >= 4
+        ? pathPoints.size() - 2
+        : pathPoints.size() - 2;
+    const QPointF before = pathPoints[tangentIndex];
+    const QLineF tangent(before, end);
+    if (tangent.length() < 1e-9)
+        return;
+    const qreal angle = std::atan2(-tangent.dy(), tangent.dx());
     const qreal arrowSize = 10.0;
     constexpr qreal pi = 3.14159265358979323846;
-    const QPointF arrow1 = connection.p2() - QPointF(
-        std::cos(angle + pi / 6.0) * arrowSize,
-        -std::sin(angle + pi / 6.0) * arrowSize);
-    const QPointF arrow2 = connection.p2() - QPointF(
-        std::cos(angle - pi / 6.0) * arrowSize,
-        -std::sin(angle - pi / 6.0) * arrowSize);
-    painter->setBrush(QColor(75, 85, 95));
-    painter->drawPolygon(QPolygonF({connection.p2(), arrow1, arrow2}));
+    const QPointF arrow1 = end - QPointF(std::cos(angle + pi / 6.0) * arrowSize, -std::sin(angle + pi / 6.0) * arrowSize);
+    const QPointF arrow2 = end - QPointF(std::cos(angle - pi / 6.0) * arrowSize, -std::sin(angle - pi / 6.0) * arrowSize);
+    painter->setBrush(color);
+    painter->drawPolygon(QPolygonF({end, arrow1, arrow2}));
 }
 
-bool ConnectionItem::connects(const QString &name) const
+qds::core::ConnectionId ConnectionItem::id() const
 {
-    return m_from->name() == name || m_to->name() == name;
+    return m_id;
+}
+
+bool ConnectionItem::connects(qds::core::EntityId id) const
+{
+    return m_from->id() == id || m_to->id() == id;
 }
 
 VariableItem *ConnectionItem::from() const
@@ -147,20 +246,141 @@ VariableItem *ConnectionItem::to() const
     return m_to;
 }
 
+QPainterPath ConnectionItem::geometryPath() const
+{
+    const QVector<QPointF> pathPoints = points();
+    QPainterPath path;
+    if (pathPoints.size() < 2)
+        return path;
+    path.moveTo(pathPoints.front());
+    if (m_route.mode == qds::core::RouteMode::Bezier && pathPoints.size() >= 4)
+        path.cubicTo(pathPoints[1], pathPoints[2], pathPoints.back());
+    else if (m_route.mode == qds::core::RouteMode::Bezier && pathPoints.size() == 3)
+        path.quadTo(pathPoints[1], pathPoints.back());
+    else {
+        for (int index = 1; index < pathPoints.size(); ++index)
+            path.lineTo(pathPoints[index]);
+    }
+    return path;
+}
+
+void ConnectionItem::setRoute(const qds::core::Route &route)
+{
+    m_route = route;
+    updatePosition();
+}
+
+void ConnectionItem::rebind(VariableItem *from, VariableItem *to)
+{
+    m_from = from;
+    m_to = to;
+    updatePosition();
+}
+
 void ConnectionItem::updatePosition()
 {
     prepareGeometryChange();
     update();
 }
 
-QLineF ConnectionItem::line() const
+QVector<QPointF> ConnectionItem::points() const
 {
-    const QPointF start = m_from->pos();
-    const QPointF end = m_to->pos();
-    const QLineF centerLine(start, end);
-    if (centerLine.length() <= 120.0)
-        return centerLine;
+    QVector<QPointF> controls;
+    for (const qds::core::Vec2 &point : m_route.controlPoints)
+        controls.append(QPointF(point.x, point.y));
 
-    const QPointF direction = (end - start) / centerLine.length();
-    return QLineF(start + direction * 55.0, end - direction * 55.0);
+    const QPointF fromTarget = controls.isEmpty() ? m_to->pos() : controls.front();
+    const QPointF toTarget = controls.isEmpty() ? m_from->pos() : controls.back();
+    const QPointF start = m_from->boundaryPointToward(fromTarget);
+    const QPointF end = m_to->boundaryPointToward(toTarget);
+    if (m_route.mode == qds::core::RouteMode::Straight || m_route.mode == qds::core::RouteMode::Bezier
+        || !controls.isEmpty()) {
+        QVector<QPointF> result {start};
+        result += controls;
+        result.append(end);
+        return result;
+    }
+
+    const double middleX = (start.x() + end.x()) / 2.0;
+    return {start, QPointF(middleX, start.y()), QPointF(middleX, end.y()), end};
+}
+
+ControlPointHandle::ControlPointHandle(qds::core::ConnectionId id, int index, Role role, const QPointF &position)
+    : m_connectionId(id)
+    , m_index(index)
+    , m_role(role)
+{
+    setFlags(ItemIsMovable | ItemSendsGeometryChanges);
+    setFlag(ItemIgnoresTransformations);
+    setZValue(10.0);
+    setPos(position);
+}
+
+int ControlPointHandle::type() const
+{
+    return Type;
+}
+
+QRectF ControlPointHandle::boundingRect() const
+{
+    return QRectF(-7.0, -7.0, 14.0, 14.0);
+}
+
+void ControlPointHandle::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
+{
+    painter->setRenderHint(QPainter::Antialiasing);
+    QColor color = m_role == Role::ControlPoint ? QColor(35, 120, 210)
+        : m_role == Role::Source ? QColor(50, 160, 90) : QColor(210, 100, 45);
+    painter->setPen(QPen(Qt::white, 1.5));
+    painter->setBrush(color);
+    painter->drawEllipse(QRectF(-5.0, -5.0, 10.0, 10.0));
+}
+
+qds::core::ConnectionId ControlPointHandle::connectionId() const
+{
+    return m_connectionId;
+}
+
+int ControlPointHandle::index() const
+{
+    return m_index;
+}
+
+ControlPointHandle::Role ControlPointHandle::role() const
+{
+    return m_role;
+}
+
+void ControlPointHandle::assign(qds::core::ConnectionId id, int index, Role role, const QPointF &position)
+{
+    const QSignalBlocker blocker(this);
+    m_connectionId = id;
+    m_index = index;
+    m_role = role;
+    setPos(position);
+    setEnabled(true);
+    show();
+}
+
+QVariant ControlPointHandle::itemChange(GraphicsItemChange change, const QVariant &value)
+{
+    if (change == ItemPositionHasChanged && scene())
+        emit moved(m_connectionId, m_index, value.toPointF());
+    return QGraphicsObject::itemChange(change, value);
+}
+
+void ControlPointHandle::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
+{
+    QGraphicsObject::mouseReleaseEvent(event);
+    emit finished(m_connectionId, m_index, pos());
+}
+
+void ControlPointHandle::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
+{
+    if (m_index >= 0) {
+        emit removeRequested(m_connectionId, m_index);
+        event->accept();
+        return;
+    }
+    QGraphicsObject::mouseDoubleClickEvent(event);
 }

@@ -1,6 +1,11 @@
 add_library(qds-core STATIC
+    include/qds/core/ChangeSet.h
+    include/qds/core/Document.h
     include/qds/core/Model.h
+    include/qds/core/Validation.h
+    src/Document.cpp
     src/Model.cpp
+    src/Validation.cpp
 )
 add_library(QDS::Core ALIAS qds-core)
 
