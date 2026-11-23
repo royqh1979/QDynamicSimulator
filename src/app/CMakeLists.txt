@@ -7,6 +7,8 @@ add_library(qds-editor STATIC
     DiagramView.h
     DocumentController.cpp
     DocumentController.h
+    EntityPalette.cpp
+    EntityPalette.h
     EquationEditor.cpp
     EquationEditor.h
     MainWindow.cpp

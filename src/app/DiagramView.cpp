@@ -1,6 +1,11 @@
 #include "DiagramView.h"
 
+#include "DiagramScene.h"
+#include "EntityPalette.h"
+
+#include <QDragEnterEvent>
 #include <QGraphicsItem>
+#include <QMimeData>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QScrollBar>
@@ -11,6 +16,8 @@ DiagramView::DiagramView(QGraphicsScene *scene, QWidget *parent)
     : QGraphicsView(scene, parent)
 {
     setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
+    setAcceptDrops(true);
+    viewport()->setAcceptDrops(true);
     setDragMode(RubberBandDrag);
     setTransformationAnchor(AnchorUnderMouse);
     setResizeAnchor(AnchorViewCenter);
@@ -110,6 +117,33 @@ void DiagramView::keyReleaseEvent(QKeyEvent *event)
         return;
     }
     QGraphicsView::keyReleaseEvent(event);
+}
+
+void DiagramView::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (event->mimeData()->hasFormat(EntityPalette::mimeType()))
+        event->acceptProposedAction();
+}
+
+void DiagramView::dragMoveEvent(QDragMoveEvent *event)
+{
+    if (event->mimeData()->hasFormat(EntityPalette::mimeType()))
+        event->acceptProposedAction();
+}
+
+void DiagramView::dropEvent(QDropEvent *event)
+{
+    if (!event->mimeData()->hasFormat(EntityPalette::mimeType()))
+        return;
+    bool ok = false;
+    const int value = event->mimeData()->data(EntityPalette::mimeType()).toInt(&ok);
+    if (!ok || value < static_cast<int>(qds::core::VariableType::Stock)
+        || value > static_cast<int>(qds::core::VariableType::Annotation))
+        return;
+    DiagramScene *diagram = qobject_cast<DiagramScene *>(scene());
+    if (diagram)
+        diagram->createVariableAt(static_cast<qds::core::VariableType>(value), mapToScene(event->pos()));
+    event->acceptProposedAction();
 }
 
 void DiagramView::zoomBy(double factor)

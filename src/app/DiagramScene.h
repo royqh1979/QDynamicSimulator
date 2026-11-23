@@ -9,6 +9,7 @@
 #include <QHash>
 
 class DocumentController;
+class QGraphicsLineItem;
 class VariableItem;
 class ConnectionItem;
 class ControlPointHandle;
@@ -37,7 +38,12 @@ public:
 
     void setTool(Tool tool);
     Tool tool() const;
+    qds::core::EntityId createVariableAt(qds::core::VariableType type, const QPointF &position);
 
+signals:
+    void editingFinished();
+
+public:
     void removeSelected();
     bool renameSelected(const QString &newName);
     bool setSelectedEquation(const QString &equation);
@@ -59,6 +65,8 @@ public:
 
 protected:
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
+    void mouseMoveEvent(QGraphicsSceneMouseEvent *event) override;
+    void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
     void mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event) override;
     void drawBackground(QPainter *painter, const QRectF &rect) override;
 
@@ -74,12 +82,14 @@ private:
     void finishControlPoint(qds::core::ConnectionId id, int index, const QPointF &position);
     void removeControlPoint(qds::core::ConnectionId id, int index);
     void updateAutomaticRoute(ConnectionItem *item);
+    void cancelRubberLine();
 
     DocumentController *m_controller;
     QHash<qds::core::EntityId, VariableItem *> m_entityItems;
     QHash<qds::core::ConnectionId, ConnectionItem *> m_connectionItems;
     Tool m_tool = Tool::Select;
     qds::core::EntityId m_connectionSource = 0;
+    QGraphicsLineItem *m_rubberLine = nullptr;
     QList<ControlPointHandle *> m_controlHandles;
     ObstacleIndex m_obstacles;
     OrthogonalRouter m_router;

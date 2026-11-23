@@ -5,6 +5,7 @@
 
 #include <QMainWindow>
 
+class QAction;
 class QCloseEvent;
 class QLineEdit;
 class QListWidget;
@@ -53,6 +54,7 @@ private:
     QLineEdit *m_commentEdit = nullptr;
     QListWidget *m_issueList = nullptr;
     QMenu *m_recentMenu = nullptr;
+    QAction *m_selectAction = nullptr;
     QTimer *m_autoSaveTimer = nullptr;
     RecentFiles m_recentFiles;
     QString m_fileName;

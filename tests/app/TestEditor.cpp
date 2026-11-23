@@ -2,15 +2,24 @@
 #include "DiagramScene.h"
 #include "DiagramView.h"
 #include "DocumentController.h"
+#include "EntityPalette.h"
 #include "EquationEditor.h"
 #include "MiniMapView.h"
 #include "RecentFiles.h"
 #include "Routing.h"
 
+#include <QDropEvent>
 #include <QGraphicsSceneMouseEvent>
+#include <QMimeData>
 #include <QtTest>
 
 using namespace qds::core;
+
+class TestEntityPalette : public EntityPalette
+{
+public:
+    using EntityPalette::mimeData;
+};
 
 class TestEditor : public QObject
 {
@@ -36,6 +45,8 @@ private slots:
     void equationEditor();
     void clipboardOperations();
     void recentSearchAndMiniMap();
+    void paletteDrop();
+    void rubberConnectionAndSelection();
 };
 
 void TestEditor::createUndoRedo()
@@ -401,6 +412,67 @@ void TestEditor::recentSearchAndMiniMap()
     QCOMPARE(scene.findVariables(QStringLiteral("pop")).front(), population);
     MiniMapView miniMap(&scene);
     QCOMPARE(miniMap.scene(), &scene);
+}
+
+void TestEditor::paletteDrop()
+{
+    TestEntityPalette palette;
+    QMimeData *mime = palette.mimeData({palette.item(1)});
+    QVERIFY(mime->hasFormat(EntityPalette::mimeType()));
+
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    DiagramView view(&scene);
+    QDragEnterEvent enter(QPoint(10, 10), Qt::CopyAction, mime, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &enter);
+    QVERIFY(enter.isAccepted());
+    QDropEvent event(QPoint(10, 10), Qt::CopyAction, mime, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &event);
+    QCOMPARE(controller.document().model().variables().size(), std::size_t(1));
+    QCOMPARE(controller.document().model().variables().front().type, VariableType::Flow);
+    delete mime;
+}
+
+void TestEditor::rubberConnectionAndSelection()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId source = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
+    const EntityId target = controller.createVariable(VariableType::Auxiliary, QPointF(240.0, 0.0));
+
+    QGraphicsSceneMouseEvent press(QEvent::GraphicsSceneMousePress);
+    press.setButton(Qt::LeftButton);
+    press.setButtons(Qt::LeftButton);
+    press.setScenePos(QPointF(0.0, 0.0));
+    QApplication::sendEvent(&scene, &press);
+    QGraphicsSceneMouseEvent release(QEvent::GraphicsSceneMouseRelease);
+    release.setButton(Qt::LeftButton);
+    release.setButtons(Qt::NoButton);
+    release.setScenePos(QPointF(0.0, 0.0));
+    QApplication::sendEvent(&scene, &release);
+    QVERIFY(scene.variableItem(source)->isSelected());
+    QCOMPARE(controller.document().model().variables().size(), std::size_t(2));
+
+    scene.setTool(DiagramScene::Tool::Connect);
+    connect(&scene, &DiagramScene::editingFinished, &scene, [&scene]() {
+        scene.setTool(DiagramScene::Tool::Select);
+    });
+    QApplication::sendEvent(&scene, &press);
+    QGraphicsSceneMouseEvent move(QEvent::GraphicsSceneMouseMove);
+    move.setButtons(Qt::LeftButton);
+    move.setScenePos(QPointF(120.0, 0.0));
+    QApplication::sendEvent(&scene, &move);
+    release.setScenePos(QPointF(240.0, 0.0));
+    QApplication::sendEvent(&scene, &release);
+    QCOMPARE(controller.document().model().connections().size(), std::size_t(1));
+    QCOMPARE(controller.document().model().connections().front().type, ConnectionType::Information);
+    QCOMPARE(scene.tool(), DiagramScene::Tool::Select);
+
+    scene.setTool(DiagramScene::Tool::ConnectMaterial);
+    QApplication::sendEvent(&scene, &press);
+    release.setScenePos(QPointF(500.0, 500.0));
+    QApplication::sendEvent(&scene, &release);
+    QCOMPARE(controller.document().model().connections().size(), std::size_t(1));
 }
 
 QTEST_MAIN(TestEditor)

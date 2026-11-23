@@ -3,6 +3,7 @@
 #include "DiagramItems.h"
 #include "DiagramView.h"
 #include "DocumentController.h"
+#include "EntityPalette.h"
 #include "EquationEditor.h"
 #include "MiniMapView.h"
 #include <qds/io/XmileFile.h>
@@ -50,6 +51,10 @@ MainWindow::MainWindow(QWidget *parent)
     });
     connect(m_scene, &QGraphicsScene::selectionChanged, this, &MainWindow::updatePropertyEditor);
     connect(m_controller, &DocumentController::documentChanged, this, &MainWindow::refreshValidation);
+    connect(m_scene, &DiagramScene::editingFinished, this, [this]() {
+        setTool(DiagramScene::Tool::Select);
+        m_selectAction->setChecked(true);
+    });
 
     QSettings settings;
     const QStringList recent = settings.value(QStringLiteral("recentFiles")).toStringList();
@@ -162,9 +167,9 @@ void MainWindow::createActions()
         return action;
     };
 
-    QAction *selectAction = addToolAction(tr("选择"), DiagramScene::Tool::Select);
-    selectAction->setChecked(true);
-    selectAction->setShortcut(QKeySequence(Qt::Key_Escape));
+    m_selectAction = addToolAction(tr("选择"), DiagramScene::Tool::Select);
+    m_selectAction->setChecked(true);
+    m_selectAction->setShortcut(QKeySequence(Qt::Key_Escape));
     QAction *stockAction = addToolAction(tr("存量"), DiagramScene::Tool::AddStock);
     stockAction->setShortcut(QKeySequence(Qt::Key_1));
     QAction *flowAction = addToolAction(tr("流量"), DiagramScene::Tool::AddFlow);
@@ -305,6 +310,11 @@ void MainWindow::createActions()
 
 void MainWindow::createPropertyPanel()
 {
+    QDockWidget *paletteDock = new QDockWidget(tr("绘图元素"), this);
+    EntityPalette *palette = new EntityPalette(paletteDock);
+    paletteDock->setWidget(palette);
+    addDockWidget(Qt::LeftDockWidgetArea, paletteDock);
+
     QDockWidget *dock = new QDockWidget(tr("属性"), this);
     dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     QWidget *panel = new QWidget(dock);

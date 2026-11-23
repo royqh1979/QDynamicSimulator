@@ -3,6 +3,7 @@
 #include "DiagramItems.h"
 #include "DocumentController.h"
 
+#include <QGraphicsLineItem>
 #include <QGraphicsSceneMouseEvent>
 #include <QPainter>
 #include <QtMath>
@@ -46,6 +47,17 @@ void DiagramScene::setTool(Tool tool)
 {
     m_tool = tool;
     m_connectionSource = 0;
+    cancelRubberLine();
+}
+
+qds::core::EntityId DiagramScene::createVariableAt(qds::core::VariableType type, const QPointF &position)
+{
+    const EntityId id = m_controller->createVariable(type, snapPoint(position));
+    clearSelection();
+    if (VariableItem *item = m_entityItems.value(id))
+        item->setSelected(true);
+    emit editingFinished();
+    return id;
 }
 
 DiagramScene::Tool DiagramScene::tool() const
@@ -248,6 +260,7 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
 {
     if (event->button() == Qt::RightButton && isConnectionTool(m_tool)) {
         m_connectionSource = 0;
+        cancelRubberLine();
         clearSelection();
         event->accept();
         return;
@@ -268,10 +281,7 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
         else if (m_tool == Tool::AddAnnotation)
             type = qds::core::VariableType::Annotation;
 
-        const EntityId id = m_controller->createVariable(type, snapPoint(event->scenePos()));
-        clearSelection();
-        if (VariableItem *item = m_entityItems.value(id))
-            item->setSelected(true);
+        createVariableAt(type, event->scenePos());
         event->accept();
         return;
     }
@@ -279,31 +289,61 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
     if (event->button() == Qt::LeftButton && isConnectionTool(m_tool)) {
         VariableItem *item = qgraphicsitem_cast<VariableItem *>(itemAt(event->scenePos(), QTransform()));
         if (!item) {
-            m_connectionSource = 0;
-            clearSelection();
             event->accept();
             return;
         }
-        if (m_connectionSource == 0) {
-            m_connectionSource = item->id();
-            clearSelection();
-            item->setSelected(true);
-        } else if (m_connectionSource != item->id()) {
-            qds::core::ConnectionType type = qds::core::ConnectionType::Information;
-            if (m_tool == Tool::ConnectMaterial)
-                type = qds::core::ConnectionType::MaterialFlow;
-            else if (m_tool == Tool::ConnectAnnotation)
-                type = qds::core::ConnectionType::Annotation;
-            m_controller->createConnection(m_connectionSource, item->id(), type);
-            m_connectionSource = 0;
-            clearSelection();
-            item->setSelected(true);
-        }
+        m_connectionSource = item->id();
+        clearSelection();
+        item->setSelected(true);
+        m_rubberLine = new QGraphicsLineItem(QLineF(item->pos(), event->scenePos()));
+        m_rubberLine->setPen(QPen(QColor(35, 120, 210), 2.0, Qt::DashLine));
+        m_rubberLine->setZValue(20.0);
+        addItem(m_rubberLine);
         event->accept();
         return;
     }
 
     QGraphicsScene::mousePressEvent(event);
+}
+
+void DiagramScene::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
+{
+    if (m_rubberLine) {
+        const QPointF source = m_entityItems.value(m_connectionSource)->pos();
+        m_rubberLine->setLine(QLineF(source, event->scenePos()));
+        event->accept();
+        return;
+    }
+    QGraphicsScene::mouseMoveEvent(event);
+}
+
+void DiagramScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
+{
+    if (m_rubberLine && event->button() == Qt::LeftButton) {
+        VariableItem *target = nullptr;
+        const QList<QGraphicsItem *> candidates = items(event->scenePos());
+        for (QGraphicsItem *candidate : candidates) {
+            target = qgraphicsitem_cast<VariableItem *>(candidate);
+            if (target)
+                break;
+        }
+        if (target && target->id() != m_connectionSource) {
+            qds::core::ConnectionType type = qds::core::ConnectionType::Information;
+            if (m_tool == Tool::ConnectMaterial)
+                type = qds::core::ConnectionType::MaterialFlow;
+            else if (m_tool == Tool::ConnectAnnotation)
+                type = qds::core::ConnectionType::Annotation;
+            m_controller->createConnection(m_connectionSource, target->id(), type);
+            clearSelection();
+            target->setSelected(true);
+        }
+        cancelRubberLine();
+        m_connectionSource = 0;
+        emit editingFinished();
+        event->accept();
+        return;
+    }
+    QGraphicsScene::mouseReleaseEvent(event);
 }
 
 void DiagramScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
@@ -326,6 +366,7 @@ void DiagramScene::applyChangeSet(const ChangeSet &changeSet)
     if (changeSet.documentReset) {
         m_controlHandles.clear();
         m_obstacles.clear();
+        m_rubberLine = nullptr;
         clear();
         m_entityItems.clear();
         m_connectionItems.clear();
@@ -531,6 +572,15 @@ void DiagramScene::removeControlPoint(ConnectionId id, int index)
     route.controlPoints.erase(route.controlPoints.begin() + index);
     route.manual = true;
     m_controller->setRoute(id, route);
+}
+
+void DiagramScene::cancelRubberLine()
+{
+    if (!m_rubberLine)
+        return;
+    removeItem(m_rubberLine);
+    delete m_rubberLine;
+    m_rubberLine = nullptr;
 }
 
 void DiagramScene::updateAutomaticRoute(ConnectionItem *item)

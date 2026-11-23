@@ -5,6 +5,7 @@
 
 #include <QApplication>
 #include <QElapsedTimer>
+#include <QGraphicsLineItem>
 #include <QTemporaryDir>
 #include <QTextStream>
 
@@ -88,6 +89,16 @@ int main(int argc, char **argv)
         matches += scene.findVariables(QStringLiteral("Stock")).size();
     const qint64 searchNs = timer.nsecsElapsed();
 
+    timer.restart();
+    for (int index = 0; index < 1000; ++index) {
+        QGraphicsLineItem *preview = new QGraphicsLineItem(QLineF(0.0, 0.0, 10.0, 10.0));
+        scene.addItem(preview);
+        preview->setLine(QLineF(0.0, 0.0, index * 1.0, index * 0.5));
+        scene.removeItem(preview);
+        delete preview;
+    }
+    const qint64 previewNs = timer.nsecsElapsed();
+
     QTemporaryDir directory;
     if (!directory.isValid())
         return 3;
@@ -115,6 +126,7 @@ int main(int argc, char **argv)
                         << "editor_align," << count << "," << alignNs / 1e6 << "," << alignNs / 1000.0 / count << "\n"
                         << "editor_paste," << pasted.size() << "," << pasteNs / 1e6 << "," << pasteNs / 1000.0 / count << "\n"
                         << "editor_search_100," << count * 100 << "," << searchNs / 1e6 << "," << searchNs / 1000.0 / (count * 100) << "\n"
+                        << "rubber_preview,1000," << previewNs / 1e6 << "," << previewNs / 1000.0 / 1000 << "\n"
                         << "xmile_save," << count << "," << saveNs / 1e6 << "," << saveNs / 1000.0 / count << "\n"
                         << "xmile_load," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && matches > 0
