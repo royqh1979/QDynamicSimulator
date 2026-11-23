@@ -51,10 +51,28 @@ void VariableItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *opti
         painter->drawPolygon(leftValve);
         painter->drawPolygon(rightValve);
         textRect = QRectF(-60.0, 12.0, 120.0, 24.0);
-    } else {
+    } else if (m_variableType == qds::core::VariableType::Auxiliary) {
         const QRectF auxiliaryRect(-45.0, -25.0, 90.0, 50.0);
         painter->drawEllipse(auxiliaryRect);
         textRect = auxiliaryRect.adjusted(5.0, 0.0, -5.0, 0.0);
+    } else if (m_variableType == qds::core::VariableType::Constant) {
+        const QPolygonF diamond({QPointF(0.0, -28.0), QPointF(50.0, 0.0), QPointF(0.0, 28.0), QPointF(-50.0, 0.0)});
+        painter->drawPolygon(diamond);
+        textRect = QRectF(-40.0, -15.0, 80.0, 30.0);
+    } else if (m_variableType == qds::core::VariableType::Exogenous) {
+        const QRectF rect(-50.0, -25.0, 100.0, 50.0);
+        painter->drawRoundedRect(rect, 8.0, 8.0);
+        textRect = rect.adjusted(5.0, 0.0, -5.0, 0.0);
+    } else if (m_variableType == qds::core::VariableType::Cloud) {
+        const QRectF cloudRect(-45.0, -25.0, 90.0, 50.0);
+        painter->setPen(QPen(pen.color(), pen.width(), Qt::DashLine));
+        painter->drawEllipse(cloudRect);
+        textRect = QRectF(-60.0, 28.0, 120.0, 24.0);
+    } else {
+        const QRectF noteRect(-60.0, -25.0, 120.0, 50.0);
+        painter->setBrush(QColor(255, 250, 205));
+        painter->drawRect(noteRect);
+        textRect = noteRect.adjusted(5.0, 0.0, -5.0, 0.0);
     }
 
     painter->setPen(QColor(25, 30, 35));
@@ -99,9 +117,15 @@ void VariableItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
     emit moveFinished(m_id, pos());
 }
 
-ConnectionItem::ConnectionItem(qds::core::ConnectionId id, VariableItem *from, VariableItem *to, QGraphicsItem *parent)
+ConnectionItem::ConnectionItem(
+    qds::core::ConnectionId id,
+    qds::core::ConnectionType connectionType,
+    VariableItem *from,
+    VariableItem *to,
+    QGraphicsItem *parent)
     : QGraphicsItem(parent)
     , m_id(id)
+    , m_connectionType(connectionType)
     , m_from(from)
     , m_to(to)
 {
@@ -130,7 +154,18 @@ QPainterPath ConnectionItem::shape() const
 void ConnectionItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
 {
     painter->setRenderHint(QPainter::Antialiasing);
-    painter->setPen(QPen(QColor(75, 85, 95), 1.4));
+    QColor color(75, 85, 95);
+    qreal width = 1.4;
+    Qt::PenStyle style = Qt::DashLine;
+    if (m_connectionType == qds::core::ConnectionType::MaterialFlow) {
+        color = QColor(45, 100, 160);
+        width = 2.4;
+        style = Qt::SolidLine;
+    } else if (m_connectionType == qds::core::ConnectionType::Annotation) {
+        color = QColor(150, 120, 40);
+        style = Qt::DotLine;
+    }
+    painter->setPen(QPen(color, width, style));
     const QLineF connection = line();
     if (connection.length() < 1.0)
         return;
@@ -145,7 +180,7 @@ void ConnectionItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, 
     const QPointF arrow2 = connection.p2() - QPointF(
         std::cos(angle - pi / 6.0) * arrowSize,
         -std::sin(angle - pi / 6.0) * arrowSize);
-    painter->setBrush(QColor(75, 85, 95));
+    painter->setBrush(color);
     painter->drawPolygon(QPolygonF({connection.p2(), arrow1, arrow2}));
 }
 

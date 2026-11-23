@@ -24,8 +24,33 @@ std::string defaultName(VariableType type)
         return "Flow";
     case VariableType::Auxiliary:
         return "Auxiliary";
+    case VariableType::Constant:
+        return "Constant";
+    case VariableType::Exogenous:
+        return "Exogenous";
+    case VariableType::Cloud:
+        return "Cloud";
+    case VariableType::Annotation:
+        return "Note";
     }
     return "Variable";
+}
+
+bool validConnection(const Variable &from, const Variable &to, ConnectionType type)
+{
+    if (type == ConnectionType::Annotation)
+        return from.type == VariableType::Annotation || to.type == VariableType::Annotation;
+    if (from.type == VariableType::Annotation || to.type == VariableType::Annotation)
+        return false;
+    if (type == ConnectionType::Information)
+        return from.type != VariableType::Cloud && to.type != VariableType::Cloud;
+
+    const Variable *other = nullptr;
+    if (from.type == VariableType::Flow && to.type != VariableType::Flow)
+        other = &to;
+    else if (to.type == VariableType::Flow && from.type != VariableType::Flow)
+        other = &from;
+    return other && (other->type == VariableType::Stock || other->type == VariableType::Cloud);
 }
 
 } // namespace
@@ -107,14 +132,8 @@ bool Model::setEquation(EntityId id, const std::string &equation)
 
 ConnectionId Model::addConnection(Connection connection)
 {
-    if (connection.from == connection.to || !contains(connection.from) || !contains(connection.to)
-        || (connection.id != 0 && this->connection(connection.id)))
-        return 0;
-
-    const auto duplicate = std::find_if(m_connections.begin(), m_connections.end(), [&connection](const Connection &existing) {
-        return existing.from == connection.from && existing.to == connection.to;
-    });
-    if (duplicate != m_connections.end())
+    if ((connection.id != 0 && this->connection(connection.id))
+        || !canConnect(connection.from, connection.to, connection.type))
         return 0;
 
     if (connection.id == 0)
@@ -125,9 +144,19 @@ ConnectionId Model::addConnection(Connection connection)
     return connection.id;
 }
 
-ConnectionId Model::createConnection(EntityId from, EntityId to)
+bool Model::canConnect(EntityId from, EntityId to, ConnectionType type) const
 {
-    return addConnection({0, from, to});
+    if (from == to || !contains(from) || !contains(to)
+        || !validConnection(*variable(from), *variable(to), type))
+        return false;
+    return std::none_of(m_connections.begin(), m_connections.end(), [from, to, type](const Connection &connection) {
+        return connection.from == from && connection.to == to && connection.type == type;
+    });
+}
+
+ConnectionId Model::createConnection(EntityId from, EntityId to, ConnectionType type)
+{
+    return addConnection({0, from, to, type});
 }
 
 bool Model::removeConnection(ConnectionId id)

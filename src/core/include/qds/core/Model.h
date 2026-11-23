@@ -13,7 +13,17 @@ using ConnectionId = std::uint64_t;
 enum class VariableType {
     Stock,
     Flow,
-    Auxiliary
+    Auxiliary,
+    Constant,
+    Exogenous,
+    Cloud,
+    Annotation
+};
+
+enum class ConnectionType {
+    MaterialFlow,
+    Information,
+    Annotation
 };
 
 struct Variable {
@@ -21,12 +31,15 @@ struct Variable {
     std::string name;
     VariableType type = VariableType::Stock;
     std::string equation;
+    std::string unit;
+    std::string comment;
 };
 
 struct Connection {
     ConnectionId id = 0;
     EntityId from = 0;
     EntityId to = 0;
+    ConnectionType type = ConnectionType::Information;
 };
 
 class Model
@@ -39,7 +52,8 @@ public:
     bool setEquation(EntityId id, const std::string &equation);
 
     ConnectionId addConnection(Connection connection);
-    ConnectionId createConnection(EntityId from, EntityId to);
+    bool canConnect(EntityId from, EntityId to, ConnectionType type) const;
+    ConnectionId createConnection(EntityId from, EntityId to, ConnectionType type = ConnectionType::Information);
     bool removeConnection(ConnectionId id);
 
     const Variable *variable(EntityId id) const;

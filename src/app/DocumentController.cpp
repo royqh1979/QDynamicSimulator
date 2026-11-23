@@ -237,14 +237,10 @@ void DocumentController::moveVariables(const std::vector<std::pair<EntityId, QPo
     m_undoStack.endMacro();
 }
 
-ConnectionId DocumentController::createConnection(EntityId from, EntityId to)
+ConnectionId DocumentController::createConnection(EntityId from, EntityId to, qds::core::ConnectionType type)
 {
-    if (from == to || !m_document.variable(from) || !m_document.variable(to))
+    if (!m_document.model().canConnect(from, to, type))
         return 0;
-    for (const Connection &connection : m_document.model().connections()) {
-        if (connection.from == from && connection.to == to)
-            return 0;
-    }
 
     struct State {
         Connection connection;
@@ -252,6 +248,7 @@ ConnectionId DocumentController::createConnection(EntityId from, EntityId to)
     auto state = std::make_shared<State>();
     state->connection.from = from;
     state->connection.to = to;
+    state->connection.type = type;
     pushCommand(
         tr("Create connection"),
         [this, state]() {
@@ -260,7 +257,8 @@ ConnectionId DocumentController::createConnection(EntityId from, EntityId to)
         },
         [this, state]() {
             if (state->connection.id == 0)
-                state->connection.id = m_document.createConnection(state->connection.from, state->connection.to);
+                state->connection.id = m_document.createConnection(
+                    state->connection.from, state->connection.to, state->connection.type);
             else
                 m_document.addConnection(state->connection);
             notify(connectionChange(state->connection.id, true));

@@ -26,13 +26,17 @@ void TestXmileFile::zipRoundTrip()
     const EntityId stock = document.createVariable(VariableType::Stock, {120.5, 80.25});
     const EntityId flow = document.createVariable(VariableType::Flow, {300.0, 80.25});
     const EntityId auxiliary = document.createVariable(VariableType::Auxiliary, {300.0, 240.0});
+    const EntityId cloud = document.createVariable(VariableType::Cloud, {450.0, 80.25});
+    const EntityId note = document.createVariable(VariableType::Annotation, {100.0, 300.0});
     QVERIFY(document.renameVariable(stock, "库存 & Population"));
     document.setEquation(stock, "100");
     document.setEquation(flow, "辅助变量 * 0.5");
     QVERIFY(document.renameVariable(auxiliary, "辅助变量"));
-    const ConnectionId inflow = document.createConnection(flow, stock);
+    const ConnectionId inflow = document.createConnection(flow, stock, ConnectionType::MaterialFlow);
     document.createConnection(stock, auxiliary);
     document.createConnection(auxiliary, flow);
+    document.createConnection(flow, cloud, ConnectionType::MaterialFlow);
+    document.createConnection(note, stock, ConnectionType::Annotation);
     Route route;
     route.manual = true;
     route.controlPoints = {{200.0, 100.0}};
@@ -46,13 +50,16 @@ void TestXmileFile::zipRoundTrip()
 
     Document loaded;
     QVERIFY2(qds::io::loadXmile(path, loaded, &error), qPrintable(error));
-    QCOMPARE(loaded.model().variables().size(), std::size_t(3));
-    QCOMPARE(loaded.model().connections().size(), std::size_t(3));
+    QCOMPARE(loaded.model().variables().size(), std::size_t(5));
+    QCOMPARE(loaded.model().connections().size(), std::size_t(5));
     const Variable *loadedStock = loaded.model().variableByName("库存 & Population");
     QVERIFY(loadedStock);
     QCOMPARE(loadedStock->equation, std::string("100"));
     QCOMPARE(loaded.diagram().position(loadedStock->id), Vec2({120.5, 80.25}));
     QCOMPARE(loaded.model().variableByName("Flow")->equation, std::string("辅助变量 * 0.5"));
+    QVERIFY(loaded.model().variableByName("Cloud"));
+    QVERIFY(loaded.model().variableByName("Note"));
+    QCOMPARE(loaded.diagram().position(loaded.model().variableByName("Cloud")->id), Vec2({450.0, 80.25}));
 }
 
 void TestXmileFile::plainXmlOpen()

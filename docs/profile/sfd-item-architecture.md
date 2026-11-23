@@ -23,9 +23,9 @@
 
 | 操作 | 数量 | 总耗时 ms | 每操作 μs |
 | --- | ---: | ---: | ---: |
-| editor_create | 1000 | 11.0826 | 11.0826 |
-| editor_connect | 999 | 1.0095 | 1.0105 |
-| editor_move_two | 2 | 0.0336 | 16.8000 |
-| editor_undo_redo_macro | 2 | 0.0334 | 16.7000 |
-| xmile_save | 1000 | 10.4897 | 10.4897 |
-| xmile_load | 1000 | 15.2032 | 15.2032 |
+| editor_create | 1000（七类实体） | 6.1844 | 6.1844 |
+| editor_connect | 572（合法依赖） | 0.6083 | 1.0635 |
+| editor_move_two | 2 | 0.0501 | 25.0500 |
+| editor_undo_redo_macro | 2 | 0.0243 | 12.1500 |
+| xmile_save | 1000 | 7.8244 | 7.8244 |
+| xmile_load | 1000 | 17.6013 | 17.6013 |

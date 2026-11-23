@@ -20,7 +20,13 @@ public:
         AddStock,
         AddFlow,
         AddAuxiliary,
-        Connect
+        AddConstant,
+        AddExogenous,
+        AddCloud,
+        AddAnnotation,
+        Connect,
+        ConnectMaterial,
+        ConnectAnnotation
     };
 
     explicit DiagramScene(DocumentController *controller, QObject *parent = nullptr);

@@ -11,6 +11,16 @@ using qds::core::ChangeSet;
 using qds::core::ConnectionId;
 using qds::core::EntityId;
 
+namespace {
+
+bool isConnectionTool(DiagramScene::Tool tool)
+{
+    return tool == DiagramScene::Tool::Connect || tool == DiagramScene::Tool::ConnectMaterial
+        || tool == DiagramScene::Tool::ConnectAnnotation;
+}
+
+} // namespace
+
 DiagramScene::DiagramScene(DocumentController *controller, QObject *parent)
     : QGraphicsScene(parent)
     , m_controller(controller)
@@ -77,19 +87,27 @@ ConnectionItem *DiagramScene::connectionItem(ConnectionId id) const
 
 void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
 {
-    if (event->button() == Qt::RightButton && m_tool == Tool::Connect) {
+    if (event->button() == Qt::RightButton && isConnectionTool(m_tool)) {
         m_connectionSource = 0;
         clearSelection();
         event->accept();
         return;
     }
 
-    if (event->button() == Qt::LeftButton && m_tool != Tool::Select && m_tool != Tool::Connect) {
+    if (event->button() == Qt::LeftButton && m_tool != Tool::Select && !isConnectionTool(m_tool)) {
         qds::core::VariableType type = qds::core::VariableType::Stock;
         if (m_tool == Tool::AddFlow)
             type = qds::core::VariableType::Flow;
         else if (m_tool == Tool::AddAuxiliary)
             type = qds::core::VariableType::Auxiliary;
+        else if (m_tool == Tool::AddConstant)
+            type = qds::core::VariableType::Constant;
+        else if (m_tool == Tool::AddExogenous)
+            type = qds::core::VariableType::Exogenous;
+        else if (m_tool == Tool::AddCloud)
+            type = qds::core::VariableType::Cloud;
+        else if (m_tool == Tool::AddAnnotation)
+            type = qds::core::VariableType::Annotation;
 
         const EntityId id = m_controller->createVariable(type, event->scenePos());
         clearSelection();
@@ -99,7 +117,7 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
         return;
     }
 
-    if (event->button() == Qt::LeftButton && m_tool == Tool::Connect) {
+    if (event->button() == Qt::LeftButton && isConnectionTool(m_tool)) {
         VariableItem *item = qgraphicsitem_cast<VariableItem *>(itemAt(event->scenePos(), QTransform()));
         if (!item) {
             m_connectionSource = 0;
@@ -112,7 +130,12 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
             clearSelection();
             item->setSelected(true);
         } else if (m_connectionSource != item->id()) {
-            m_controller->createConnection(m_connectionSource, item->id());
+            qds::core::ConnectionType type = qds::core::ConnectionType::Information;
+            if (m_tool == Tool::ConnectMaterial)
+                type = qds::core::ConnectionType::MaterialFlow;
+            else if (m_tool == Tool::ConnectAnnotation)
+                type = qds::core::ConnectionType::Annotation;
+            m_controller->createConnection(m_connectionSource, item->id(), type);
             m_connectionSource = 0;
             clearSelection();
             item->setSelected(true);
@@ -192,7 +215,7 @@ ConnectionItem *DiagramScene::createConnectionItem(ConnectionId id)
     VariableItem *to = m_entityItems.value(connection->to);
     if (!from || !to)
         return nullptr;
-    ConnectionItem *item = new ConnectionItem(id, from, to);
+    ConnectionItem *item = new ConnectionItem(id, connection->type, from, to);
     addItem(item);
     m_connectionItems.insert(id, item);
     return item;

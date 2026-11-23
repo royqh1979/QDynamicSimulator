@@ -17,6 +17,7 @@ private slots:
     void connectionAndCascadeRestore();
     void routeUndoRedo();
     void replaceDocumentResetsScene();
+    void connectionTypeValidation();
 };
 
 void TestEditor::createUndoRedo()
@@ -119,6 +120,20 @@ void TestEditor::replaceDocumentResetsScene()
     QVERIFY(scene.variableItem(id));
     QCOMPARE(controller.undoStack()->count(), 0);
     QVERIFY(controller.undoStack()->isClean());
+}
+
+void TestEditor::connectionTypeValidation()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF());
+    const EntityId auxiliary = controller.createVariable(VariableType::Auxiliary, QPointF(100.0, 0.0));
+    const int before = controller.undoStack()->count();
+    QCOMPARE(controller.createConnection(auxiliary, stock, ConnectionType::MaterialFlow), ConnectionId(0));
+    QCOMPARE(controller.undoStack()->count(), before);
+    const ConnectionId information = controller.createConnection(stock, auxiliary, ConnectionType::Information);
+    QVERIFY(information != 0);
+    QVERIFY(scene.connectionItem(information));
 }
 
 QTEST_MAIN(TestEditor)

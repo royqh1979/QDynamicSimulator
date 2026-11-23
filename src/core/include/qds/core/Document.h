@@ -55,7 +55,7 @@ public:
     bool setEquation(EntityId id, const std::string &equation);
     bool setPosition(EntityId id, Vec2 position);
 
-    ConnectionId createConnection(EntityId from, EntityId to);
+    ConnectionId createConnection(EntityId from, EntityId to, ConnectionType type = ConnectionType::Information);
     ConnectionId addConnection(const Connection &connection);
     bool removeConnection(ConnectionId id);
     bool setRoute(ConnectionId id, const Route &route);

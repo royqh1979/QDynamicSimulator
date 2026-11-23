@@ -42,7 +42,12 @@ class ConnectionItem : public QGraphicsItem
 public:
     enum { Type = UserType + 2 };
 
-    ConnectionItem(qds::core::ConnectionId id, VariableItem *from, VariableItem *to, QGraphicsItem *parent = nullptr);
+    ConnectionItem(
+        qds::core::ConnectionId id,
+        qds::core::ConnectionType connectionType,
+        VariableItem *from,
+        VariableItem *to,
+        QGraphicsItem *parent = nullptr);
 
     int type() const override;
     QRectF boundingRect() const override;
@@ -59,6 +64,7 @@ private:
     QLineF line() const;
 
     qds::core::ConnectionId m_id;
+    qds::core::ConnectionType m_connectionType;
     VariableItem *m_from;
     VariableItem *m_to;
 };

@@ -15,6 +15,7 @@ private slots:
     void restoreWithStableIds();
     void routeAndPositionState();
     void clearDocument();
+    void entityAndConnectionTypes();
 };
 
 void TestDocument::createAndLookup()
@@ -120,6 +121,28 @@ void TestDocument::clearDocument()
     QVERIFY(document.diagram().positions().empty());
     QVERIFY(document.diagram().routes().empty());
     QCOMPARE(document.createVariable(VariableType::Stock), EntityId(1));
+}
+
+void TestDocument::entityAndConnectionTypes()
+{
+    Document document;
+    const EntityId stock = document.createVariable(VariableType::Stock);
+    const EntityId flow = document.createVariable(VariableType::Flow);
+    const EntityId auxiliary = document.createVariable(VariableType::Auxiliary);
+    const EntityId constant = document.createVariable(VariableType::Constant);
+    const EntityId exogenous = document.createVariable(VariableType::Exogenous);
+    const EntityId cloud = document.createVariable(VariableType::Cloud);
+    const EntityId note = document.createVariable(VariableType::Annotation);
+    QVERIFY(constant && exogenous && cloud && note);
+    const ConnectionId material = document.createConnection(flow, stock, ConnectionType::MaterialFlow);
+    QVERIFY(material != 0);
+    QVERIFY(document.createConnection(cloud, flow, ConnectionType::MaterialFlow) != 0);
+    QCOMPARE(document.createConnection(auxiliary, stock, ConnectionType::MaterialFlow), ConnectionId(0));
+    QVERIFY(document.createConnection(stock, auxiliary, ConnectionType::Information) != 0);
+    QCOMPARE(document.createConnection(cloud, auxiliary, ConnectionType::Information), ConnectionId(0));
+    QVERIFY(document.createConnection(note, stock, ConnectionType::Annotation) != 0);
+    QCOMPARE(document.createConnection(stock, auxiliary, ConnectionType::Annotation), ConnectionId(0));
+    QCOMPARE(document.connection(material)->type, ConnectionType::MaterialFlow);
 }
 
 QTEST_APPLESS_MAIN(TestDocument)

@@ -93,9 +93,9 @@ bool Document::setPosition(EntityId id, Vec2 position)
     return true;
 }
 
-ConnectionId Document::createConnection(EntityId from, EntityId to)
+ConnectionId Document::createConnection(EntityId from, EntityId to, ConnectionType type)
 {
-    const ConnectionId id = m_model.createConnection(from, to);
+    const ConnectionId id = m_model.createConnection(from, to, type);
     if (id != 0)
         m_diagram.m_routes[id] = Route {};
     return id;

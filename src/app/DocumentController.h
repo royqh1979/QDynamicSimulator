@@ -27,7 +27,10 @@ public:
     bool renameVariable(qds::core::EntityId id, const QString &name);
     void setEquation(qds::core::EntityId id, const QString &equation);
     void moveVariables(const std::vector<std::pair<qds::core::EntityId, QPointF>> &positions);
-    qds::core::ConnectionId createConnection(qds::core::EntityId from, qds::core::EntityId to);
+    qds::core::ConnectionId createConnection(
+        qds::core::EntityId from,
+        qds::core::EntityId to,
+        qds::core::ConnectionType type = qds::core::ConnectionType::Information);
     void removeConnections(const std::vector<qds::core::ConnectionId> &ids);
     void setRoute(qds::core::ConnectionId id, const qds::core::Route &route);
     void replaceDocument(qds::core::Document document);

@@ -138,8 +138,19 @@ void MainWindow::createActions()
     flowAction->setShortcut(QKeySequence(Qt::Key_2));
     QAction *auxiliaryAction = addToolAction(tr("辅助变量"), DiagramScene::Tool::AddAuxiliary);
     auxiliaryAction->setShortcut(QKeySequence(Qt::Key_3));
-    QAction *connectAction = addToolAction(tr("连线"), DiagramScene::Tool::Connect);
+    QAction *constantAction = addToolAction(tr("常量"), DiagramScene::Tool::AddConstant);
+    constantAction->setShortcut(QKeySequence(Qt::Key_5));
+    QAction *exogenousAction = addToolAction(tr("外生变量"), DiagramScene::Tool::AddExogenous);
+    exogenousAction->setShortcut(QKeySequence(Qt::Key_6));
+    QAction *cloudAction = addToolAction(tr("云团"), DiagramScene::Tool::AddCloud);
+    cloudAction->setShortcut(QKeySequence(Qt::Key_7));
+    QAction *annotationAction = addToolAction(tr("注释"), DiagramScene::Tool::AddAnnotation);
+    annotationAction->setShortcut(QKeySequence(Qt::Key_8));
+    QAction *connectAction = addToolAction(tr("依赖线"), DiagramScene::Tool::Connect);
     connectAction->setShortcut(QKeySequence(Qt::Key_4));
+    QAction *materialAction = addToolAction(tr("物料流"), DiagramScene::Tool::ConnectMaterial);
+    materialAction->setShortcut(QKeySequence(Qt::Key_9));
+    addToolAction(tr("注释箭头"), DiagramScene::Tool::ConnectAnnotation);
 
     editToolBar->addSeparator();
     QAction *deleteAction = new QAction(tr("删除"), this);
@@ -287,7 +298,21 @@ void MainWindow::setTool(DiagramScene::Tool tool)
     case DiagramScene::Tool::AddAuxiliary:
         statusBar()->showMessage(tr("在画布上单击以创建辅助变量"));
         break;
+    case DiagramScene::Tool::AddConstant:
+        statusBar()->showMessage(tr("在画布上单击以创建常量"));
+        break;
+    case DiagramScene::Tool::AddExogenous:
+        statusBar()->showMessage(tr("在画布上单击以创建外生变量"));
+        break;
+    case DiagramScene::Tool::AddCloud:
+        statusBar()->showMessage(tr("在画布上单击以创建源/汇云团"));
+        break;
+    case DiagramScene::Tool::AddAnnotation:
+        statusBar()->showMessage(tr("在画布上单击以创建注释"));
+        break;
     case DiagramScene::Tool::Connect:
+    case DiagramScene::Tool::ConnectMaterial:
+    case DiagramScene::Tool::ConnectAnnotation:
         statusBar()->showMessage(tr("依次单击起点和终点；右键取消连线"));
         break;
     }

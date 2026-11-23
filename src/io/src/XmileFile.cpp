@@ -294,6 +294,13 @@ QString variableTag(core::VariableType type)
         return QStringLiteral("flow");
     case core::VariableType::Auxiliary:
         return QStringLiteral("aux");
+    case core::VariableType::Constant:
+    case core::VariableType::Exogenous:
+        return QStringLiteral("aux");
+    case core::VariableType::Cloud:
+        return QStringLiteral("cloud");
+    case core::VariableType::Annotation:
+        return QStringLiteral("text_box");
     }
     return {};
 }
@@ -327,14 +334,22 @@ QByteArray writeXml(const core::Document &document)
     writer.writeStartElement(QStringLiteral("model"));
     writer.writeStartElement(QStringLiteral("variables"));
     for (const core::Variable &variable : model.variables()) {
+        if (variable.type == core::VariableType::Cloud || variable.type == core::VariableType::Annotation)
+            continue;
         const QString name = QString::fromStdString(variable.name);
         writer.writeStartElement(variableTag(variable.type));
         writer.writeAttribute(QStringLiteral("name"), name);
         writer.writeTextElement(
             QStringLiteral("eqn"),
             variable.equation.empty() ? QStringLiteral("0") : QString::fromStdString(variable.equation));
+        if (!variable.unit.empty())
+            writer.writeTextElement(QStringLiteral("units"), QString::fromStdString(variable.unit));
+        if (!variable.comment.empty())
+            writer.writeTextElement(QStringLiteral("doc"), QString::fromStdString(variable.comment));
         if (variable.type == core::VariableType::Stock) {
             for (const core::Connection &connection : model.connections()) {
+                if (connection.type != core::ConnectionType::MaterialFlow)
+                    continue;
                 const core::Variable *from = model.variable(connection.from);
                 const core::Variable *to = model.variable(connection.to);
                 if (from && to && from->type == core::VariableType::Flow && connection.to == variable.id)
@@ -376,7 +391,11 @@ QByteArray writeXml(const core::Document &document)
     return output;
 }
 
-using PendingConnection = std::pair<std::string, std::string>;
+struct PendingConnection {
+    std::string from;
+    std::string to;
+    core::ConnectionType type = core::ConnectionType::Information;
+};
 
 bool parseVariable(
     QXmlStreamReader &reader,
@@ -410,6 +429,10 @@ bool parseVariable(
         const QString child = reader.name().toString();
         if (child == QStringLiteral("eqn"))
             variable.equation = reader.readElementText().trimmed().toStdString();
+        else if (child == QStringLiteral("units"))
+            variable.unit = reader.readElementText().trimmed().toStdString();
+        else if (child == QStringLiteral("doc"))
+            variable.comment = reader.readElementText().toStdString();
         else if (child == QStringLiteral("inflow"))
             inflows.append(reader.readElementText().trimmed());
         else if (child == QStringLiteral("outflow"))
@@ -423,9 +446,9 @@ bool parseVariable(
         return false;
     }
     for (const QString &flow : inflows)
-        pendingConnections.emplace_back(flow.toStdString(), variable.name);
+        pendingConnections.push_back({flow.toStdString(), variable.name, core::ConnectionType::MaterialFlow});
     for (const QString &flow : outflows)
-        pendingConnections.emplace_back(variable.name, flow.toStdString());
+        pendingConnections.push_back({variable.name, flow.toStdString(), core::ConnectionType::MaterialFlow});
     return true;
 }
 
@@ -468,7 +491,7 @@ void parseConnector(QXmlStreamReader &reader, std::vector<PendingConnection> &pe
             reader.skipCurrentElement();
     }
     if (!from.isEmpty() && !to.isEmpty())
-        pendingConnections.emplace_back(from.toStdString(), to.toStdString());
+        pendingConnections.push_back({from.toStdString(), to.toStdString(), core::ConnectionType::Information});
 }
 
 void parseView(QXmlStreamReader &reader, core::Document &model, std::vector<PendingConnection> &pendingConnections)
@@ -480,10 +503,18 @@ void parseView(QXmlStreamReader &reader, core::Document &model, std::vector<Pend
             continue;
 
         const QString tag = reader.name().toString();
-        if (tag == QStringLiteral("stock") || tag == QStringLiteral("flow") || tag == QStringLiteral("aux")) {
+        if (tag == QStringLiteral("stock") || tag == QStringLiteral("flow") || tag == QStringLiteral("aux")
+            || tag == QStringLiteral("cloud") || tag == QStringLiteral("text_box")) {
             const QXmlStreamAttributes attributes = reader.attributes();
             const std::string name = attributes.value(QStringLiteral("name")).toString().toStdString();
             const core::Variable *variable = model.model().variableByName(name);
+            if (!variable && (tag == QStringLiteral("cloud") || tag == QStringLiteral("text_box"))) {
+                core::Variable created;
+                created.name = name;
+                created.type = tag == QStringLiteral("cloud") ? core::VariableType::Cloud : core::VariableType::Annotation;
+                const core::EntityId id = model.addVariable(created);
+                variable = model.variable(id);
+            }
             bool xOk = false;
             bool yOk = false;
             const double x = attributes.value(QStringLiteral("x")).toDouble(&xOk);
@@ -532,10 +563,19 @@ bool parseXml(const QByteArray &xml, core::Document &model, QString *errorMessag
     }
 
     for (const PendingConnection &connection : pendingConnections) {
-        const core::Variable *from = parsed.model().variableByName(connection.first);
-        const core::Variable *to = parsed.model().variableByName(connection.second);
-        if (from && to)
-            parsed.createConnection(from->id, to->id);
+        const core::Variable *from = parsed.model().variableByName(connection.from);
+        const core::Variable *to = parsed.model().variableByName(connection.to);
+        if (!from || !to)
+            continue;
+        core::ConnectionType type = connection.type;
+        if (from->type == core::VariableType::Annotation || to->type == core::VariableType::Annotation)
+            type = core::ConnectionType::Annotation;
+        else if (type == core::ConnectionType::Information
+            && (from->type == core::VariableType::Flow || to->type == core::VariableType::Flow)
+            && (from->type == core::VariableType::Stock || from->type == core::VariableType::Cloud
+                || to->type == core::VariableType::Stock || to->type == core::VariableType::Cloud))
+            type = core::ConnectionType::MaterialFlow;
+        parsed.createConnection(from->id, to->id, type);
     }
 
     if (!foundView) {
