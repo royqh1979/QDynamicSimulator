@@ -1,5 +1,6 @@
 #include "DiagramItems.h"
 #include "DiagramScene.h"
+#include "DiagramView.h"
 #include "DocumentController.h"
 
 #include <QtTest>
@@ -18,6 +19,10 @@ private slots:
     void routeUndoRedo();
     void replaceDocumentResetsScene();
     void connectionTypeValidation();
+    void connectionDeleteUndo();
+    void layoutOperations();
+    void gridAndSceneBounds();
+    void viewOperations();
 };
 
 void TestEditor::createUndoRedo()
@@ -134,6 +139,67 @@ void TestEditor::connectionTypeValidation()
     const ConnectionId information = controller.createConnection(stock, auxiliary, ConnectionType::Information);
     QVERIFY(information != 0);
     QVERIFY(scene.connectionItem(information));
+}
+
+void TestEditor::connectionDeleteUndo()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF());
+    const EntityId auxiliary = controller.createVariable(VariableType::Auxiliary, QPointF(100.0, 0.0));
+    const ConnectionId id = controller.createConnection(stock, auxiliary);
+    scene.connectionItem(id)->setSelected(true);
+    scene.removeSelected();
+    QVERIFY(scene.connectionItem(id) == nullptr);
+    controller.undoStack()->undo();
+    QVERIFY(scene.connectionItem(id));
+}
+
+void TestEditor::layoutOperations()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId first = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
+    const EntityId second = controller.createVariable(VariableType::Stock, QPointF(50.0, 50.0));
+    const EntityId third = controller.createVariable(VariableType::Stock, QPointF(100.0, 100.0));
+    scene.variableItem(first)->setSelected(true);
+    scene.variableItem(second)->setSelected(true);
+    scene.variableItem(third)->setSelected(true);
+    scene.alignSelected(Qt::AlignLeft);
+    QCOMPARE(scene.variableItem(first)->pos().x(), 0.0);
+    QCOMPARE(scene.variableItem(second)->pos().x(), 0.0);
+    QCOMPARE(scene.variableItem(third)->pos().x(), 0.0);
+    controller.undoStack()->undo();
+    QCOMPARE(scene.variableItem(third)->pos(), QPointF(100.0, 100.0));
+    scene.distributeSelected(false);
+    QCOMPARE(scene.variableItem(second)->pos().y(), 50.0);
+    scene.selectAllItems();
+    QVERIFY(scene.selectedItems().size() >= 3);
+}
+
+void TestEditor::gridAndSceneBounds()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    QCOMPARE(scene.snapPoint(QPointF(23.0, 37.0)), QPointF(20.0, 40.0));
+    scene.setSnapEnabled(false);
+    QCOMPARE(scene.snapPoint(QPointF(23.0, 37.0)), QPointF(23.0, 37.0));
+    const EntityId id = controller.createVariable(VariableType::Stock, QPointF(5000.0, 5000.0));
+    QVERIFY(scene.sceneRect().contains(scene.variableItem(id)->sceneBoundingRect()));
+}
+
+void TestEditor::viewOperations()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    controller.createVariable(VariableType::Stock, QPointF(100.0, 100.0));
+    DiagramView view(&scene);
+    view.zoomIn();
+    QVERIFY(view.transform().m11() > 1.0);
+    view.resetZoom();
+    QCOMPARE(view.transform().m11(), 1.0);
+    view.fitAll();
+    QVERIFY(view.transform().m11() > 0.0);
 }
 
 QTEST_MAIN(TestEditor)

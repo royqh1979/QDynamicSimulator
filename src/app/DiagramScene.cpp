@@ -4,7 +4,10 @@
 #include "DocumentController.h"
 
 #include <QGraphicsSceneMouseEvent>
+#include <QPainter>
+#include <QtMath>
 
+#include <algorithm>
 #include <vector>
 
 using qds::core::ChangeSet;
@@ -46,11 +49,15 @@ DiagramScene::Tool DiagramScene::tool() const
 void DiagramScene::removeSelected()
 {
     std::vector<EntityId> ids;
+    std::vector<ConnectionId> connections;
     const QList<QGraphicsItem *> selection = selectedItems();
     for (QGraphicsItem *item : selection) {
         if (VariableItem *variable = qgraphicsitem_cast<VariableItem *>(item))
             ids.push_back(variable->id());
+        else if (ConnectionItem *connection = qgraphicsitem_cast<ConnectionItem *>(item))
+            connections.push_back(connection->id());
     }
+    m_controller->removeConnections(connections);
     m_controller->removeVariables(ids);
 }
 
@@ -73,6 +80,101 @@ const qds::core::Variable *DiagramScene::selectedVariable() const
 {
     VariableItem *item = qgraphicsitem_cast<VariableItem *>(selectedItems().value(0));
     return item ? m_controller->document().variable(item->id()) : nullptr;
+}
+
+void DiagramScene::selectAllItems()
+{
+    const QList<QGraphicsItem *> allItems = items();
+    for (QGraphicsItem *item : allItems) {
+        if (item->flags() & QGraphicsItem::ItemIsSelectable)
+            item->setSelected(true);
+    }
+}
+
+void DiagramScene::alignSelected(Qt::Alignment alignment)
+{
+    QVector<VariableItem *> selected;
+    for (QGraphicsItem *item : selectedItems()) {
+        if (VariableItem *variable = qgraphicsitem_cast<VariableItem *>(item))
+            selected.append(variable);
+    }
+    if (selected.size() < 2)
+        return;
+
+    std::vector<std::pair<EntityId, QPointF>> positions;
+    for (VariableItem *item : selected) {
+        QPointF position = item->pos();
+        if (alignment & Qt::AlignLeft)
+            position.setX(std::min(position.x(), selected.front()->pos().x()));
+        for (VariableItem *other : selected) {
+            if (alignment & Qt::AlignLeft)
+                position.setX(std::min(position.x(), other->pos().x()));
+            else if (alignment & Qt::AlignRight)
+                position.setX(std::max(position.x(), other->pos().x()));
+            else if (alignment & Qt::AlignTop)
+                position.setY(std::min(position.y(), other->pos().y()));
+            else if (alignment & Qt::AlignBottom)
+                position.setY(std::max(position.y(), other->pos().y()));
+        }
+        if (alignment & Qt::AlignHCenter) {
+            double center = 0.0;
+            for (VariableItem *other : selected)
+                center += other->pos().x();
+            position.setX(center / selected.size());
+        } else if (alignment & Qt::AlignVCenter) {
+            double center = 0.0;
+            for (VariableItem *other : selected)
+                center += other->pos().y();
+            position.setY(center / selected.size());
+        }
+        positions.emplace_back(item->id(), position);
+    }
+    m_controller->moveVariables(positions);
+}
+
+void DiagramScene::distributeSelected(bool horizontal)
+{
+    QVector<VariableItem *> selected;
+    for (QGraphicsItem *item : selectedItems()) {
+        if (VariableItem *variable = qgraphicsitem_cast<VariableItem *>(item))
+            selected.append(variable);
+    }
+    if (selected.size() < 3)
+        return;
+    std::sort(selected.begin(), selected.end(), [horizontal](VariableItem *left, VariableItem *right) {
+        return horizontal ? left->pos().x() < right->pos().x() : left->pos().y() < right->pos().y();
+    });
+    const double start = horizontal ? selected.front()->pos().x() : selected.front()->pos().y();
+    const double end = horizontal ? selected.back()->pos().x() : selected.back()->pos().y();
+    const double spacing = (end - start) / (selected.size() - 1);
+    std::vector<std::pair<EntityId, QPointF>> positions;
+    for (int index = 1; index < selected.size() - 1; ++index) {
+        QPointF position = selected[index]->pos();
+        if (horizontal)
+            position.setX(start + spacing * index);
+        else
+            position.setY(start + spacing * index);
+        positions.emplace_back(selected[index]->id(), position);
+    }
+    m_controller->moveVariables(positions);
+}
+
+void DiagramScene::setGridVisible(bool visible)
+{
+    m_gridVisible = visible;
+    update();
+}
+
+void DiagramScene::setSnapEnabled(bool enabled)
+{
+    m_snapEnabled = enabled;
+}
+
+QPointF DiagramScene::snapPoint(const QPointF &position) const
+{
+    if (!m_snapEnabled)
+        return position;
+    return QPointF(qRound64(position.x() / m_gridSize) * m_gridSize, qRound64(position.y() / m_gridSize) * m_gridSize);
 }
 
 VariableItem *DiagramScene::variableItem(EntityId id) const
@@ -109,7 +211,7 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
         else if (m_tool == Tool::AddAnnotation)
             type = qds::core::VariableType::Annotation;
 
-        const EntityId id = m_controller->createVariable(type, event->scenePos());
+        const EntityId id = m_controller->createVariable(type, snapPoint(event->scenePos()));
         clearSelection();
         if (VariableItem *item = m_entityItems.value(id))
             item->setSelected(true);
@@ -158,6 +260,7 @@ void DiagramScene::applyChangeSet(const ChangeSet &changeSet)
             createVariableItem(variable.id);
         for (const qds::core::Connection &connection : m_controller->document().model().connections())
             createConnectionItem(connection.id);
+        updateSceneRect();
         return;
     }
 
@@ -188,6 +291,7 @@ void DiagramScene::applyChangeSet(const ChangeSet &changeSet)
         if (ConnectionItem *item = m_connectionItems.value(id))
             item->updatePosition();
     }
+    updateSceneRect();
 }
 
 VariableItem *DiagramScene::createVariableItem(EntityId id)
@@ -229,13 +333,35 @@ void DiagramScene::updateConnections(EntityId id)
     }
 }
 
+void DiagramScene::updateSceneRect()
+{
+    QRectF bounds = itemsBoundingRect().adjusted(-1000.0, -1000.0, 1000.0, 1000.0);
+    if (bounds.isEmpty())
+        bounds = QRectF(-1000.0, -1000.0, 2000.0, 2000.0);
+    setSceneRect(bounds);
+}
+
 void DiagramScene::finishMove()
 {
     std::vector<std::pair<EntityId, QPointF>> positions;
     const QList<QGraphicsItem *> selection = selectedItems();
     for (QGraphicsItem *item : selection) {
         if (VariableItem *variable = qgraphicsitem_cast<VariableItem *>(item))
-            positions.emplace_back(variable->id(), variable->pos());
+            positions.emplace_back(variable->id(), snapPoint(variable->pos()));
     }
     m_controller->moveVariables(positions);
+}
+
+void DiagramScene::drawBackground(QPainter *painter, const QRectF &rect)
+{
+    painter->fillRect(rect, QColor(250, 250, 250));
+    if (!m_gridVisible)
+        return;
+    painter->setPen(QPen(QColor(225, 225, 225), 0.0));
+    const double left = qFloor(rect.left() / m_gridSize) * m_gridSize;
+    const double top = qFloor(rect.top() / m_gridSize) * m_gridSize;
+    for (double x = left; x < rect.right(); x += m_gridSize)
+        painter->drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()));
+    for (double y = top; y < rect.bottom(); y += m_gridSize)
+        painter->drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y));
 }

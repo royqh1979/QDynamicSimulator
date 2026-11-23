@@ -38,17 +38,25 @@ public:
     bool renameSelected(const QString &newName);
     bool setSelectedEquation(const QString &equation);
     const qds::core::Variable *selectedVariable() const;
+    void selectAllItems();
+    void alignSelected(Qt::Alignment alignment);
+    void distributeSelected(bool horizontal);
+    void setGridVisible(bool visible);
+    void setSnapEnabled(bool enabled);
+    QPointF snapPoint(const QPointF &position) const;
     VariableItem *variableItem(qds::core::EntityId id) const;
     ConnectionItem *connectionItem(qds::core::ConnectionId id) const;
 
 protected:
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
+    void drawBackground(QPainter *painter, const QRectF &rect) override;
 
 private:
     void applyChangeSet(const qds::core::ChangeSet &changeSet);
     VariableItem *createVariableItem(qds::core::EntityId id);
     ConnectionItem *createConnectionItem(qds::core::ConnectionId id);
     void updateConnections(qds::core::EntityId id);
+    void updateSceneRect();
     void finishMove();
 
     DocumentController *m_controller;
@@ -56,4 +64,7 @@ private:
     QHash<qds::core::ConnectionId, ConnectionItem *> m_connectionItems;
     Tool m_tool = Tool::Select;
     qds::core::EntityId m_connectionSource = 0;
+    bool m_gridVisible = true;
+    bool m_snapEnabled = true;
+    double m_gridSize = 20.0;
 };

@@ -159,6 +159,60 @@ void MainWindow::createActions()
     editMenu->addSeparator();
     editMenu->addAction(deleteAction);
     editToolBar->addAction(deleteAction);
+
+    QAction *selectAllAction = new QAction(tr("全选"), this);
+    selectAllAction->setShortcut(QKeySequence::SelectAll);
+    connect(selectAllAction, &QAction::triggered, m_scene, &DiagramScene::selectAllItems);
+    editMenu->addAction(selectAllAction);
+
+    auto addAlignAction = [this, editMenu](const QString &text, Qt::Alignment alignment) {
+        QAction *action = new QAction(text, this);
+        connect(action, &QAction::triggered, this, [this, alignment]() {
+            m_scene->alignSelected(alignment);
+        });
+        editMenu->addAction(action);
+    };
+    addAlignAction(tr("左对齐"), Qt::AlignLeft);
+    addAlignAction(tr("水平居中"), Qt::AlignHCenter);
+    addAlignAction(tr("右对齐"), Qt::AlignRight);
+    addAlignAction(tr("顶端对齐"), Qt::AlignTop);
+    addAlignAction(tr("垂直居中"), Qt::AlignVCenter);
+    addAlignAction(tr("底端对齐"), Qt::AlignBottom);
+
+    QAction *distributeHorizontal = new QAction(tr("水平等距分布"), this);
+    connect(distributeHorizontal, &QAction::triggered, this, [this]() {
+        m_scene->distributeSelected(true);
+    });
+    editMenu->addAction(distributeHorizontal);
+    QAction *distributeVertical = new QAction(tr("垂直等距分布"), this);
+    connect(distributeVertical, &QAction::triggered, this, [this]() {
+        m_scene->distributeSelected(false);
+    });
+    editMenu->addAction(distributeVertical);
+
+    QMenu *viewMenu = menuBar()->addMenu(tr("视图(&V)"));
+    auto addViewAction = [this, viewMenu](const QString &text, const QKeySequence &shortcut, void (DiagramView::*method)()) {
+        QAction *action = new QAction(text, this);
+        action->setShortcut(shortcut);
+        connect(action, &QAction::triggered, m_view, method);
+        viewMenu->addAction(action);
+    };
+    addViewAction(tr("放大"), QKeySequence::ZoomIn, &DiagramView::zoomIn);
+    addViewAction(tr("缩小"), QKeySequence::ZoomOut, &DiagramView::zoomOut);
+    addViewAction(tr("实际大小"), QKeySequence(Qt::CTRL | Qt::Key_0), &DiagramView::resetZoom);
+    addViewAction(tr("适应全部"), QKeySequence(Qt::Key_F), &DiagramView::fitAll);
+    addViewAction(tr("适应选中"), QKeySequence(Qt::SHIFT | Qt::Key_F), &DiagramView::fitSelection);
+
+    QAction *gridAction = new QAction(tr("显示网格"), this);
+    gridAction->setCheckable(true);
+    gridAction->setChecked(true);
+    connect(gridAction, &QAction::toggled, m_scene, &DiagramScene::setGridVisible);
+    viewMenu->addAction(gridAction);
+    QAction *snapAction = new QAction(tr("网格吸附"), this);
+    snapAction->setCheckable(true);
+    snapAction->setChecked(true);
+    connect(snapAction, &QAction::toggled, m_scene, &DiagramScene::setSnapEnabled);
+    viewMenu->addAction(snapAction);
 }
 
 void MainWindow::createPropertyPanel()

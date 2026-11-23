@@ -129,6 +129,7 @@ ConnectionItem::ConnectionItem(
     , m_from(from)
     , m_to(to)
 {
+    setFlag(ItemIsSelectable);
     setZValue(-1.0);
 }
 
@@ -164,6 +165,11 @@ void ConnectionItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, 
     } else if (m_connectionType == qds::core::ConnectionType::Annotation) {
         color = QColor(150, 120, 40);
         style = Qt::DotLine;
+    }
+    if (isSelected()) {
+        color = QColor(35, 120, 210);
+        width += 1.0;
+        style = Qt::SolidLine;
     }
     painter->setPen(QPen(color, width, style));
     const QLineF connection = line();
