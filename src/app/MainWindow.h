@@ -7,6 +7,7 @@
 
 class QAction;
 class QCloseEvent;
+class QLabel;
 class QLineEdit;
 class QListWidget;
 class QMenu;
@@ -26,6 +27,8 @@ public:
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 
 private:
     void createActions();
@@ -52,6 +55,7 @@ private:
     EquationEditor *m_equationEdit = nullptr;
     QLineEdit *m_unitEdit = nullptr;
     QLineEdit *m_commentEdit = nullptr;
+    QLabel *m_commentLabel = nullptr;
     QListWidget *m_issueList = nullptr;
     QMenu *m_recentMenu = nullptr;
     QAction *m_selectAction = nullptr;

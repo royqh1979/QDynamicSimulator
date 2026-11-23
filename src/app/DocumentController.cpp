@@ -2,76 +2,101 @@
 
 #include <QUndoCommand>
 
-#include <memory>
+#include <algorithm>
+#include <functional>
 #include <unordered_map>
-#include <utility>
+#include <unordered_set>
 
-using qds::core::ChangeSet;
-using qds::core::Connection;
-using qds::core::ConnectionId;
-using qds::core::Document;
-using qds::core::EntityId;
-using qds::core::Route;
-using qds::core::Variable;
-using qds::core::VariableType;
+using namespace qds::core;
 
 namespace {
 
-class FunctionalCommand : public QUndoCommand
+class ChangeCommand : public QUndoCommand
 {
 public:
-    FunctionalCommand(const QString &text, DocumentController::Callback undo, DocumentController::Callback redo)
-        : QUndoCommand(text)
-        , m_undo(std::move(undo))
-        , m_redo(std::move(redo))
+    using Apply = std::function<void(const ChangeSet &, bool)>;
+
+    ChangeCommand(const Apply &apply, const ChangeSet &changes, bool alreadyApplied)
+        : m_apply(apply)
+        , m_changes(changes)
+        , m_alreadyApplied(alreadyApplied)
     {
     }
 
-    void undo() override
-    {
-        m_undo();
-    }
-
-    void redo() override
-    {
-        m_redo();
-    }
+    void undo() override;
+    void redo() override;
 
 private:
-    DocumentController::Callback m_undo;
-    DocumentController::Callback m_redo;
+    Apply m_apply;
+    ChangeSet m_changes;
+    bool m_alreadyApplied;
+    bool m_firstRedo = true;
 };
 
-ChangeSet entityChange(EntityId id, bool added, bool removed = false)
+ChangeRecord addedRecord(const Document &document, EntityId id)
 {
-    ChangeSet change;
-    if (added)
-        change.addedEntities.push_back(id);
-    else if (removed)
-        change.removedEntities.push_back(id);
-    else
-        change.updatedEntities.push_back(id);
-    return change;
+    ChangeRecord record;
+    record.id = id;
+    record.kind = document.find(id)->kind();
+    record.after = document.capture(id);
+    return record;
 }
 
-ChangeSet connectionChange(ConnectionId id, bool added, bool removed = false)
+ChangeRecord removedRecord(const Document &document, EntityId id)
 {
-    ChangeSet change;
-    if (added)
-        change.addedConnections.push_back(id);
-    else if (removed)
-        change.removedConnections.push_back(id);
-    else
-        change.updatedConnections.push_back(id);
-    return change;
+    ChangeRecord record;
+    record.id = id;
+    record.kind = document.find(id)->kind();
+    record.before = document.capture(id);
+    return record;
 }
 
-qds::core::Vec2 toVec(const QPointF &value)
+int removalRank(ElementKind kind)
+{
+    if (kind == ElementKind::Connector)
+        return 0;
+    if (kind == ElementKind::Flow)
+        return 1;
+    return 2;
+}
+
+QPointF point(Vec2 value)
+{
+    return QPointF(value.x, value.y);
+}
+
+Vec2 vec(const QPointF &value)
 {
     return {value.x(), value.y()};
 }
 
+std::string uniqueCopyName(const Document &document, const std::string &base)
+{
+    if (!document.findByName(base))
+        return base;
+    for (int suffix = 2;; ++suffix) {
+        const std::string candidate = base + " " + std::to_string(suffix);
+        if (!document.findByName(candidate))
+            return candidate;
+    }
+}
+
 } // namespace
+
+void ChangeCommand::undo()
+{
+    m_apply(m_changes, false);
+}
+
+void ChangeCommand::redo()
+{
+    if (m_alreadyApplied && m_firstRedo) {
+        m_firstRedo = false;
+        return;
+    }
+    m_firstRedo = false;
+    m_apply(m_changes, true);
+}
 
 DocumentController::DocumentController(QObject *parent)
     : QObject(parent)
@@ -88,359 +113,389 @@ QUndoStack *DocumentController::undoStack()
     return &m_undoStack;
 }
 
-EntityId DocumentController::createVariable(VariableType type, const QPointF &position)
+EntityId DocumentController::createVariable(ElementKind kind, const QPointF &position)
 {
-    struct State {
-        EntityId id = 0;
-        Variable variable;
-    };
-    auto state = std::make_shared<State>();
-    pushCommand(
-        tr("Create variable"),
-        [this, state, position]() {
-            m_document.removeVariable(state->id);
-            ChangeSet change;
-            change.removedEntities.push_back(state->id);
-            notify(change);
-        },
-        [this, state, type, position]() {
-            if (state->id == 0) {
-                state->id = m_document.createVariable(type, toVec(position));
-                state->variable = *m_document.variable(state->id);
-            } else {
-                m_document.addVariable(state->variable, toVec(position));
-            }
-            notify(entityChange(state->id, true));
-        });
-    return state->id;
+    const EntityId id = m_document.createVariable(kind, vec(position));
+    if (id != 0)
+        pushChanges(ChangeSet {{addedRecord(m_document, id)}}, true);
+    return id;
 }
 
-void DocumentController::removeVariables(const std::vector<EntityId> &ids)
+EntityId DocumentController::createFlow(EntityId from, EntityId to)
 {
-    std::vector<EntityId> existing;
-    for (EntityId id : ids) {
-        if (m_document.variable(id))
-            existing.push_back(id);
-    }
-    if (existing.empty())
-        return;
+    return createFlow(from, to, std::nullopt, std::nullopt);
+}
 
-    m_undoStack.beginMacro(tr("Delete variables"));
-    for (EntityId id : existing) {
-        struct State {
-            Variable variable;
-            qds::core::Vec2 position;
-            std::vector<std::pair<Connection, Route>> connections;
-        };
-        auto state = std::make_shared<State>();
-        state->variable = *m_document.variable(id);
-        state->position = m_document.diagram().position(id);
-        for (const Connection &connection : m_document.model().connections()) {
-            if (connection.from == id || connection.to == id)
-                state->connections.emplace_back(connection, m_document.diagram().route(connection.id));
+EntityId DocumentController::createFlow(
+    EntityId from,
+    EntityId to,
+    std::optional<QPointF> fromPosition,
+    std::optional<QPointF> toPosition)
+{
+    if ((from == 0) != fromPosition.has_value() || (to == 0) != toPosition.has_value())
+        return 0;
+    ChangeSet changes;
+    EntityId createdFrom = 0;
+    EntityId createdTo = 0;
+    if (from == 0) {
+        from = m_document.createCloud(vec(*fromPosition));
+        if (from == 0)
+            return 0;
+        createdFrom = from;
+        changes.records.push_back(addedRecord(m_document, from));
+    }
+    if (to == 0) {
+        to = m_document.createCloud(vec(*toPosition));
+        if (to == 0) {
+            if (createdFrom != 0)
+                m_document.remove(createdFrom);
+            return 0;
         }
-
-        pushCommand(
-            tr("Delete variable"),
-            [this, state]() {
-                ChangeSet change;
-                const EntityId restored = m_document.addVariable(state->variable, state->position);
-                change.addedEntities.push_back(restored);
-                for (const auto &entry : state->connections) {
-                    const ConnectionId id = m_document.addConnection(entry.first);
-                    m_document.setRoute(id, entry.second);
-                    change.addedConnections.push_back(id);
-                }
-                notify(change);
-            },
-            [this, state, id]() {
-                ChangeSet change;
-                change.removedEntities.push_back(id);
-                for (const auto &entry : state->connections)
-                    change.removedConnections.push_back(entry.first.id);
-                m_document.removeVariable(id);
-                notify(change);
-            });
+        createdTo = to;
+        changes.records.push_back(addedRecord(m_document, to));
     }
-    m_undoStack.endMacro();
+    const EntityId id = m_document.createFlow(from, to);
+    if (id == 0) {
+        if (createdFrom != 0)
+            m_document.remove(createdFrom);
+        if (createdTo != 0)
+            m_document.remove(createdTo);
+        return 0;
+    }
+    changes.records.push_back(addedRecord(m_document, id));
+    pushChanges(changes, true);
+    return id;
 }
 
-bool DocumentController::renameVariable(EntityId id, const QString &name)
+EntityId DocumentController::createConnector(EntityId from, EntityId to)
 {
-    const Variable *variable = m_document.variable(id);
-    const QString trimmed = name.trimmed();
-    if (!variable || trimmed.isEmpty())
-        return false;
-    const std::string after = trimmed.toStdString();
-    const Variable *duplicate = m_document.model().variableByName(after);
-    if (duplicate && duplicate->id != id)
-        return false;
-    const std::string before = variable->name;
-    if (before == after)
-        return true;
+    const EntityId id = m_document.createConnector(from, to);
+    if (id != 0)
+        pushChanges(ChangeSet {{addedRecord(m_document, id)}}, true);
+    return id;
+}
 
-    pushCommand(
-        tr("Rename variable"),
-        [this, id, before]() {
-            m_document.renameVariable(id, before);
-            notify(entityChange(id, false));
-        },
-        [this, id, after]() {
-            m_document.renameVariable(id, after);
-            notify(entityChange(id, false));
-        });
+EntityId DocumentController::createCloud(const QPointF &position)
+{
+    const EntityId id = m_document.createCloud(vec(position));
+    if (id != 0)
+        pushChanges(ChangeSet {{addedRecord(m_document, id)}}, true);
+    return id;
+}
+
+EntityId DocumentController::createComment(const QString &text, const QPointF &position)
+{
+    const EntityId id = m_document.createComment(text.toStdString(), vec(position));
+    if (id != 0)
+        pushChanges(ChangeSet {{addedRecord(m_document, id)}}, true);
+    return id;
+}
+
+void DocumentController::removeElements(const std::vector<EntityId> &ids)
+{
+    ChangeSet changes;
+    std::unordered_set<EntityId> included;
+    for (EntityId id : ids) {
+        for (EntityId affected : m_document.cascade(id)) {
+            if (included.insert(affected).second)
+                changes.records.push_back(removedRecord(m_document, affected));
+        }
+    }
+    std::stable_sort(changes.records.begin(), changes.records.end(), [](const ChangeRecord &left, const ChangeRecord &right) {
+        return removalRank(left.kind) < removalRank(right.kind);
+    });
+    if (!changes.records.empty())
+        pushChanges(changes);
+}
+
+bool DocumentController::renameElement(EntityId id, const QString &name)
+{
+    if (!m_document.find(id))
+        return false;
+    ChangeRecord record;
+    record.id = id;
+    record.kind = m_document.find(id)->kind();
+    record.before = m_document.capture(id);
+    if (!m_document.rename(id, name.toStdString()))
+        return false;
+    record.after = m_document.capture(id);
+    if (*record.before == *record.after)
+        return true;
+    pushChanges(ChangeSet {{std::move(record)}}, true);
     return true;
 }
 
 void DocumentController::setEquation(EntityId id, const QString &equation)
 {
-    const Variable *variable = m_document.variable(id);
-    if (!variable)
+    if (!m_document.find(id))
         return;
-    const std::string before = variable->equation;
-    const std::string after = equation.toStdString();
-    if (before == after)
+    ChangeRecord record;
+    record.id = id;
+    record.kind = m_document.find(id)->kind();
+    record.before = m_document.capture(id);
+    if (!m_document.setEquation(id, equation.toStdString()))
         return;
-    pushCommand(
-        tr("Edit equation"),
-        [this, id, before]() {
-            m_document.setEquation(id, before);
-            notify(entityChange(id, false));
-        },
-        [this, id, after]() {
-            m_document.setEquation(id, after);
-            notify(entityChange(id, false));
-        });
+    record.after = m_document.capture(id);
+    pushChanges(ChangeSet {{std::move(record)}}, true);
 }
 
 void DocumentController::setUnit(EntityId id, const QString &unit)
 {
-    const Variable *variable = m_document.variable(id);
-    if (!variable || variable->unit == unit.toStdString())
+    if (!m_document.find(id))
         return;
-    const std::string before = variable->unit;
-    const std::string after = unit.toStdString();
-    pushCommand(
-        tr("Edit unit"),
-        [this, id, before]() {
-            m_document.setUnit(id, before);
-            notify(entityChange(id, false));
-        },
-        [this, id, after]() {
-            m_document.setUnit(id, after);
-            notify(entityChange(id, false));
-        });
+    ChangeRecord record;
+    record.id = id;
+    record.kind = m_document.find(id)->kind();
+    record.before = m_document.capture(id);
+    if (!m_document.setUnit(id, unit.toStdString()))
+        return;
+    record.after = m_document.capture(id);
+    pushChanges(ChangeSet {{std::move(record)}}, true);
 }
 
 void DocumentController::setComment(EntityId id, const QString &comment)
 {
-    const Variable *variable = m_document.variable(id);
-    if (!variable || variable->comment == comment.toStdString())
+    if (!m_document.find(id))
         return;
-    const std::string before = variable->comment;
-    const std::string after = comment.toStdString();
-    pushCommand(
-        tr("Edit comment"),
-        [this, id, before]() {
-            m_document.setComment(id, before);
-            notify(entityChange(id, false));
-        },
-        [this, id, after]() {
-            m_document.setComment(id, after);
-            notify(entityChange(id, false));
-        });
+    ChangeRecord record;
+    record.id = id;
+    record.kind = m_document.find(id)->kind();
+    record.before = m_document.capture(id);
+    if (!m_document.setComment(id, comment.toStdString()))
+        return;
+    record.after = m_document.capture(id);
+    pushChanges(ChangeSet {{std::move(record)}}, true);
 }
 
-void DocumentController::moveVariables(const std::vector<std::pair<EntityId, QPointF>> &positions)
+void DocumentController::setCommentContent(EntityId id, const QString &content)
 {
-    m_undoStack.beginMacro(tr("Move variables"));
+    const auto *comment = dynamic_cast<const Comment *>(m_document.find(id));
+    if (!comment || comment->content == content.toStdString())
+        return;
+    ChangeRecord record;
+    record.id = id;
+    record.kind = ElementKind::Comment;
+    record.before = m_document.capture(id);
+    if (!m_document.setCommentContent(id, content.toStdString()))
+        return;
+    record.after = m_document.capture(id);
+    pushChanges(ChangeSet {{std::move(record)}}, true);
+}
+
+void DocumentController::moveElements(const std::vector<std::pair<EntityId, QPointF>> &positions)
+{
+    ChangeSet changes;
     for (const auto &entry : positions) {
-        const EntityId id = entry.first;
-        if (!m_document.variable(id))
+        if (!m_document.find(entry.first))
             continue;
-        const qds::core::Vec2 before = m_document.diagram().position(id);
-        const qds::core::Vec2 after = toVec(entry.second);
-        if (before == after)
+        const QPointF current = point(m_document.diagram().position(entry.first));
+        if (current == entry.second)
             continue;
-        pushCommand(
-            tr("Move variable"),
-            [this, id, before]() {
-                m_document.setPosition(id, before);
-                notify(entityChange(id, false));
-            },
-            [this, id, after]() {
-                m_document.setPosition(id, after);
-                notify(entityChange(id, false));
-            });
+        ChangeRecord record;
+        record.id = entry.first;
+        record.kind = m_document.find(entry.first)->kind();
+        record.before = m_document.capture(entry.first);
+        m_document.setPosition(entry.first, vec(entry.second));
+        record.after = m_document.capture(entry.first);
+        changes.records.push_back(std::move(record));
     }
-    m_undoStack.endMacro();
+    if (!changes.records.empty())
+        pushChanges(changes, true);
 }
 
-ConnectionId DocumentController::createConnection(EntityId from, EntityId to, qds::core::ConnectionType type)
+bool DocumentController::reconnectFlow(EntityId id, EntityId from, EntityId to)
 {
-    if (!m_document.model().canConnect(from, to, type))
-        return 0;
-
-    struct State {
-        Connection connection;
-    };
-    auto state = std::make_shared<State>();
-    state->connection.from = from;
-    state->connection.to = to;
-    state->connection.type = type;
-    pushCommand(
-        tr("Create connection"),
-        [this, state]() {
-            m_document.removeConnection(state->connection.id);
-            notify(connectionChange(state->connection.id, false, true));
-        },
-        [this, state]() {
-            if (state->connection.id == 0)
-                state->connection.id = m_document.createConnection(
-                    state->connection.from, state->connection.to, state->connection.type);
-            else
-                m_document.addConnection(state->connection);
-            notify(connectionChange(state->connection.id, true));
-        });
-    return state->connection.id;
-}
-
-void DocumentController::removeConnections(const std::vector<ConnectionId> &ids)
-{
-    m_undoStack.beginMacro(tr("Delete connections"));
-    for (ConnectionId id : ids) {
-        const Connection *connection = m_document.connection(id);
-        if (!connection)
-            continue;
-        const Connection before = *connection;
-        const Route route = m_document.diagram().route(id);
-        pushCommand(
-            tr("Delete connection"),
-            [this, before, route]() {
-                const ConnectionId id = m_document.addConnection(before);
-                m_document.setRoute(id, route);
-                notify(connectionChange(id, true));
-            },
-            [this, id]() {
-                m_document.removeConnection(id);
-                notify(connectionChange(id, false, true));
-            });
-    }
-    m_undoStack.endMacro();
-}
-
-bool DocumentController::reconnectConnection(ConnectionId id, EntityId from, EntityId to)
-{
-    const Connection *connection = m_document.connection(id);
-    if (!connection)
+    const Flow *flow = dynamic_cast<const Flow *>(m_document.find(id));
+    if (!flow)
         return false;
-    if (connection->from == from && connection->to == to)
+    if (flow->endpoints.from == from && flow->endpoints.to == to)
         return true;
-    if (!m_document.model().canConnect(from, to, connection->type))
+    ChangeRecord record;
+    record.id = id;
+    record.kind = ElementKind::Flow;
+    record.before = m_document.capture(id);
+    if (!m_document.reconnectFlow(id, from, to))
         return false;
-    const Connection before = *connection;
-    const Connection after {before.id, from, to, before.type};
-    pushCommand(
-        tr("Reconnect connection"),
-        [this, before]() {
-            m_document.reconnectConnection(before.id, before.from, before.to);
-            notify(connectionChange(before.id, false));
-        },
-        [this, after]() {
-            m_document.reconnectConnection(after.id, after.from, after.to);
-            notify(connectionChange(after.id, false));
-        });
+    record.after = m_document.capture(id);
+    pushChanges(ChangeSet {{std::move(record)}}, true);
     return true;
 }
 
-void DocumentController::setRoute(ConnectionId id, const Route &route)
+bool DocumentController::reconnectConnector(EntityId id, EntityId from, EntityId to)
 {
-    if (!m_document.connection(id))
+    const Connector *connector = dynamic_cast<const Connector *>(m_document.find(id));
+    if (!connector)
+        return false;
+    if (connector->from == from && connector->to == to)
+        return true;
+    ChangeRecord record;
+    record.id = id;
+    record.kind = ElementKind::Connector;
+    record.before = m_document.capture(id);
+    if (!m_document.reconnectConnector(id, from, to))
+        return false;
+    record.after = m_document.capture(id);
+    pushChanges(ChangeSet {{std::move(record)}}, true);
+    return true;
+}
+
+void DocumentController::setRoute(EntityId id, const Route &route)
+{
+    if (!m_document.find(id) || m_document.diagram().route(id) == route)
         return;
-    const Route before = m_document.diagram().route(id);
-    if (before == route)
+    ChangeRecord record;
+    record.id = id;
+    record.kind = m_document.find(id)->kind();
+    record.before = m_document.capture(id);
+    if (!m_document.setRoute(id, route))
         return;
-    pushCommand(
-        tr("Edit route"),
-        [this, id, before]() {
-            m_document.setRoute(id, before);
-            notify(connectionChange(id, false));
-        },
-        [this, id, route]() {
-            m_document.setRoute(id, route);
-            notify(connectionChange(id, false));
-        });
+    record.after = m_document.capture(id);
+    pushChanges(ChangeSet {{std::move(record)}}, true);
 }
 
 void DocumentController::replaceDocument(Document document)
 {
     m_document = std::move(document);
     m_undoStack.clear();
-    ChangeSet change;
-    change.documentReset = true;
-    notify(change);
+    ChangeNotification notification;
+    notification.documentReset = true;
+    notify(notification);
 }
 
-ClipboardData DocumentController::copyVariables(const std::vector<EntityId> &ids) const
+ClipboardData DocumentController::copyElements(const std::vector<EntityId> &ids) const
 {
     ClipboardData clipboard;
-    std::unordered_map<EntityId, bool> copied;
+    const std::unordered_set<EntityId> selected(ids.begin(), ids.end());
     for (EntityId id : ids) {
-        const Variable *variable = m_document.variable(id);
-        if (!variable || copied.count(id))
+        const DocumentElement *element = m_document.find(id);
+        if (!element)
             continue;
-        copied[id] = true;
-        clipboard.variables.emplace_back(*variable, m_document.diagram().position(id));
-    }
-    for (const Connection &connection : m_document.model().connections()) {
-        if (copied.count(connection.from) && copied.count(connection.to))
-            clipboard.connections.emplace_back(connection, m_document.diagram().route(connection.id));
+        if (element->kind() == ElementKind::Flow) {
+            const Flow &flow = static_cast<const Flow &>(*element);
+            if (!selected.count(flow.endpoints.from) || !selected.count(flow.endpoints.to))
+                continue;
+        }
+        if (element->kind() == ElementKind::Connector) {
+            const Connector &connector = static_cast<const Connector &>(*element);
+            if (!selected.count(connector.from) || !selected.count(connector.to))
+                continue;
+        }
+        clipboard.elements.push_back(*m_document.capture(id));
     }
     return clipboard;
 }
 
 std::vector<EntityId> DocumentController::pasteClipboard(const ClipboardData &clipboard, const QPointF &offset)
 {
-    std::vector<EntityId> createdIds;
-    if (clipboard.empty())
-        return createdIds;
-    m_undoStack.beginMacro(tr("Paste variables"));
+    ChangeSet changes;
+    std::vector<EntityId> created;
     std::unordered_map<EntityId, EntityId> idMap;
-    for (const auto &entry : clipboard.variables) {
-        Variable source = entry.first;
-        std::string base = source.name;
-        std::string unique = base;
-        for (int suffix = 2; m_document.model().variableByName(unique); ++suffix)
-            unique = base + " " + std::to_string(suffix);
-        const qds::core::Vec2 sourcePosition = entry.second;
-        const EntityId id = createVariable(
-            source.type,
-            QPointF(sourcePosition.x + offset.x(), sourcePosition.y + offset.y()));
-        renameVariable(id, QString::fromStdString(unique));
-        setEquation(id, QString::fromStdString(source.equation));
-        setUnit(id, QString::fromStdString(source.unit));
-        setComment(id, QString::fromStdString(source.comment));
-        idMap[source.id] = id;
-        createdIds.push_back(id);
+    const auto rollback = [&created, this]() {
+        for (auto it = created.rbegin(); it != created.rend(); ++it)
+            m_document.remove(*it);
+    };
+    for (int pass = 0; pass < 3; ++pass) {
+        for (const ElementData &source : clipboard.elements) {
+            const bool routed = source.kind == ElementKind::Flow || source.kind == ElementKind::Connector;
+            if ((pass == 0 && routed) || (pass == 1 && source.kind != ElementKind::Flow)
+                || (pass == 2 && source.kind != ElementKind::Connector))
+                continue;
+            EntityId id = 0;
+            if (source.kind == ElementKind::Flow) {
+                if (!idMap.count(source.flowEndpoints.from) || !idMap.count(source.flowEndpoints.to))
+                    continue;
+                id = m_document.createFlow(idMap[source.flowEndpoints.from], idMap[source.flowEndpoints.to]);
+            } else if (source.kind == ElementKind::Connector) {
+                if (!idMap.count(source.from) || !idMap.count(source.to))
+                    continue;
+                id = m_document.createConnector(idMap[source.from], idMap[source.to]);
+            } else if (source.kind == ElementKind::Cloud) {
+                id = m_document.createCloud(source.position + Vec2({offset.x(), offset.y()}));
+            } else if (source.kind == ElementKind::Comment) {
+                id = m_document.createComment(source.content, source.position + Vec2({offset.x(), offset.y()}));
+            } else {
+                id = m_document.createVariable(source.kind, source.position + Vec2({offset.x(), offset.y()}));
+            }
+            if (id == 0) {
+                rollback();
+                return {};
+            }
+            ElementData target = source;
+            target.id = id;
+            target.position = source.position + Vec2({offset.x(), offset.y()});
+            if (source.kind <= ElementKind::Data)
+                target.displayName = uniqueCopyName(m_document, source.displayName);
+            if (source.kind == ElementKind::Flow)
+                target.flowEndpoints = {idMap[source.flowEndpoints.from], idMap[source.flowEndpoints.to]};
+            if (source.kind == ElementKind::Connector) {
+                target.from = idMap[source.from];
+                target.to = idMap[source.to];
+            }
+            if (!m_document.apply(target)) {
+                rollback();
+                return {};
+            }
+            idMap[source.id] = id;
+            created.push_back(id);
+            changes.records.push_back(addedRecord(m_document, id));
+        }
     }
-    for (const auto &entry : clipboard.connections) {
-        const Connection &source = entry.first;
-        if (!idMap.count(source.from) || !idMap.count(source.to))
-            continue;
-        const ConnectionId id = createConnection(idMap[source.from], idMap[source.to], source.type);
-        if (id != 0)
-            setRoute(id, entry.second);
-    }
-    m_undoStack.endMacro();
-    return createdIds;
+    if (!changes.records.empty())
+        pushChanges(changes, true);
+    return created;
 }
 
-void DocumentController::pushCommand(const QString &text, const Callback &undo, const Callback &redo)
+void DocumentController::pushChanges(const ChangeSet &changes, bool alreadyApplied)
 {
-    m_undoStack.push(new FunctionalCommand(text, undo, redo));
+    m_undoStack.push(new ChangeCommand(
+        [this](const ChangeSet &value, bool after) {
+            applyChanges(value, after);
+        },
+        changes,
+        alreadyApplied));
+    if (alreadyApplied) {
+        ChangeNotification notification;
+        for (const ChangeRecord &record : changes.records) {
+            if (!record.after)
+                notification.removed.push_back(record.id);
+            else if (record.before)
+                notification.updated.push_back(record.id);
+            else
+                notification.added.push_back(record.id);
+        }
+        notify(notification);
+    }
 }
 
-void DocumentController::notify(const ChangeSet &changeSet)
+void DocumentController::applyChanges(const ChangeSet &changes, bool after)
 {
-    emit documentChanged(changeSet);
+    ChangeNotification notification;
+    const auto applyRecord = [this, after, &notification](const ChangeRecord &record) {
+        const auto &value = after ? record.after : record.before;
+        if (value) {
+            const bool existed = m_document.find(record.id) != nullptr;
+            if (m_document.apply(*value)) {
+                if (existed)
+                    notification.updated.push_back(record.id);
+                else
+                    notification.added.push_back(record.id);
+            }
+        } else {
+            m_document.remove(record.id);
+            notification.removed.push_back(record.id);
+        }
+    };
+    if (after) {
+        for (const ChangeRecord &record : changes.records)
+            applyRecord(record);
+    } else {
+        for (auto it = changes.records.rbegin(); it != changes.records.rend(); ++it)
+            applyRecord(*it);
+    }
+    notify(notification);
+}
+
+void DocumentController::notify(const ChangeNotification &notification)
+{
+    emit documentChanged(notification);
 }

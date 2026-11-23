@@ -150,33 +150,51 @@ for (const ViewElement &element : document.diagram().elements()) { ... }
 
 三个范围都提供一致的 `begin()/end()`、`empty()` 和迭代器只读访问。Model/DiagramDefinition 的范围只是 Document 元素范围的过滤投影，不重新复制对象。迭代期间不得添加或删除元素；编辑命令先收集 EntityId，再执行修改，避免迭代器失效。
 
-### 3.5 名称、规范化与重名判断
+### 3.5 名称、nameKey 索引与重名判断
 
-只有 ModelElement 参与模型变量命名空间；Cloud、Comment 和 Connector 不与变量争用名称，也不要求全局名称唯一。
+Stock、Flow、Auxiliary、Constant、Data 都可能进入公式，因此全部参与当前模型的语义变量命名空间。Cloud、Comment 和 Connector 不进入公式，不需要唯一名称，也不参与名称到对象的查询：Cloud 和 Connector 只使用 EntityId，Comment 另保存用户正文 `content`，不能把正文当作名称。
 
 每个语义变量同时保存：
 
 - `displayName`：保留用户输入的大小写、空格和 UTF-8 字符，用于画布、属性面板和 XMILE 保存。
-- `normalizedName`：仅用于名称索引、重名判断和方程引用解析的派生键，不作为显示文本，也不独立持久化；加载时由 displayName 重新计算。
-- 方程保留用户可读的名称形式，名称解析器将方程标识符规范化后查找同一 ModelElement；改名命令负责同步更新引用，不能只改声明。
+- `nameKey`：由 displayName 派生，只用于名称索引、重名判断和方程引用解析；不作为显示文本，也不独立持久化，加载时重新计算。
+- 方程保留用户可读的名称形式，名称解析器将方程标识符转换为 nameKey 后查找同一 ModelElement；改名命令负责同步更新引用，不能只改声明。
 
 内部规范化采用简单、稳定的项目规则：去除首尾空白；ASCII A-Z 转为小写；内部空白与下划线折叠为单个下划线；其他 UTF-8 内容保持不变。核心只使用纯 C++ 实现该规则，不引入 ICU，也不宣称内部规则等同于完整 XMILE Unicode 规则。
 
-名称必须支持中文及其他合法 UTF-8 字符。displayName 和 normalizedName 均使用有效 UTF-8；规范化只能按 ASCII 字节和已识别空白处理，不能逐字节修改多字节字符。方程词法分析、名称索引、搜索、复制和 XMILE 读写都使用同一 UTF-8 约定，中文不需要转拼音或英文别名。
+名称必须支持中文及其他合法 UTF-8 字符。displayName 和 nameKey 均使用有效 UTF-8；规范化只能按 ASCII 字节和已识别空白处理，不能逐字节修改多字节字符。方程词法分析、名称索引、搜索、复制和 XMILE 读写都使用同一 UTF-8 约定，中文不需要转拼音或英文别名。
 
-XMILE 3.2.2 的完整等价规则由 I/O 导入适配器处理，包括 Unicode 大小写、非断行空格和引号形式。导入器生成内部 normalizedName 时，必须同步改写变量声明、stock inflow/outflow、connector from/to 和方程引用；只修改变量名会产生悬空引用。完整 Unicode/UCA 处理如需 ICU，只允许进入 I/O 适配层，不进入纯 C++ 核心。
+XMILE 3.2.2 的完整等价规则由 I/O 导入适配器处理，包括 Unicode 大小写、非断行空格和引号形式。导入器生成内部 nameKey 时，必须同步改写变量声明、stock inflow/outflow、connector from/to 和方程引用；只修改变量名会产生悬空引用。完整 Unicode/UCA 处理如需 ICU，只允许进入 I/O 适配层，不进入纯 C++ 核心。
+
+Document 集中维护唯一的名称索引：
+
+```cpp
+std::unordered_map<std::string, EntityId> m_nameIndex; // nameKey -> ModelElement
+```
+
+由于 nameKey 在当前模型内唯一，索引值是单个 EntityId，不使用 multimap。`findByName` 先规范化输入再执行平均 O(1) 查找；自动命名也通过该索引检查候选名称，不遍历全部变量。该索引是语义命名和公式解析所需的基础索引，不属于“经过 profile 后才引入”的 Stock 流入/流出派生索引。
+
+索引与对象所有权一样只能由 Document 修改。创建、改名、删除、restore、clear 和文档重置必须同步维护；改名先检查目标键，再原子替换旧键和新键，失败时保留原对象和索引。撤销/重做恢复修改前的 displayName 并恢复对应索引，不重新生成名称。
 
 规则：
 
-- 创建、改名、粘贴和 XMILE 加载都使用同一个 `IdentifierNormalizer` 与名称索引。
-- `normalizedName` 为空或与同模型内其他 ModelElement 冲突时拒绝创建/改名；改名对象自身不视为冲突。
-- 只改变大小写或等价显示形式且 normalizedName 不变时允许，并保持 ID 不变。
-- 自动命名和复制后缀基于同一规范化索引，例如 Flow、Flow 2；不得生成仅大小写不同的名称。
+- 创建、改名、粘贴和 XMILE 加载都使用同一个 `IdentifierNormalizer` 与 nameKey 索引。
+- `nameKey` 为空或与同模型内其他 ModelElement 冲突时拒绝创建/改名；改名对象自身不视为冲突。
+- 只改变大小写或等价显示形式且 nameKey 不变时允许，并保持 ID 不变。
 - XMILE 加载遇到冲突应报错并保留原 Document，不得静默改名，否则方程引用会改变含义。
-- 撤销/重做恢复修改前的 displayName，并同步名称索引。
 - 后续引入子模型时，唯一性作用域扩展为 XMILE 定义的模型/whole-model 命名空间，不把当前单模型规则硬编码成全局假设。
 
-验收至少覆盖：`Flow` 与 `flow` 冲突、`birth_rate` 与 `birth rate` 冲突、连续空白、仅大小写改名、复制自动后缀、撤销恢复、XMILE 冲突加载失败，以及 Cloud/Comment 与变量同名不冲突。中文场景覆盖创建、重名、改名、方程引用、搜索、复制、撤销和 XMILE 往返，例如 `库存`、`流入 速率` 与 `流入_速率`。
+验收至少覆盖：`Flow` 与 `flow` 冲突、`birth_rate` 与 `birth rate` 冲突、连续空白、仅大小写改名、撤销恢复、索引与对象同步、XMILE 冲突加载失败，以及 Cloud/Comment 与变量同名不冲突。中文场景覆盖创建、重名、改名、方程引用、搜索、复制、撤销和 XMILE 往返，例如 `库存`、`流入 速率` 与 `流入_速率`。
+
+### 3.6 默认名称与序列化 uid
+
+每个语义变量类型使用独立、单调递增的命名计数器，生成 `Stock1`、`Flow1`、`Auxiliary1` 等默认 displayName。命名计数器不是 EntityId，也不表示对象身份；删除对象不回收编号，编号允许不连续。
+
+候选名称仍需查询 nameKey 索引，因为用户改名、XMILE 导入和粘贴都可能提前占用某个候选名称。若冲突则继续递增，直到取得未使用的名称；无需扫描全部对象。加载文档后计数器可从 1 开始并跳过已占用名称。undo/redo 恢复原 displayName，不重新运行自动命名。
+
+XMILE `uid` 只是文件内显示对象的引用标识，不替代内部 EntityId。XMILE 1.1 第 5.1.3 节规定 uid 在一次文件内唯一且线性递增，但不要求跨多次读写稳定。保存时可生成文件内 uid，加载时建立“uid → 新 EntityId”映射；不得把 uid 当作撤销身份或跨文档永久身份。
+
+标准 `<text_box>` 等显示对象在标准允许且需要被引用时使用 uid。XMILE 1.1 没有标准 `<cloud>` 标签，Cloud 的位置和 Flow 对 Cloud 的引用写入独立 workspace；workspace 可使用自己的文件内 uid 引用机制，但不能声称这是标准 XMILE Cloud。Stock 的 `<inflow>`/`<outflow>` 始终引用 Flow 名称，不引用 Cloud uid。
 
 ## 4. 画布 Item 类体系
 
@@ -248,7 +266,15 @@ public:
 };
 ```
 
-端点只能是 Stock 或 Cloud，且不能相同。由于 Cloud 属于 DiagramDefinition，端点合法性由 Document 聚合层校验。流量工具从 Stock/Cloud 拖出橡皮线，在另一合法端点释放后一次创建 Flow；不提供独立物料连接或脱离管线的流量节点入口。
+稳定文档中的 Flow 端点只能是 Stock 或 Cloud，不使用 EntityId 0 表示画布上的空白端。Rate 工具允许从任意空白位置开始并在任意空白位置结束；释放时，每个空白端都创建一个真正的 Cloud，已有 Cloud 则直接复用。由此支持 Stock→Stock、Stock→Cloud、Cloud→Stock 和 Cloud→Cloud，不需要增加“隐式端点”类型。“隐式 Cloud”只描述由工具自动创建的交互方式，提交后仍是普通 Cloud。
+
+创建 Cloud、Flow、位置和 Route 必须属于同一个 ChangeSet；Esc、右键取消或创建失败时不留下任何对象。首版中自动创建的 Cloud 提交后与其他 Cloud 采用相同生命周期，删除 Flow 时不擅自级联删除 Cloud，避免误删共享或用户继续使用的云团；删除 Stock/Cloud 时仍必须级联删除关联 Flow。若以后需要由 Flow 独占并回收 Cloud，必须先明确所有权，不能仅按当前连接数猜测。
+
+XMILE 中未被任何 Stock 引用的 Flow 仍是语义变量，导入时不得丢弃；但它不能成为编辑器中不可见的模型对象。若原文件没有对应视图或可用路径，导入器应补建默认 Flow 图形，并为开放端补建 Cloud，因此未被 Stock 引用的 Flow 可表示为 Cloud→Cloud。EntityId 0 只允许出现在导入解析的临时数据中，提交完整 Document 前必须解析为有效 Stock/Cloud；稳定文档不保存 `{0, 0}` 或半连接 Flow。
+
+所有具有名称、方程或初值的语义变量都必须在当前单视图中具有可见投影。XMILE 的 model 变量定义与 view 显示对象仍是两个层次；“必须显示”通过导入时补齐视图实现，不能通过删除没有 view 的 ModelElement 实现。缺少整个 view 时采用确定性自动布局；只缺少部分变量时把缺失变量补入当前视图，避免公式静默消失。
+
+Flow.from/to 是唯一权威关系。当前不引入 Stock 流入/流出派生索引，查询直接遍历 Flow；只有 profile 证明存在性能瓶颈时，才在 Document/Model 层统一增加集中式派生索引，不把索引分散保存在 Stock 对象中。nameKey 索引是另一项基础语义索引，按第 3.5 节始终维护。
 
 所有 RoutedItem 的 Route 按统一 EntityId 存入 DiagramDefinition。Flow 只接受 Straight/Bezier，默认 Straight，不运行直角自动避障；Arrow 默认可使用 Orthogonal。
 
@@ -267,7 +293,9 @@ C - 12N - 10T，C，C - 12N + 10T
 
 ### 4.2.3 Flow 的 XMILE 边界
 
-Flow 名称和方程写入标准 `<flow>`，Stock 使用 `<inflow>`/`<outflow>` 引用 Flow；不生成物料 Connector。Flow 控制点写入 view flow 的 `pts`。Cloud 端点、RouteMode、manual/locked 等无标准承载的信息写入独立 workspace.xml。名称和端点加载必须属于同一事务，失败时保留原 Document。
+目标版本为 XMILE 1.1。Flow 名称和方程写入标准 `<flow>`，Stock 使用 `<inflow>`/`<outflow>` 引用 Flow；不生成物料 Connector。Flow 的标准视图信息写入 view flow，Cloud 端点、Cloud 位置、RouteMode、贝塞尔控制数据、manual/locked 等无标准承载的信息写入独立 workspace.xml。Constant/Data 在标准 XMILE 中仍写为 aux，workspace 以可选 `variable-kind` 记录保留内部变量分类；无该记录的普通 XMILE aux 始终导入为 Auxiliary。XMILE 1.1 没有标准 `<cloud>`，不得输出该标签冒充标准内容。
+
+加载原生容器时，通过 workspace 的文件内 uid 恢复 Cloud 与 Flow 端点，再映射为新 EntityId。加载不带 workspace 的纯 XMILE 时，根据 Stock 的 inflow/outflow 和 Flow 路径补建开放端 Cloud；没有视图或路径时生成确定性的默认布局。名称、端点、视图补齐和索引建立必须属于同一事务，失败时保留原 Document。
 
 ### 4.3 吸附点和端口
 
@@ -387,7 +415,7 @@ struct ChangeNotification {
 `DiagramScene::apply(ChangeNotification)` 不再按对象类别使用平行通道：
 
 1. 按 removed 中由 Document 计算的依赖顺序删除图元：先控制句柄和 RoutedItem，后端点图元；每项只通过统一 Scene 索引查找。
-2. 按 added 顺序调用 Document::find(id)，根据 ElementKind 创建图元；端点先于 Flow/Connector。
+2. added 先按“非路由对象→Flow→Connector”排序，再调用 Document::find(id) 创建图元；不能依赖 unordered_map 或通知原始顺序，因为 Flow 端点图元必须先存在，Connector 又可能以 Flow 为端点。
 3. 对 updated 调用 Document::find(id) 并刷新已有图元。
 4. 刷新受影响端口和路径。
 
@@ -596,9 +624,12 @@ ControlPointHandle
 - 每个 FlowItem 的 ID 都对应 Model::Flow，而不是 Connector。
 - 每个 ArrowItem 的 ID 都对应 DiagramDefinition::Connector。
 - CloudItem、CommentItem 只对应 DiagramDefinition 对象，不出现在 Model::variables()。
-- 每条 Connector 和 Flow 的端点对象均存在。
+- 每条 Connector 和 Flow 的端点对象均存在；稳定 Document 中 Flow 两端均为有效 Stock/Cloud，不存在 0 端点或半连接 Flow。
 - Document::find(id) 能返回任意 Stock、Flow、Auxiliary、Connector、Cloud 或 Comment，且结果 kind() 与实际对象一致。
 - 每个 DiagramItem::id() 均可通过 Document::find() 找到对应核心对象；每个可见核心对象均可通过 DiagramScene::item() 找到图元。
+- 当前单视图中，每个 ModelElement 恰好有一个可见 DiagramItem；没有仅因原 XMILE 缺少 view/pts 而不可见的公式变量。
+- nameKey 索引与 ModelElement 集合一一对应：每个非空 nameKey 只出现一次，索引目标 ID 正确且对象的 displayName 重新派生后等于该键；Cloud、Comment、Connector 不在索引中。
+- 创建、改名、删除、restore、clear、undo/redo 和 XMILE 加载后，名称索引均满足上述约束；自动命名发生冲突时递增计数器且不扫描全部变量。
 - 所有索引无重复、无失效 ID。
 - 普通编辑、撤销和重做后均满足上述约束。
 - 统一 ID 的 undo/redo 必须使用以下完整场景：创建 Stock、Cloud、Flow、Connector 时 ID 来自同一递增序列；删除 Stock 级联删除 Flow/Connector 后，undo 根据命令持有的 ChangeSet 恢复全部原 ID 和端点，redo 再删除；再次 undo 后新建对象使用大于历史最大值的 ID，不复用已恢复 ID。

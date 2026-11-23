@@ -4,7 +4,8 @@
 
 | 本地文件 | 原始来源 | 用途 |
 | --- | --- | --- |
-| `xmile-1.0-os.html` | https://docs.oasis-open.org/xmile/xmile/v1.0/os/xmile-v1.0-os.html | XMILE 1.0 正式规范，原始 HTML |
+| `xmile-1.1.html` | https://xmile.systemdynamics.org/1.1/xmile-v1.1.html | XMILE 1.1 目标规范，原始 HTML |
+| `xmile-1.0-os.html` | https://docs.oasis-open.org/xmile/xmile/v1.0/os/xmile-v1.0-os.html | XMILE 1.0 正式规范，仅用于旧文件兼容核对 |
 | `vensim-sketch-tools.md` | https://www.vensim.com/documentation/ref_sketch_tools.html | Level、Arrow、Rate、Sketch Comment 工具 |
 | `vensim-rate-class.md` | https://www.vensim.com/documentation/22930.html | Rate、Valve、管线与源/汇云团 |
 | `vensim-auxiliaries-arrows.md` | https://www.vensim.com/documentation/20335.html | Arrow 与 Rate 名称/阀门的结构关系 |

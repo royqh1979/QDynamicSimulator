@@ -11,19 +11,19 @@
 - Vensim [Adding Auxiliaries and Arrows](https://www.vensim.com/documentation/20335.html)：Arrow 可连接 Rate 名称或阀门，二者在结构上是同一个变量。
 - Vensim [Variable Types](https://www.vensim.com/documentation/ref_variable_types.html)：Level、Constant、Data、Auxiliary 等变量分类。
 - Vensim [Sketch Comment](https://www.vensim.com/documentation/22940.html)：注释属于视图展示，不是模型结构；只有作为 Arrow Junction 时才可接入箭头。
-- OASIS [XMILE 1.0](https://docs.oasis-open.org/xmile/xmile/v1.0/os/xmile-v1.0-os.html)：模型变量包括 stock、flow、aux；stock 通过 inflow/outflow 引用 flow，视图使用 connector、cloud、text_box 等对象。
+- OASIS [XMILE 1.1](https://xmile.systemdynamics.org/1.1/xmile-v1.1.html)：模型变量包括 stock、flow、aux；stock 通过 inflow/outflow 引用 flow，视图使用 connector、text_box 等对象。1.1 没有标准 `<cloud>` 显示对象；本地保存的 1.0 规范仅用于旧文件兼容核对。
 
 ## 2. 元素对应表
 
 | 当前名称/类型 | Vensim 概念 | XMILE 表示 | 目标处理 |
 | --- | --- | --- | --- |
 | Stock | Level | model `<stock>` + view `<stock>` | 保留；语义变量，具有初始值及 inflow/outflow |
-| Flow | Rate；其图形中心为 Valve | model `<flow>` + view `<flow>` | 一个流量实体直接拥有路径和端点；阀门不是另一个变量 |
+| Flow | Rate；其图形中心为 Valve | model `<flow>` + view `<flow>` | 一个流量实体直接拥有路径和端点；阀门不是另一个变量；XMILE 可存在未连接 flow |
 | Auxiliary | Auxiliary | model/view `<aux>` | 保留；语义变量 |
 | Constant | Constant / Parameter | 通常使用 `<aux>`，没有独立 constant 标签 | 保留为变量分类，不冒充 XMILE 独立元素 |
 | Exogenous | Data；Glossary 中 Exogenous 指由数据给定的变量 | 通常使用 `<aux>` | 界面宜称“数据/外生变量（Data）”，作为变量分类 |
-| Cloud | Rate 的 source/sink 云团 | view `<cloud>`，不是 model 变量 | 移出语义变量集合，成为视图对象 |
-| Annotation | Sketch Comment；可为 Arrow Junction | view `<text_box>` 等 | 移出语义变量集合，不拥有模型方程 |
+| Cloud | Rate 的 source/sink 云团 | XMILE 1.1 无标准 `<cloud>`；不是 model 变量 | 移出语义变量集合，成为只有 EntityId 的视图对象；布局与端点绑定保存在 workspace |
+| Annotation | Sketch Comment；可为 Arrow Junction | view `<text_box>` 等 | 移出语义变量集合，不拥有模型方程；只有 content，不需要唯一名称 |
 | “依赖线” / Information | Arrow；变量间可称因果箭头 | view `<connector>` | 更名“箭头”；不使用“依赖线”作为正式术语 |
 | “物料流” / MaterialFlow | 没有独立于 Rate 的此类工具 | stock 的 `<inflow>`/`<outflow>` 与 view flow | 删除独立类型；物料关系属于流量实体 |
 | Annotation Connection | 普通 Arrow 接入 Arrow Junction；不是另一种标准连接 | 仍是 `<connector>` | 不保留独立连接类型；由端点对象决定是否具有模型结构意义 |
@@ -52,7 +52,9 @@ Document
 ```
 
 - Constant 和 Data/Exogenous 可作为语义变量的分类属性，XMILE 读写仍映射为 aux。
-- Cloud 和 Comment 使用统一 EntityId，但不进入 Model 的变量索引。
+- Cloud、Comment 和 Connector 使用统一 EntityId，但不进入 Model 的变量索引，也不需要 displayName/nameKey；Comment 保存 content。
+- Stock、Flow、Auxiliary、Constant、Data 需要唯一 displayName，并由 Document 集中维护 `nameKey → EntityId` 索引供重名判断和公式解析。
+- XMILE uid 仅用于文件内显示对象引用，加载时映射为新 EntityId，不作为内部永久身份。Cloud 在 XMILE 1.1 中没有标准标签，其布局与端点引用只能进入 workspace。
 - Flow 的端点校验属于 Document 聚合层，因为端点既可能是 Model 中的 Stock，也可能是 DiagramDefinition 中的 Cloud。
 - Connector 属于 DiagramDefinition；只有两端均为语义变量时才表达因果结构。
 - 所有文档对象仍共用一个 EntityId 生成器，语义/视图分层不产生第二套 ID 空间。
@@ -65,6 +67,9 @@ Document
 4. 流量只支持 Straight 和 Bezier、默认 Straight，是本项目已确认的编辑子集；不得声称 Vensim Rate 本身只支持这两种形状。
 5. 阀门始终垂直于路径切线，也是本项目已确认的显示规则；Vensim 自身提供多种阀门外观选项，不把该规则误写为 XMILE 要求。
 6. 本项目已确认使用拖拽橡皮线创建 Rate/Arrow；Vensim 文档中的单击起点/终点方式仅作概念参照，不覆盖本项目交互决定。
+7. Rate 可从空白开始并在空白结束；每个空白端自动创建真正的 Cloud，Flow 稳定保存 Stock/Cloud EntityId，不以 0 表示画布开放端。
+8. 未被 Stock 引用或没有视图的 XMILE Flow 仍须保留在 Model，并由导入器补建可见 Flow 及必要 Cloud；所有语义变量都必须出现在当前视图中。
+9. 语义变量默认名称按类型递增生成，并通过集中式 nameKey 索引排除冲突；Cloud/Comment 不参与该命名体系。
 
 ## 5. 后续设计审查清单
 

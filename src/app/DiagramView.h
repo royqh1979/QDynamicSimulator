@@ -4,6 +4,8 @@
 
 class DiagramView : public QGraphicsView
 {
+    Q_OBJECT
+
 public:
     explicit DiagramView(QGraphicsScene *scene, QWidget *parent = nullptr);
 
@@ -12,6 +14,9 @@ public:
     void resetZoom();
     void fitAll();
     void fitSelection();
+
+signals:
+    void fileOpenRequested(const QString &fileName);
 
 protected:
     void wheelEvent(QWheelEvent *event) override;

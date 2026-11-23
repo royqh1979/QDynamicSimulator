@@ -4,19 +4,28 @@
 #include "DocumentController.h"
 #include "EntityPalette.h"
 #include "EquationEditor.h"
+#include "MainWindow.h"
 #include "MiniMapView.h"
 #include "RecentFiles.h"
 #include "Routing.h"
+#include <qds/io/XmileFile.h>
 
 #include <QDropEvent>
+#include <QFile>
 #include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSceneMouseEvent>
+#include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMimeData>
+#include <QTemporaryDir>
 #include <QTimer>
+#include <QToolBar>
+#include <QUrl>
 #include <QtTest>
 
 #include <cmath>
+#include <optional>
 
 using namespace qds::core;
 
@@ -33,16 +42,19 @@ class TestEditor : public QObject
 private slots:
     void createUndoRedo();
     void renameAndEquationUndo();
+    void commentContentEditing();
     void moveUndoRedo();
-    void connectionAndCascadeRestore();
+    void flowAndCascadeRestore();
     void routeUndoRedo();
     void replaceDocumentResetsScene();
-    void connectionTypeValidation();
+    void missingViewImportProjectsAllVariables();
+    void connectorValidation();
     void connectionDeleteUndo();
     void layoutOperations();
     void gridAndSceneBounds();
     void viewOperations();
     void routeModesAndGeometry();
+    void flowRoutesAndValveGeometry();
     void bezierControlGuideRendering();
     void controlPointDoubleClick();
     void reconnectUndo();
@@ -55,91 +67,128 @@ private slots:
     void rubberConnectionAndSelection();
     void connectionContextMenu();
     void orthogonalArrowDirections();
+    void actionIcons();
+    void unifiedIdUndoRedo();
+    void modifierDragOperations();
+    void fileDropOpen();
 };
 
 void TestEditor::createUndoRedo()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    const EntityId id = controller.createVariable(VariableType::Stock, QPointF(10.0, 20.0));
-    QVERIFY(scene.variableItem(id));
+    const EntityId id = controller.createVariable(ElementKind::Stock, QPointF(10.0, 20.0));
+    QVERIFY(scene.item(id));
     QCOMPARE(controller.document().diagram().position(id), Vec2({10.0, 20.0}));
     controller.undoStack()->undo();
-    QVERIFY(controller.document().variable(id) == nullptr);
-    QVERIFY(scene.variableItem(id) == nullptr);
+    QVERIFY(controller.document().find(id) == nullptr);
+    QVERIFY(scene.item(id) == nullptr);
     controller.undoStack()->redo();
-    QVERIFY(scene.variableItem(id));
-    QCOMPARE(controller.document().variable(id)->id, id);
+    QVERIFY(scene.item(id));
+    QCOMPARE(controller.document().find(id)->id(), id);
 }
 
 void TestEditor::renameAndEquationUndo()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    const EntityId id = controller.createVariable(VariableType::Stock, QPointF());
-    QVERIFY(controller.renameVariable(id, QStringLiteral("Population")));
+    const EntityId id = controller.createVariable(ElementKind::Stock, QPointF());
+    QVERIFY(controller.renameElement(id, QStringLiteral("Population")));
     controller.setEquation(id, QStringLiteral("100"));
     controller.setUnit(id, QStringLiteral("people"));
     controller.setComment(id, QStringLiteral("Population stock"));
-    QCOMPARE(controller.document().variable(id)->unit, std::string("people"));
-    QCOMPARE(controller.document().variable(id)->comment, std::string("Population stock"));
+    const auto *model = static_cast<const ModelElement *>(controller.document().find(id));
+    QCOMPARE(model->unit, std::string("people"));
+    QCOMPARE(model->comment, std::string("Population stock"));
     controller.undoStack()->undo();
     controller.undoStack()->undo();
-    QCOMPARE(scene.variableItem(id)->name(), QStringLiteral("Population"));
+    QCOMPARE(dynamic_cast<VariableItem *>(scene.item(id))->name(), QStringLiteral("Population"));
     controller.undoStack()->undo();
-    QCOMPARE(controller.document().variable(id)->equation, std::string());
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(id))->equation, std::string());
     controller.undoStack()->undo();
-    QCOMPARE(controller.document().variable(id)->name, std::string("Stock"));
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(id))->displayName, std::string("Stock1"));
     controller.undoStack()->redo();
     controller.undoStack()->redo();
-    QCOMPARE(controller.document().variable(id)->equation, std::string("100"));
-    QVERIFY(!controller.renameVariable(id, QString()));
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(id))->equation, std::string("100"));
+    QVERIFY(!controller.renameElement(id, QString()));
+}
+
+void TestEditor::commentContentEditing()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId id = controller.createComment(QStringLiteral("Before"), QPointF());
+    controller.setCommentContent(id, QStringLiteral("After"));
+    QCOMPARE(static_cast<const Comment *>(controller.document().find(id))->content, std::string("After"));
+    QCOMPARE(dynamic_cast<ViewObjectItem *>(scene.item(id))->text(), QStringLiteral("After"));
+    controller.undoStack()->undo();
+    QCOMPARE(static_cast<const Comment *>(controller.document().find(id))->content, std::string("Before"));
+    QCOMPARE(dynamic_cast<ViewObjectItem *>(scene.item(id))->text(), QStringLiteral("Before"));
+    controller.undoStack()->redo();
+    QCOMPARE(static_cast<const Comment *>(controller.document().find(id))->content, std::string("After"));
+
+    MainWindow window;
+    auto *windowController = window.findChild<DocumentController *>();
+    auto *windowScene = window.findChild<DiagramScene *>();
+    const EntityId windowComment = windowController->createComment(QStringLiteral("初始注释"), QPointF());
+    windowScene->item(windowComment)->setSelected(true);
+    auto *edit = window.findChild<QLineEdit *>(QStringLiteral("commentEdit"));
+    auto *label = window.findChild<QLabel *>(QStringLiteral("commentLabel"));
+    QVERIFY(edit && label);
+    QCOMPARE(label->text(), QStringLiteral("正文"));
+    QVERIFY(edit->isEnabled());
+    edit->setText(QStringLiteral("修改后的注释"));
+    QTest::keyClick(edit, Qt::Key_Return);
+    QCOMPARE(static_cast<const Comment *>(windowController->document().find(windowComment))->content,
+             std::string("修改后的注释"));
+    QCOMPARE(dynamic_cast<ViewObjectItem *>(windowScene->item(windowComment))->text(), QStringLiteral("修改后的注释"));
+    windowController->undoStack()->undo();
+    QCOMPARE(edit->text(), QStringLiteral("初始注释"));
+    QCOMPARE(dynamic_cast<ViewObjectItem *>(windowScene->item(windowComment))->text(), QStringLiteral("初始注释"));
 }
 
 void TestEditor::moveUndoRedo()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    const EntityId first = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
-    const EntityId second = controller.createVariable(VariableType::Auxiliary, QPointF(10.0, 10.0));
-    controller.moveVariables({{first, QPointF(50.0, 60.0)}, {second, QPointF(70.0, 80.0)}});
-    QCOMPARE(scene.variableItem(first)->pos(), QPointF(50.0, 60.0));
-    QCOMPARE(scene.variableItem(second)->pos(), QPointF(70.0, 80.0));
-    QCOMPARE(controller.undoStack()->count(), 3);
+    const EntityId first = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    const EntityId second = controller.createVariable(ElementKind::Auxiliary, QPointF(10.0, 10.0));
+    controller.moveElements({{first, QPointF(50.0, 60.0)}, {second, QPointF(70.0, 80.0)}});
+    QCOMPARE(scene.item(first)->pos(), QPointF(50.0, 60.0));
+    QCOMPARE(scene.item(second)->pos(), QPointF(70.0, 80.0));
     controller.undoStack()->undo();
-    QCOMPARE(scene.variableItem(first)->pos(), QPointF(0.0, 0.0));
-    QCOMPARE(scene.variableItem(second)->pos(), QPointF(10.0, 10.0));
+    QCOMPARE(scene.item(first)->pos(), QPointF(0.0, 0.0));
+    QCOMPARE(scene.item(second)->pos(), QPointF(10.0, 10.0));
     controller.undoStack()->redo();
-    QCOMPARE(scene.variableItem(first)->pos(), QPointF(50.0, 60.0));
+    QCOMPARE(scene.item(first)->pos(), QPointF(50.0, 60.0));
 }
 
-void TestEditor::connectionAndCascadeRestore()
+void TestEditor::flowAndCascadeRestore()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
-    const EntityId flow = controller.createVariable(VariableType::Flow, QPointF(200.0, 0.0));
-    const ConnectionId connection = controller.createConnection(flow, stock);
-    QVERIFY(scene.connectionItem(connection));
-    QCOMPARE(scene.connectionItem(connection)->from(), scene.variableItem(flow));
-    controller.removeVariables({stock});
-    QVERIFY(scene.variableItem(stock) == nullptr);
-    QVERIFY(scene.connectionItem(connection) == nullptr);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    const EntityId cloud = controller.createCloud(QPointF(200.0, 0.0));
+    const EntityId flow = controller.createFlow(stock, cloud);
+    QVERIFY(dynamic_cast<FlowItem *>(scene.item(flow)));
+    controller.removeElements({stock});
+    QVERIFY(scene.item(stock) == nullptr);
+    QVERIFY(scene.item(flow) == nullptr);
     controller.undoStack()->undo();
-    QVERIFY(scene.variableItem(stock));
-    QVERIFY(scene.connectionItem(connection));
-    QCOMPARE(controller.document().connection(connection)->from, flow);
+    QVERIFY(scene.item(stock));
+    QVERIFY(dynamic_cast<FlowItem *>(scene.item(flow)));
+    QCOMPARE(static_cast<const Flow *>(controller.document().find(flow))->endpoints.from, stock);
     controller.undoStack()->redo();
-    QVERIFY(scene.connectionItem(connection) == nullptr);
+    QVERIFY(scene.item(flow) == nullptr);
 }
 
 void TestEditor::routeUndoRedo()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF());
-    const EntityId flow = controller.createVariable(VariableType::Flow, QPointF(100.0, 0.0));
-    const ConnectionId id = controller.createConnection(flow, stock);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(100.0, 0.0));
+    const EntityId id = controller.createConnector(stock, auxiliary);
     Route route;
     route.manual = true;
     route.controlPoints = {{50.0, 50.0}};
@@ -155,62 +204,97 @@ void TestEditor::replaceDocumentResetsScene()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    controller.createVariable(VariableType::Stock, QPointF());
+    controller.createVariable(ElementKind::Stock, QPointF());
     Document replacement;
-    const EntityId id = replacement.createVariable(VariableType::Auxiliary, {30.0, 40.0});
-    controller.replaceDocument(replacement);
+    const EntityId id = replacement.createVariable(ElementKind::Auxiliary, {30.0, 40.0});
+    controller.replaceDocument(std::move(replacement));
     QCOMPARE(scene.items().size(), 1);
-    QVERIFY(scene.variableItem(id));
+    QVERIFY(scene.item(id));
     QCOMPARE(controller.undoStack()->count(), 0);
     QVERIFY(controller.undoStack()->isClean());
 }
 
-void TestEditor::connectionTypeValidation()
+void TestEditor::missingViewImportProjectsAllVariables()
+{
+    QTemporaryDir directory;
+    const QString path = directory.filePath(QStringLiteral("without-view.xmile"));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write("<xmile version=\"1.1\"><model><variables>"
+               "<stock name=\"S\"><eqn>10</eqn></stock>"
+               "<flow name=\"F\"><eqn>1</eqn></flow>"
+               "<aux name=\"A\"><eqn>F * 2</eqn></aux>"
+               "</variables></model></xmile>");
+    file.close();
+    Document loaded;
+    QString error;
+    QVERIFY2(qds::io::loadXmile(path, loaded, &error), qPrintable(error));
+
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    controller.replaceDocument(std::move(loaded));
+    int modelCount = 0;
+    for (const ModelElement &element : controller.document().model().elements()) {
+        ++modelCount;
+        QVERIFY2(scene.item(element.id()), qPrintable(QString::fromStdString(element.displayName)));
+        if (element.kind() == ElementKind::Flow) {
+            const auto *item = dynamic_cast<FlowItem *>(scene.item(element.id()));
+            QVERIFY(item && item->from() && item->to());
+        }
+    }
+    QCOMPARE(modelCount, 3);
+}
+
+void TestEditor::connectorValidation()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF());
-    const EntityId auxiliary = controller.createVariable(VariableType::Auxiliary, QPointF(100.0, 0.0));
-    const int before = controller.undoStack()->count();
-    QCOMPARE(controller.createConnection(auxiliary, stock, ConnectionType::MaterialFlow), ConnectionId(0));
-    QCOMPARE(controller.undoStack()->count(), before);
-    const ConnectionId information = controller.createConnection(stock, auxiliary, ConnectionType::Information);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(100.0, 0.0));
+    const EntityId cloud = controller.createCloud(QPointF(200.0, 0.0));
+    QCOMPARE(controller.createConnector(cloud, auxiliary), EntityId(0));
+    const auto beforeInvalidFlow = std::distance(controller.document().elements().begin(), controller.document().elements().end());
+    QCOMPARE(controller.createFlow(auxiliary, 0, std::nullopt, QPointF(400.0, 0.0)), EntityId(0));
+    QCOMPARE(std::distance(controller.document().elements().begin(), controller.document().elements().end()), beforeInvalidFlow);
+    QVERIFY(controller.document().find(auxiliary));
+    const EntityId information = controller.createConnector(stock, auxiliary);
     QVERIFY(information != 0);
-    QVERIFY(scene.connectionItem(information));
+    QCOMPARE(controller.createConnector(stock, auxiliary), EntityId(0));
+    QVERIFY(dynamic_cast<ArrowItem *>(scene.item(information)));
 }
 
 void TestEditor::connectionDeleteUndo()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF());
-    const EntityId auxiliary = controller.createVariable(VariableType::Auxiliary, QPointF(100.0, 0.0));
-    const ConnectionId id = controller.createConnection(stock, auxiliary);
-    scene.connectionItem(id)->setSelected(true);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(100.0, 0.0));
+    const EntityId id = controller.createConnector(stock, auxiliary);
+    scene.item(id)->setSelected(true);
     scene.removeSelected();
-    QVERIFY(scene.connectionItem(id) == nullptr);
+    QVERIFY(scene.item(id) == nullptr);
     controller.undoStack()->undo();
-    QVERIFY(scene.connectionItem(id));
+    QVERIFY(scene.item(id));
 }
 
 void TestEditor::layoutOperations()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    const EntityId first = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
-    const EntityId second = controller.createVariable(VariableType::Stock, QPointF(50.0, 50.0));
-    const EntityId third = controller.createVariable(VariableType::Stock, QPointF(100.0, 100.0));
-    scene.variableItem(first)->setSelected(true);
-    scene.variableItem(second)->setSelected(true);
-    scene.variableItem(third)->setSelected(true);
+    const EntityId first = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    const EntityId second = controller.createVariable(ElementKind::Stock, QPointF(50.0, 50.0));
+    const EntityId third = controller.createVariable(ElementKind::Stock, QPointF(100.0, 100.0));
+    scene.item(first)->setSelected(true);
+    scene.item(second)->setSelected(true);
+    scene.item(third)->setSelected(true);
     scene.alignSelected(Qt::AlignLeft);
-    QCOMPARE(scene.variableItem(first)->pos().x(), 0.0);
-    QCOMPARE(scene.variableItem(second)->pos().x(), 0.0);
-    QCOMPARE(scene.variableItem(third)->pos().x(), 0.0);
+    QCOMPARE(scene.item(first)->pos().x(), 0.0);
+    QCOMPARE(scene.item(second)->pos().x(), 0.0);
+    QCOMPARE(scene.item(third)->pos().x(), 0.0);
     controller.undoStack()->undo();
-    QCOMPARE(scene.variableItem(third)->pos(), QPointF(100.0, 100.0));
+    QCOMPARE(scene.item(third)->pos(), QPointF(100.0, 100.0));
     scene.distributeSelected(false);
-    QCOMPARE(scene.variableItem(second)->pos().y(), 50.0);
+    QCOMPARE(scene.item(second)->pos().y(), 50.0);
     scene.selectAllItems();
     QVERIFY(scene.selectedItems().size() >= 3);
 }
@@ -222,15 +306,15 @@ void TestEditor::gridAndSceneBounds()
     QCOMPARE(scene.snapPoint(QPointF(23.0, 37.0)), QPointF(20.0, 40.0));
     scene.setSnapEnabled(false);
     QCOMPARE(scene.snapPoint(QPointF(23.0, 37.0)), QPointF(23.0, 37.0));
-    const EntityId id = controller.createVariable(VariableType::Stock, QPointF(5000.0, 5000.0));
-    QVERIFY(scene.sceneRect().contains(scene.variableItem(id)->sceneBoundingRect()));
+    const EntityId id = controller.createVariable(ElementKind::Stock, QPointF(5000.0, 5000.0));
+    QVERIFY(scene.sceneRect().contains(scene.item(id)->sceneBoundingRect()));
 }
 
 void TestEditor::viewOperations()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    controller.createVariable(VariableType::Stock, QPointF(100.0, 100.0));
+    controller.createVariable(ElementKind::Stock, QPointF(100.0, 100.0));
     DiagramView view(&scene);
     view.zoomIn();
     QVERIFY(view.transform().m11() > 1.0);
@@ -244,10 +328,10 @@ void TestEditor::routeModesAndGeometry()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
-    const EntityId flow = controller.createVariable(VariableType::Flow, QPointF(240.0, 0.0));
-    const ConnectionId id = controller.createConnection(flow, stock, ConnectionType::MaterialFlow);
-    ConnectionItem *item = scene.connectionItem(id);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(240.0, 0.0));
+    const EntityId id = controller.createConnector(stock, auxiliary);
+    auto *item = dynamic_cast<ArrowItem *>(scene.item(id));
     QVERIFY(!item->geometryPath().isEmpty());
     item->setSelected(true);
     scene.setSelectedRouteMode(RouteMode::Bezier);
@@ -272,17 +356,64 @@ void TestEditor::routeModesAndGeometry()
     QVERIFY(!controller.document().diagram().route(id).locked);
 }
 
+void TestEditor::flowRoutesAndValveGeometry()
+{
+    const auto checkValve = [](const QPointF &targetPosition, bool bezier) {
+        DocumentController controller;
+        DiagramScene scene(&controller);
+        const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+        const EntityId cloud = controller.createCloud(targetPosition);
+        const EntityId id = controller.createFlow(stock, cloud);
+        auto *flow = dynamic_cast<FlowItem *>(scene.item(id));
+        if (bezier) {
+            flow->setSelected(true);
+            scene.setSelectedRouteMode(RouteMode::Bezier);
+        }
+        const QVector<QPolygonF> polygons = flow->valvePolygons();
+        QCOMPARE(polygons.size(), 2);
+        const QPainterPath path = flow->geometryPath();
+        const QPointF tangent = path.pointAtPercent(0.5001) - path.pointAtPercent(0.4999);
+        const QPointF axis = polygons[0][0] - polygons[1][0];
+        QVERIFY(std::abs(QPointF::dotProduct(tangent, axis)) < 1e-6);
+        QCOMPARE(flow->route().mode, bezier ? RouteMode::Bezier : RouteMode::Straight);
+    };
+    checkValve(QPointF(300.0, 0.0), false);
+    checkValve(QPointF(0.0, 300.0), false);
+    checkValve(QPointF(240.0, 180.0), false);
+    checkValve(QPointF(240.0, 180.0), true);
+
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId detached = controller.createFlow(0, 0, QPointF(0.0, 0.0), QPointF(200.0, 0.0));
+    QVERIFY(detached != 0);
+    const auto *blankFlow = static_cast<const Flow *>(controller.document().find(detached));
+    QCOMPARE(controller.document().find(blankFlow->endpoints.from)->kind(), ElementKind::Cloud);
+    QCOMPARE(controller.document().find(blankFlow->endpoints.to)->kind(), ElementKind::Cloud);
+    scene.item(detached)->setSelected(true);
+    int visibleEndpointHandles = 0;
+    for (QGraphicsItem *item : scene.items()) {
+        const auto *handle = qgraphicsitem_cast<ControlPointHandle *>(item);
+        if (handle && handle->isVisible() && handle->role() != ControlPointHandle::Role::ControlPoint)
+            ++visibleEndpointHandles;
+    }
+    QCOMPARE(visibleEndpointHandles, 2);
+    Route invalid;
+    invalid.mode = RouteMode::Orthogonal;
+    controller.setRoute(detached, invalid);
+    QCOMPARE(controller.document().diagram().route(detached).mode, RouteMode::Straight);
+}
+
 void TestEditor::bezierControlGuideRendering()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
     scene.setGridVisible(false);
-    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
-    const EntityId auxiliary = controller.createVariable(VariableType::Auxiliary, QPointF(300.0, 0.0));
-    const ConnectionId id = controller.createConnection(stock, auxiliary);
-    ConnectionItem *item = scene.connectionItem(id);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(300.0, 0.0));
+    const EntityId id = controller.createConnector(stock, auxiliary);
+    auto *item = dynamic_cast<ArrowItem *>(scene.item(id));
     item->setSelected(true);
-    QVERIFY(item->zValue() > scene.variableItem(stock)->zValue());
+    QVERIFY(item->zValue() > scene.item(stock)->zValue());
     Route route;
     route.mode = RouteMode::Bezier;
     route.manual = true;
@@ -314,7 +445,6 @@ void TestEditor::bezierControlGuideRendering()
     QVERIFY(clearedPixels > 0);
 
     item->setSelected(false);
-    QVERIFY(item->zValue() > scene.variableItem(stock)->zValue());
     QVERIFY(item->controlGuides().isEmpty());
     QTest::qWait(20);
     const QImage deselected = view.grab().toImage();
@@ -332,10 +462,10 @@ void TestEditor::bezierControlGuideRendering()
     item->setSelected(true);
     QCOMPARE(item->controlGuides().size(), 2);
     QCOMPARE(visibleHandleCount(), 4);
-    scene.variableItem(stock)->setSelected(true);
+    scene.item(stock)->setSelected(true);
     QVERIFY(item->controlGuides().isEmpty());
     QCOMPARE(visibleHandleCount(), 0);
-    scene.variableItem(stock)->setSelected(false);
+    scene.item(stock)->setSelected(false);
     QCOMPARE(item->controlGuides().size(), 2);
     QCOMPARE(visibleHandleCount(), 4);
 
@@ -360,9 +490,9 @@ void TestEditor::controlPointDoubleClick()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
-    const EntityId auxiliary = controller.createVariable(VariableType::Auxiliary, QPointF(240.0, 0.0));
-    const ConnectionId id = controller.createConnection(stock, auxiliary);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(240.0, 0.0));
+    const EntityId id = controller.createConnector(stock, auxiliary);
     QGraphicsSceneMouseEvent event(QEvent::GraphicsSceneMouseDoubleClick);
     event.setButton(Qt::LeftButton);
     event.setButtons(Qt::LeftButton);
@@ -373,9 +503,9 @@ void TestEditor::controlPointDoubleClick()
     QVERIFY(controller.document().diagram().route(id).controlPoints.empty());
 
     QGraphicsScene handleScene;
-    ControlPointHandle *handle = new ControlPointHandle(id, 0, ControlPointHandle::Role::ControlPoint, QPointF());
+    auto *handle = new ControlPointHandle(id, 0, ControlPointHandle::Role::ControlPoint, QPointF());
     handleScene.addItem(handle);
-    qRegisterMetaType<ConnectionId>("qds::core::ConnectionId");
+    qRegisterMetaType<EntityId>("qds::core::EntityId");
     QSignalSpy removeSpy(handle, &ControlPointHandle::removeRequested);
     QGraphicsSceneMouseEvent removeEvent(QEvent::GraphicsSceneMouseDoubleClick);
     removeEvent.setScenePos(QPointF());
@@ -389,23 +519,30 @@ void TestEditor::reconnectUndo()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    const EntityId first = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
-    const EntityId second = controller.createVariable(VariableType::Stock, QPointF(100.0, 0.0));
-    const EntityId auxiliary = controller.createVariable(VariableType::Auxiliary, QPointF(200.0, 0.0));
-    const ConnectionId id = controller.createConnection(first, auxiliary);
-    QVERIFY(controller.reconnectConnection(id, second, auxiliary));
-    QCOMPARE(scene.connectionItem(id)->from(), scene.variableItem(second));
+    const EntityId first = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    const EntityId second = controller.createVariable(ElementKind::Stock, QPointF(100.0, 0.0));
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(200.0, 0.0));
+    const EntityId id = controller.createConnector(first, auxiliary);
+    QVERIFY(controller.reconnectConnector(id, second, auxiliary));
+    QCOMPARE(dynamic_cast<ArrowItem *>(scene.item(id))->from(), scene.item(second));
     controller.undoStack()->undo();
-    QCOMPARE(scene.connectionItem(id)->from(), scene.variableItem(first));
-    QVERIFY(!controller.reconnectConnection(id, 9999, auxiliary));
+    QCOMPARE(dynamic_cast<ArrowItem *>(scene.item(id))->from(), scene.item(first));
+    QVERIFY(!controller.reconnectConnector(id, 9999, auxiliary));
+
+    const EntityId cloud = controller.createCloud(QPointF(400.0, 0.0));
+    const EntityId flow = controller.createFlow(first, cloud);
+    QVERIFY(controller.reconnectFlow(flow, second, cloud));
+    QCOMPARE(static_cast<const Flow *>(controller.document().find(flow))->endpoints.from, second);
+    controller.undoStack()->undo();
+    QCOMPARE(static_cast<const Flow *>(controller.document().find(flow))->endpoints.from, first);
 }
 
 void TestEditor::boundaryEndpoints()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
-    VariableItem *item = scene.variableItem(stock);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    DiagramItem *item = scene.item(stock);
     QCOMPARE(item->boundaryPointToward(QPointF(100.0, 0.0)), QPointF(60.0, 0.0));
     QCOMPARE(item->boundaryPointToward(QPointF(0.0, 100.0)), QPointF(0.0, 25.0));
     QCOMPARE(item->boundaryPointToward(QPointF(0.0, 0.0)), QPointF(0.0, 0.0));
@@ -467,28 +604,31 @@ void TestEditor::clipboardOperations()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
-    const EntityId auxiliary = controller.createVariable(VariableType::Auxiliary, QPointF(100.0, 0.0));
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(100.0, 0.0));
     controller.setEquation(stock, QStringLiteral("100"));
-    controller.createConnection(stock, auxiliary);
-    const ClipboardData clipboard = controller.copyVariables({stock, auxiliary});
-    QCOMPARE(clipboard.variables.size(), std::size_t(2));
-    QCOMPARE(clipboard.connections.size(), std::size_t(1));
+    const EntityId connector = controller.createConnector(stock, auxiliary);
+    QCOMPARE(controller.copyElements({stock}).elements.size(), std::size_t(1));
+    const ClipboardData clipboard = controller.copyElements({stock, auxiliary, connector});
+    QCOMPARE(clipboard.elements.size(), std::size_t(3));
     const auto pasted = controller.pasteClipboard(clipboard, QPointF(20.0, 20.0));
-    QCOMPARE(pasted.size(), std::size_t(2));
-    QCOMPARE(controller.document().model().variables().size(), std::size_t(4));
-    QCOMPARE(controller.document().model().connections().size(), std::size_t(2));
+    QCOMPARE(pasted.size(), std::size_t(3));
     QCOMPARE(controller.document().diagram().position(pasted[0]), Vec2({20.0, 20.0}));
-    QVERIFY(controller.document().variable(pasted[0])->name != "Stock");
     controller.undoStack()->undo();
-    QCOMPARE(controller.document().model().variables().size(), std::size_t(2));
+    QVERIFY(controller.document().find(connector));
+    for (EntityId id : pasted)
+        QVERIFY(controller.document().find(id) == nullptr);
     controller.undoStack()->redo();
-    QCOMPARE(controller.document().model().variables().size(), std::size_t(4));
+    for (EntityId id : pasted)
+        QVERIFY(controller.document().find(id));
 
+    const EntityId cloud = controller.createCloud(QPointF(300.0, 0.0));
+    const EntityId flow = controller.createFlow(stock, cloud);
+    QVERIFY(controller.copyElements({flow}).empty());
+    const ClipboardData flowClipboard = controller.copyElements({stock, cloud, flow});
+    QCOMPARE(flowClipboard.elements.size(), std::size_t(3));
     DocumentController other;
-    const auto crossDocument = other.pasteClipboard(clipboard, QPointF());
-    QCOMPARE(crossDocument.size(), std::size_t(2));
-    QCOMPARE(other.document().model().connections().size(), std::size_t(1));
+    QCOMPARE(other.pasteClipboard(flowClipboard, QPointF()).size(), std::size_t(3));
 }
 
 void TestEditor::recentSearchAndMiniMap()
@@ -504,11 +644,11 @@ void TestEditor::recentSearchAndMiniMap()
 
     DocumentController controller;
     DiagramScene scene(&controller);
-    controller.createVariable(VariableType::Stock, QPointF());
-    const EntityId population = controller.createVariable(VariableType::Stock, QPointF(100.0, 100.0));
-    controller.renameVariable(population, QStringLiteral("Population"));
-    QCOMPARE(scene.findVariables(QStringLiteral("pop")).size(), std::size_t(1));
-    QCOMPARE(scene.findVariables(QStringLiteral("pop")).front(), population);
+    controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId population = controller.createVariable(ElementKind::Stock, QPointF(100.0, 100.0));
+    controller.renameElement(population, QStringLiteral("Population"));
+    QCOMPARE(scene.findElements(QStringLiteral("pop")).size(), std::size_t(1));
+    QCOMPARE(scene.findElements(QStringLiteral("pop")).front(), population);
     MiniMapView miniMap(&scene);
     QCOMPARE(miniMap.scene(), &scene);
 }
@@ -516,6 +656,14 @@ void TestEditor::recentSearchAndMiniMap()
 void TestEditor::paletteDrop()
 {
     TestEntityPalette palette;
+    QCOMPARE(palette.count(), 9);
+    for (int index = 0; index < palette.count(); ++index) {
+        if (index != 6)
+            QVERIFY(!palette.item(index)->icon().isNull());
+    }
+    QVERIFY(!(palette.item(7)->flags() & Qt::ItemIsDragEnabled));
+    QVERIFY(!(palette.item(8)->flags() & Qt::ItemIsDragEnabled));
+    QVERIFY(palette.mimeData({palette.item(7)}) == nullptr);
     QMimeData *mime = palette.mimeData({palette.item(1)});
     QVERIFY(mime->hasFormat(EntityPalette::mimeType()));
 
@@ -527,8 +675,8 @@ void TestEditor::paletteDrop()
     QVERIFY(enter.isAccepted());
     QDropEvent event(QPoint(10, 10), Qt::CopyAction, mime, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &event);
-    QCOMPARE(controller.document().model().variables().size(), std::size_t(1));
-    QCOMPARE(controller.document().model().variables().front().type, VariableType::Flow);
+    QCOMPARE(scene.selectedElementIds().size(), std::size_t(1));
+    QCOMPARE(scene.selectedModelElement()->kind(), ElementKind::Auxiliary);
     delete mime;
 }
 
@@ -536,8 +684,8 @@ void TestEditor::rubberConnectionAndSelection()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    const EntityId source = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
-    const EntityId target = controller.createVariable(VariableType::Auxiliary, QPointF(240.0, 0.0));
+    const EntityId source = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    const EntityId target = controller.createVariable(ElementKind::Auxiliary, QPointF(240.0, 0.0));
 
     QGraphicsSceneMouseEvent press(QEvent::GraphicsSceneMousePress);
     press.setButton(Qt::LeftButton);
@@ -549,8 +697,7 @@ void TestEditor::rubberConnectionAndSelection()
     release.setButtons(Qt::NoButton);
     release.setScenePos(QPointF(0.0, 0.0));
     QApplication::sendEvent(&scene, &release);
-    QVERIFY(scene.variableItem(source)->isSelected());
-    QCOMPARE(controller.document().model().variables().size(), std::size_t(2));
+    QVERIFY(scene.item(source)->isSelected());
 
     scene.setTool(DiagramScene::Tool::Connect);
     connect(&scene, &DiagramScene::editingFinished, &scene, [&scene]() {
@@ -563,24 +710,57 @@ void TestEditor::rubberConnectionAndSelection()
     QApplication::sendEvent(&scene, &move);
     release.setScenePos(QPointF(240.0, 0.0));
     QApplication::sendEvent(&scene, &release);
-    QCOMPARE(controller.document().model().connections().size(), std::size_t(1));
-    QCOMPARE(controller.document().model().connections().front().type, ConnectionType::Information);
+    const auto &document = controller.document();
+    QVERIFY(document.find(3));
+    QCOMPARE(document.find(3)->kind(), ElementKind::Connector);
     QCOMPARE(scene.tool(), DiagramScene::Tool::Select);
 
-    scene.setTool(DiagramScene::Tool::ConnectMaterial);
+    const EntityId cloud = controller.createCloud(QPointF(480.0, 0.0));
+    scene.setTool(DiagramScene::Tool::AddFlow);
     QApplication::sendEvent(&scene, &press);
-    release.setScenePos(QPointF(500.0, 500.0));
+    release.setScenePos(QPointF(480.0, 0.0));
     QApplication::sendEvent(&scene, &release);
-    QCOMPARE(controller.document().model().connections().size(), std::size_t(1));
+    const EntityId flow = controller.document().findByName("Flow1")->id();
+    QCOMPARE(document.find(flow)->kind(), ElementKind::Flow);
+    QCOMPARE(static_cast<const Flow *>(document.find(flow))->endpoints.from, source);
+    QCOMPARE(static_cast<const Flow *>(document.find(flow))->endpoints.to, cloud);
+
+    scene.setTool(DiagramScene::Tool::AddFlow);
+    press.setScenePos(QPointF(600.0, 100.0));
+    QApplication::sendEvent(&scene, &press);
+    move.setScenePos(QPointF(700.0, 100.0));
+    QApplication::sendEvent(&scene, &move);
+    release.setScenePos(QPointF(800.0, 100.0));
+    QApplication::sendEvent(&scene, &release);
+    const EntityId blankFlow = document.findByName("Flow2")->id();
+    const FlowEndpoints blankEndpoints = static_cast<const Flow *>(document.find(blankFlow))->endpoints;
+    QCOMPARE(document.find(blankEndpoints.from)->kind(), ElementKind::Cloud);
+    QCOMPARE(document.find(blankEndpoints.to)->kind(), ElementKind::Cloud);
+    QCOMPARE(document.diagram().position(blankEndpoints.from), Vec2({600.0, 100.0}));
+    QCOMPARE(document.diagram().position(blankEndpoints.to), Vec2({800.0, 100.0}));
+    controller.undoStack()->undo();
+    QVERIFY(!document.find(blankFlow) && !document.find(blankEndpoints.from) && !document.find(blankEndpoints.to));
+    QVERIFY(!scene.item(blankFlow) && !scene.item(blankEndpoints.from) && !scene.item(blankEndpoints.to));
+    controller.undoStack()->redo();
+    QVERIFY(scene.item(blankFlow) && scene.item(blankEndpoints.from) && scene.item(blankEndpoints.to));
+    QCOMPARE(static_cast<const Flow *>(document.find(blankFlow))->endpoints, blankEndpoints);
+
+    const auto beforeArrow = std::distance(document.elements().begin(), document.elements().end());
+    scene.setTool(DiagramScene::Tool::Connect);
+    press.setScenePos(QPointF(1000.0, 300.0));
+    QApplication::sendEvent(&scene, &press);
+    release.setScenePos(QPointF(1100.0, 300.0));
+    QApplication::sendEvent(&scene, &release);
+    QCOMPARE(std::distance(document.elements().begin(), document.elements().end()), beforeArrow);
 }
 
 void TestEditor::connectionContextMenu()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
-    const EntityId auxiliary = controller.createVariable(VariableType::Auxiliary, QPointF(240.0, 0.0));
-    const ConnectionId id = controller.createConnection(stock, auxiliary);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(240.0, 0.0));
+    const EntityId id = controller.createConnector(stock, auxiliary);
 
     struct State {
         bool executed = false;
@@ -605,7 +785,7 @@ void TestEditor::connectionContextMenu()
         QActionGroup *group = routeMenu->actions().front()->actionGroup();
         state->valid = state->valid && group && group->isExclusive();
         for (QAction *action : actions) {
-            state->valid = state->valid && action->isCheckable();
+            state->valid = state->valid && action->isCheckable() && !action->icon().isNull();
             if (action->text() == QStringLiteral("直角线"))
                 state->valid = state->valid && action->isChecked();
             if (action->text() == QStringLiteral("贝塞尔曲线")) {
@@ -630,19 +810,16 @@ void TestEditor::orthogonalArrowDirections()
     auto arrowFor = [](const QPointF &sourcePosition) {
         DocumentController controller;
         DiagramScene scene(&controller);
-        const EntityId source = controller.createVariable(VariableType::Auxiliary, sourcePosition);
-        const EntityId target = controller.createVariable(VariableType::Stock, QPointF());
-        const ConnectionId id = controller.createConnection(source, target);
-        return scene.connectionItem(id)->arrowHead();
+        const EntityId source = controller.createVariable(ElementKind::Auxiliary, sourcePosition);
+        const EntityId target = controller.createVariable(ElementKind::Stock, QPointF());
+        const EntityId id = controller.createConnector(source, target);
+        return dynamic_cast<ArrowItem *>(scene.item(id))->arrowHead();
     };
     const QPolygonF left = arrowFor(QPointF(-200.0, 0.0));
     const QPolygonF right = arrowFor(QPointF(200.0, 0.0));
     const QPolygonF above = arrowFor(QPointF(0.0, -200.0));
     const QPolygonF below = arrowFor(QPointF(0.0, 200.0));
-    QVERIFY(!left.isEmpty());
-    QVERIFY(!right.isEmpty());
-    QVERIFY(!above.isEmpty());
-    QVERIFY(!below.isEmpty());
+    QVERIFY(!left.isEmpty() && !right.isEmpty() && !above.isEmpty() && !below.isEmpty());
     const auto direction = [](const QPolygonF &arrow) {
         return arrow[0] - (arrow[1] + arrow[2]) / 2.0;
     };
@@ -655,9 +832,136 @@ void TestEditor::orthogonalArrowDirections()
     QCOMPARE(above[0], QPointF(0.0, -25.0));
     QCOMPARE(below[0], QPointF(0.0, 25.0));
     const QPolygonF diagonal = arrowFor(QPointF(200.0, 200.0));
-    QVERIFY(!diagonal.isEmpty());
     QVERIFY(std::abs(direction(diagonal).x()) > 0.0);
     QVERIFY(std::abs(direction(diagonal).y()) > 0.0);
+}
+
+void TestEditor::actionIcons()
+{
+    MainWindow window;
+    const QList<QToolBar *> toolBars = window.findChildren<QToolBar *>();
+    QCOMPARE(toolBars.size(), 2);
+    for (QToolBar *toolBar : toolBars) {
+        for (QAction *action : toolBar->actions()) {
+            if (!action->isSeparator())
+                QVERIFY2(!action->icon().isNull(), qPrintable(action->text()));
+        }
+    }
+    const EntityPalette *palette = window.findChild<EntityPalette *>();
+    QVERIFY(palette);
+    for (int index = 0; index < palette->count(); ++index) {
+        if (index != 6)
+            QVERIFY(!palette->item(index)->icon().isNull());
+    }
+}
+
+void TestEditor::unifiedIdUndoRedo()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId cloud = controller.createCloud(QPointF(200.0, 0.0));
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(100.0, 100.0));
+    const EntityId flow = controller.createFlow(stock, cloud);
+    const EntityId connector = controller.createConnector(auxiliary, flow);
+    QCOMPARE(std::vector<EntityId>({stock, cloud, auxiliary, flow, connector}), std::vector<EntityId>({1, 2, 3, 4, 5}));
+    controller.removeElements({stock});
+    QVERIFY(!scene.item(flow) && !scene.item(connector));
+    controller.undoStack()->undo();
+    QVERIFY(scene.item(stock) && scene.item(flow) && scene.item(connector));
+    QCOMPARE(static_cast<const Flow *>(controller.document().find(flow))->endpoints.from, stock);
+    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, flow);
+    controller.undoStack()->redo();
+    QVERIFY(!scene.item(flow) && !scene.item(connector));
+    controller.undoStack()->undo();
+    const EntityId next = controller.createVariable(ElementKind::Stock, QPointF(400.0, 0.0));
+    QVERIFY(next > connector);
+}
+
+void TestEditor::modifierDragOperations()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    auto drag = [&scene](const QPointF &start, const QPointF &end, Qt::KeyboardModifiers modifiers) {
+        QGraphicsSceneMouseEvent press(QEvent::GraphicsSceneMousePress);
+        press.setButton(Qt::LeftButton);
+        press.setButtons(Qt::LeftButton);
+        press.setModifiers(modifiers);
+        press.setScenePos(start);
+        QApplication::sendEvent(&scene, &press);
+        QGraphicsSceneMouseEvent move(QEvent::GraphicsSceneMouseMove);
+        move.setButtons(Qt::LeftButton);
+        move.setModifiers(modifiers);
+        move.setLastScenePos(start);
+        move.setScenePos(end);
+        QApplication::sendEvent(&scene, &move);
+        QGraphicsSceneMouseEvent release(QEvent::GraphicsSceneMouseRelease);
+        release.setButton(Qt::LeftButton);
+        release.setModifiers(modifiers);
+        release.setScenePos(end);
+        QApplication::sendEvent(&scene, &release);
+    };
+
+    drag(QPointF(), QPointF(100.0, 80.0), Qt::ShiftModifier);
+    QCOMPARE(controller.document().diagram().position(stock), Vec2({100.0, 0.0}));
+    drag(QPointF(100.0, 0.0), QPointF(200.0, 80.0), Qt::ControlModifier | Qt::ShiftModifier);
+    QCOMPARE(controller.document().diagram().position(stock), Vec2({100.0, 0.0}));
+    const std::vector<EntityId> selected = scene.selectedElementIds();
+    QCOMPARE(selected.size(), std::size_t(1));
+    QVERIFY(selected.front() != stock);
+    const EntityId copy = selected.front();
+    QCOMPARE(controller.document().diagram().position(copy), Vec2({200.0, 0.0}));
+    controller.undoStack()->undo();
+    QVERIFY(controller.document().find(copy) == nullptr);
+    QCOMPARE(controller.document().diagram().position(stock), Vec2({100.0, 0.0}));
+    controller.undoStack()->redo();
+    QVERIFY(controller.document().find(copy));
+
+    drag(QPointF(200.0, 0.0), QPointF(260.0, 80.0), Qt::ControlModifier);
+    const std::vector<EntityId> secondSelection = scene.selectedElementIds();
+    QCOMPARE(secondSelection.size(), std::size_t(1));
+    const EntityId secondCopy = secondSelection.front();
+    QVERIFY(secondCopy != copy);
+    QCOMPARE(controller.document().diagram().position(copy), Vec2({200.0, 0.0}));
+    QCOMPARE(controller.document().diagram().position(secondCopy), Vec2({260.0, 80.0}));
+    drag(QPointF(260.0, 80.0), QPointF(300.0, 200.0), Qt::ShiftModifier);
+    QCOMPARE(controller.document().diagram().position(secondCopy), Vec2({260.0, 200.0}));
+}
+
+void TestEditor::fileDropOpen()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath(QStringLiteral("拖放模型.xmile"));
+    Document document;
+    const EntityId stock = document.createVariable(ElementKind::Stock, {10.0, 20.0});
+    document.rename(stock, "中文库存");
+    QString error;
+    QVERIFY2(qds::io::saveXmile(path, document, &error), qPrintable(error));
+
+    MainWindow window;
+    DiagramView *view = window.findChild<DiagramView *>();
+    DiagramScene *scene = window.findChild<DiagramScene *>();
+    QVERIFY(view && scene);
+    QMimeData data;
+    data.setUrls({QUrl::fromLocalFile(path)});
+    QDragEnterEvent enter(QPoint(20, 20), Qt::CopyAction, &data, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view->viewport(), &enter);
+    QVERIFY(enter.isAccepted());
+    QDropEvent drop(QPoint(20, 20), Qt::CopyAction, &data, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view->viewport(), &drop);
+    QVERIFY(drop.isAccepted());
+    QVERIFY(window.windowTitle().contains(QStringLiteral("拖放模型.xmile")));
+    QVERIFY(scene->item(1));
+    QCOMPARE(scene->selectedModelElement(), nullptr);
+    QCOMPARE(scene->findElements(QStringLiteral("中文库存")).size(), std::size_t(1));
+
+    QMimeData invalid;
+    invalid.setUrls({QUrl::fromLocalFile(directory.filePath(QStringLiteral("not-model.txt")))});
+    QDragEnterEvent rejected(QPoint(20, 20), Qt::CopyAction, &invalid, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view->viewport(), &rejected);
+    QVERIFY(!rejected.isAccepted());
 }
 
 QTEST_MAIN(TestEditor)

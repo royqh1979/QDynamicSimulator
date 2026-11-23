@@ -19,6 +19,7 @@ add_library(qds-editor STATIC
     RecentFiles.h
     Routing.cpp
     Routing.h
+    resources/icons.qrc
 )
 add_library(QDS::Editor ALIAS qds-editor)
 
@@ -28,6 +29,7 @@ target_link_libraries(qds-editor
         QDS::Core
         QDS::IO
         Qt5::Widgets
+        Qt5::Svg
 )
 
 add_executable(qdynamic-simulator WIN32 MACOSX_BUNDLE main.cpp)
