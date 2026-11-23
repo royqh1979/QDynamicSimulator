@@ -290,6 +290,30 @@ void DocumentController::removeConnections(const std::vector<ConnectionId> &ids)
     m_undoStack.endMacro();
 }
 
+bool DocumentController::reconnectConnection(ConnectionId id, EntityId from, EntityId to)
+{
+    const Connection *connection = m_document.connection(id);
+    if (!connection)
+        return false;
+    if (connection->from == from && connection->to == to)
+        return true;
+    if (!m_document.model().canConnect(from, to, connection->type))
+        return false;
+    const Connection before = *connection;
+    const Connection after {before.id, from, to, before.type};
+    pushCommand(
+        tr("Reconnect connection"),
+        [this, before]() {
+            m_document.reconnectConnection(before.id, before.from, before.to);
+            notify(connectionChange(before.id, false));
+        },
+        [this, after]() {
+            m_document.reconnectConnection(after.id, after.from, after.to);
+            notify(connectionChange(after.id, false));
+        });
+    return true;
+}
+
 void DocumentController::setRoute(ConnectionId id, const Route &route)
 {
     if (!m_document.connection(id))

@@ -55,6 +55,7 @@ public:
     bool canConnect(EntityId from, EntityId to, ConnectionType type) const;
     ConnectionId createConnection(EntityId from, EntityId to, ConnectionType type = ConnectionType::Information);
     bool removeConnection(ConnectionId id);
+    bool reconnectConnection(ConnectionId id, EntityId from, EntityId to);
 
     const Variable *variable(EntityId id) const;
     const Variable *variableByName(const std::string &name) const;

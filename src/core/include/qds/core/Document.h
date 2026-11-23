@@ -58,6 +58,7 @@ public:
     ConnectionId createConnection(EntityId from, EntityId to, ConnectionType type = ConnectionType::Information);
     ConnectionId addConnection(const Connection &connection);
     bool removeConnection(ConnectionId id);
+    bool reconnectConnection(ConnectionId id, EntityId from, EntityId to);
     bool setRoute(ConnectionId id, const Route &route);
 
     const Model &model() const;

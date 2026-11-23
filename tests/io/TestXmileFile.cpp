@@ -60,6 +60,15 @@ void TestXmileFile::zipRoundTrip()
     QVERIFY(loaded.model().variableByName("Cloud"));
     QVERIFY(loaded.model().variableByName("Note"));
     QCOMPARE(loaded.diagram().position(loaded.model().variableByName("Cloud")->id), Vec2({450.0, 80.25}));
+    const Variable *loadedFlow = loaded.model().variableByName("Flow");
+    bool routeFound = false;
+    for (const Connection &connection : loaded.model().connections()) {
+        if (connection.from == loadedFlow->id && connection.to == loadedStock->id) {
+            routeFound = true;
+            QVERIFY(loaded.diagram().route(connection.id).controlPoints == std::vector<Vec2>({{200.0, 100.0}}));
+        }
+    }
+    QVERIFY(routeFound);
 }
 
 void TestXmileFile::plainXmlOpen()

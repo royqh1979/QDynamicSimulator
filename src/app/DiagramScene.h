@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Routing.h"
+
 #include <qds/core/ChangeSet.h>
 #include <qds/core/Document.h>
 
@@ -9,6 +11,7 @@
 class DocumentController;
 class VariableItem;
 class ConnectionItem;
+class ControlPointHandle;
 
 class DiagramScene : public QGraphicsScene
 {
@@ -30,6 +33,7 @@ public:
     };
 
     explicit DiagramScene(DocumentController *controller, QObject *parent = nullptr);
+    ~DiagramScene() override;
 
     void setTool(Tool tool);
     Tool tool() const;
@@ -43,12 +47,17 @@ public:
     void distributeSelected(bool horizontal);
     void setGridVisible(bool visible);
     void setSnapEnabled(bool enabled);
+    void setSelectedRouteMode(qds::core::RouteMode mode);
+    void resetSelectedRoute();
+    void rerouteAll();
+    void toggleSelectedRouteLock();
     QPointF snapPoint(const QPointF &position) const;
     VariableItem *variableItem(qds::core::EntityId id) const;
     ConnectionItem *connectionItem(qds::core::ConnectionId id) const;
 
 protected:
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
+    void mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event) override;
     void drawBackground(QPainter *painter, const QRectF &rect) override;
 
 private:
@@ -58,12 +67,20 @@ private:
     void updateConnections(qds::core::EntityId id);
     void updateSceneRect();
     void finishMove();
+    void syncControlPoints();
+    void previewControlPoint(qds::core::ConnectionId id, int index, const QPointF &position);
+    void finishControlPoint(qds::core::ConnectionId id, int index, const QPointF &position);
+    void removeControlPoint(qds::core::ConnectionId id, int index);
+    void updateAutomaticRoute(ConnectionItem *item);
 
     DocumentController *m_controller;
     QHash<qds::core::EntityId, VariableItem *> m_entityItems;
     QHash<qds::core::ConnectionId, ConnectionItem *> m_connectionItems;
     Tool m_tool = Tool::Select;
     qds::core::EntityId m_connectionSource = 0;
+    QList<ControlPointHandle *> m_controlHandles;
+    ObstacleIndex m_obstacles;
+    OrthogonalRouter m_router;
     bool m_gridVisible = true;
     bool m_snapEnabled = true;
     double m_gridSize = 20.0;

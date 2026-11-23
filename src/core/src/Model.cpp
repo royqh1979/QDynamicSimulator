@@ -172,6 +172,23 @@ bool Model::removeConnection(ConnectionId id)
     return true;
 }
 
+bool Model::reconnectConnection(ConnectionId id, EntityId from, EntityId to)
+{
+    Connection *target = nullptr;
+    if (m_connectionIndex.find(id) != m_connectionIndex.end())
+        target = &m_connections[m_connectionIndex[id]];
+    if (!target || from == to || !contains(from) || !contains(to)
+        || !validConnection(*variable(from), *variable(to), target->type))
+        return false;
+    for (const Connection &connection : m_connections) {
+        if (connection.id != id && connection.from == from && connection.to == to && connection.type == target->type)
+            return false;
+    }
+    target->from = from;
+    target->to = to;
+    return true;
+}
+
 const Variable *Model::variable(EntityId id) const
 {
     const auto it = m_variableIndex.find(id);

@@ -16,6 +16,7 @@ private slots:
     void routeAndPositionState();
     void clearDocument();
     void entityAndConnectionTypes();
+    void reconnectConnection();
 };
 
 void TestDocument::createAndLookup()
@@ -143,6 +144,19 @@ void TestDocument::entityAndConnectionTypes()
     QVERIFY(document.createConnection(note, stock, ConnectionType::Annotation) != 0);
     QCOMPARE(document.createConnection(stock, auxiliary, ConnectionType::Annotation), ConnectionId(0));
     QCOMPARE(document.connection(material)->type, ConnectionType::MaterialFlow);
+}
+
+void TestDocument::reconnectConnection()
+{
+    Document document;
+    const EntityId first = document.createVariable(VariableType::Stock);
+    const EntityId second = document.createVariable(VariableType::Stock);
+    const EntityId auxiliary = document.createVariable(VariableType::Auxiliary);
+    const ConnectionId id = document.createConnection(first, auxiliary);
+    QVERIFY(document.reconnectConnection(id, second, auxiliary));
+    QCOMPARE(document.connection(id)->from, second);
+    QVERIFY(!document.reconnectConnection(id, 9999, auxiliary));
+    QCOMPARE(document.connection(id)->from, second);
 }
 
 QTEST_APPLESS_MAIN(TestDocument)

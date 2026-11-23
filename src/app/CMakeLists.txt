@@ -9,6 +9,8 @@ add_library(qds-editor STATIC
     DocumentController.h
     MainWindow.cpp
     MainWindow.h
+    Routing.cpp
+    Routing.h
 )
 add_library(QDS::Editor ALIAS qds-editor)
 

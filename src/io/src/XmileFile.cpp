@@ -381,6 +381,17 @@ QByteArray writeXml(const core::Document &document)
         writer.writeStartElement(QStringLiteral("connector"));
         writer.writeTextElement(QStringLiteral("from"), QString::fromStdString(from->name));
         writer.writeTextElement(QStringLiteral("to"), QString::fromStdString(to->name));
+        const core::Route &route = document.diagram().route(connection.id);
+        if (!route.controlPoints.empty()) {
+            writer.writeStartElement(QStringLiteral("pts"));
+            for (const core::Vec2 &point : route.controlPoints) {
+                writer.writeStartElement(QStringLiteral("pt"));
+                writer.writeAttribute(QStringLiteral("x"), QString::number(point.x, 'g', 15));
+                writer.writeAttribute(QStringLiteral("y"), QString::number(point.y, 'g', 15));
+                writer.writeEndElement();
+            }
+            writer.writeEndElement();
+        }
         writer.writeEndElement();
     }
     writer.writeEndElement();
@@ -395,6 +406,7 @@ struct PendingConnection {
     std::string from;
     std::string to;
     core::ConnectionType type = core::ConnectionType::Information;
+    core::Route route;
 };
 
 bool parseVariable(
@@ -476,22 +488,39 @@ bool parseVariables(
 
 void parseConnector(QXmlStreamReader &reader, std::vector<PendingConnection> &pendingConnections)
 {
-    QString from = reader.attributes().value(QStringLiteral("from")).toString();
-    QString to = reader.attributes().value(QStringLiteral("to")).toString();
+    PendingConnection pending;
+    pending.from = reader.attributes().value(QStringLiteral("from")).toString().toStdString();
+    pending.to = reader.attributes().value(QStringLiteral("to")).toString().toStdString();
     while (reader.readNext() != QXmlStreamReader::Invalid) {
         if (reader.isEndElement() && reader.name() == QStringLiteral("connector"))
             break;
         if (!reader.isStartElement())
             continue;
         if (reader.name() == QStringLiteral("from"))
-            from = reader.readElementText().trimmed();
+            pending.from = reader.readElementText().trimmed().toStdString();
         else if (reader.name() == QStringLiteral("to"))
-            to = reader.readElementText().trimmed();
-        else
+            pending.to = reader.readElementText().trimmed().toStdString();
+        else if (reader.name() == QStringLiteral("pts")) {
+            while (reader.readNext() != QXmlStreamReader::Invalid) {
+                if (reader.isEndElement() && reader.name() == QStringLiteral("pts"))
+                    break;
+                if (!reader.isStartElement() || reader.name() != QStringLiteral("pt"))
+                    continue;
+                bool xOk = false;
+                bool yOk = false;
+                const double x = reader.attributes().value(QStringLiteral("x")).toDouble(&xOk);
+                const double y = reader.attributes().value(QStringLiteral("y")).toDouble(&yOk);
+                if (xOk && yOk)
+                    pending.route.controlPoints.push_back({x, y});
+            }
+        } else {
             reader.skipCurrentElement();
+        }
     }
-    if (!from.isEmpty() && !to.isEmpty())
-        pendingConnections.push_back({from.toStdString(), to.toStdString(), core::ConnectionType::Information});
+    if (!pending.from.empty() && !pending.to.empty()) {
+        pending.route.manual = !pending.route.controlPoints.empty();
+        pendingConnections.push_back(std::move(pending));
+    }
 }
 
 void parseView(QXmlStreamReader &reader, core::Document &model, std::vector<PendingConnection> &pendingConnections)
@@ -575,7 +604,17 @@ bool parseXml(const QByteArray &xml, core::Document &model, QString *errorMessag
             && (from->type == core::VariableType::Stock || from->type == core::VariableType::Cloud
                 || to->type == core::VariableType::Stock || to->type == core::VariableType::Cloud))
             type = core::ConnectionType::MaterialFlow;
-        parsed.createConnection(from->id, to->id, type);
+        core::ConnectionId id = parsed.createConnection(from->id, to->id, type);
+        if (id == 0) {
+            for (const core::Connection &existing : parsed.model().connections()) {
+                if (existing.from == from->id && existing.to == to->id && existing.type == type) {
+                    id = existing.id;
+                    break;
+                }
+            }
+        }
+        if (id != 0)
+            parsed.setRoute(id, connection.route);
     }
 
     if (!foundView) {

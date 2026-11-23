@@ -32,6 +32,10 @@ public:
         qds::core::EntityId to,
         qds::core::ConnectionType type = qds::core::ConnectionType::Information);
     void removeConnections(const std::vector<qds::core::ConnectionId> &ids);
+    bool reconnectConnection(
+        qds::core::ConnectionId id,
+        qds::core::EntityId from,
+        qds::core::EntityId to);
     void setRoute(qds::core::ConnectionId id, const qds::core::Route &route);
     void replaceDocument(qds::core::Document document);
 

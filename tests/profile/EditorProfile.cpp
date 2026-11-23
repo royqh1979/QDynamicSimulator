@@ -35,13 +35,31 @@ int main(int argc, char **argv)
 
     timer.restart();
     int connectionCount = 0;
+    std::vector<ConnectionId> connectionIds;
     for (int index = 1; index < count; ++index) {
-        if (controller.createConnection(
-                ids[static_cast<std::size_t>(index - 1)], ids[static_cast<std::size_t>(index)])
-            != 0)
+        const ConnectionId id = controller.createConnection(
+            ids[static_cast<std::size_t>(index - 1)], ids[static_cast<std::size_t>(index)]);
+        if (id != 0) {
             ++connectionCount;
+            connectionIds.push_back(id);
+        }
     }
     const qint64 connectNs = timer.nsecsElapsed();
+
+    timer.restart();
+    for (ConnectionId id : connectionIds) {
+        Route route = controller.document().diagram().route(id);
+        route.manual = true;
+        route.controlPoints = {{50.0, 60.0}};
+        controller.setRoute(id, route);
+    }
+    const qint64 routeEditNs = timer.nsecsElapsed();
+
+    timer.restart();
+    int pointCount = 0;
+    for (ConnectionId id : connectionIds)
+        pointCount += scene.connectionItem(id)->geometryPath().elementCount();
+    const qint64 routeGeometryNs = timer.nsecsElapsed();
 
     timer.restart();
     controller.moveVariables({{ids.front(), QPointF(20.0, 20.0)}, {ids.back(), QPointF(30.0, 30.0)}});
@@ -78,12 +96,14 @@ int main(int argc, char **argv)
     QTextStream(stdout) << "operation,count,total_ms,per_operation_us\n"
                         << "editor_create," << count << "," << createNs / 1e6 << "," << createNs / 1000.0 / count << "\n"
                         << "editor_connect," << connectionCount << "," << connectNs / 1e6 << "," << connectNs / 1000.0 / connectionCount << "\n"
+                        << "route_edit," << connectionCount << "," << routeEditNs / 1e6 << "," << routeEditNs / 1000.0 / connectionCount << "\n"
+                        << "route_geometry," << connectionCount << "," << routeGeometryNs / 1e6 << "," << routeGeometryNs / 1000.0 / connectionCount << "\n"
                         << "editor_move_two,2," << moveNs / 1e6 << "," << moveNs / 1000.0 / 2 << "\n"
                         << "editor_undo_redo_macro,2," << undoRedoNs / 1e6 << "," << undoRedoNs / 1000.0 / 2 << "\n"
                         << "editor_align," << count << "," << alignNs / 1e6 << "," << alignNs / 1000.0 / count << "\n"
                         << "xmile_save," << count << "," << saveNs / 1e6 << "," << saveNs / 1000.0 / count << "\n"
                         << "xmile_load," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n";
-    return commands == count + connectionCount + 2
+    return commands == count + connectionCount * 2 + 2 && pointCount > 0
             && loaded.model().variables().size() == static_cast<std::size_t>(count)
         ? 0
         : 1;

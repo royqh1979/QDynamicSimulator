@@ -117,6 +117,11 @@ bool Document::removeConnection(ConnectionId id)
     return true;
 }
 
+bool Document::reconnectConnection(ConnectionId id, EntityId from, EntityId to)
+{
+    return m_model.reconnectConnection(id, from, to);
+}
+
 bool Document::setRoute(ConnectionId id, const Route &route)
 {
     if (!m_model.connection(id))

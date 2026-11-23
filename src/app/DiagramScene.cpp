@@ -30,9 +30,16 @@ DiagramScene::DiagramScene(DocumentController *controller, QObject *parent)
 {
     setSceneRect(-3000.0, -3000.0, 6000.0, 6000.0);
     connect(m_controller, &DocumentController::documentChanged, this, &DiagramScene::applyChangeSet);
+    connect(this, &QGraphicsScene::selectionChanged, this, &DiagramScene::syncControlPoints);
     ChangeSet reset;
     reset.documentReset = true;
     applyChangeSet(reset);
+}
+
+DiagramScene::~DiagramScene()
+{
+    disconnect(this, &QGraphicsScene::selectionChanged, this, &DiagramScene::syncControlPoints);
+    m_controlHandles.clear();
 }
 
 void DiagramScene::setTool(Tool tool)
@@ -177,6 +184,36 @@ QPointF DiagramScene::snapPoint(const QPointF &position) const
     return QPointF(qRound64(position.x() / m_gridSize) * m_gridSize, qRound64(position.y() / m_gridSize) * m_gridSize);
 }
 
+void DiagramScene::setSelectedRouteMode(qds::core::RouteMode mode)
+{
+    for (QGraphicsItem *item : selectedItems()) {
+        ConnectionItem *connection = qgraphicsitem_cast<ConnectionItem *>(item);
+        if (!connection)
+            continue;
+        qds::core::Route route = m_controller->document().diagram().route(connection->id());
+        route.mode = mode;
+        route.manual = true;
+        if (mode == qds::core::RouteMode::Straight)
+            route.controlPoints.clear();
+        else if (mode == qds::core::RouteMode::Bezier && route.controlPoints.size() < 2) {
+            const QPointF start = connection->from()->pos();
+            const QPointF end = connection->to()->pos();
+            route.controlPoints = {
+                {start.x() + (end.x() - start.x()) / 3.0, start.y() + (end.y() - start.y()) / 3.0 - 50.0},
+                {start.x() + (end.x() - start.x()) * 2.0 / 3.0, start.y() + (end.y() - start.y()) * 2.0 / 3.0 + 50.0}};
+        }
+        m_controller->setRoute(connection->id(), route);
+    }
+}
+
+void DiagramScene::resetSelectedRoute()
+{
+    for (QGraphicsItem *item : selectedItems()) {
+        if (ConnectionItem *connection = qgraphicsitem_cast<ConnectionItem *>(item))
+            m_controller->setRoute(connection->id(), qds::core::Route());
+    }
+}
+
 VariableItem *DiagramScene::variableItem(EntityId id) const
 {
     return m_entityItems.value(id);
@@ -249,9 +286,26 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
     QGraphicsScene::mousePressEvent(event);
 }
 
+void DiagramScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
+{
+    ConnectionItem *connection = qgraphicsitem_cast<ConnectionItem *>(itemAt(event->scenePos(), QTransform()));
+    if (connection) {
+        qds::core::Route route = m_controller->document().diagram().route(connection->id());
+        const QPointF point = snapPoint(event->scenePos());
+        route.controlPoints.push_back({point.x(), point.y()});
+        route.manual = true;
+        m_controller->setRoute(connection->id(), route);
+        event->accept();
+        return;
+    }
+    QGraphicsScene::mouseDoubleClickEvent(event);
+}
+
 void DiagramScene::applyChangeSet(const ChangeSet &changeSet)
 {
     if (changeSet.documentReset) {
+        m_controlHandles.clear();
+        m_obstacles.clear();
         clear();
         m_entityItems.clear();
         m_connectionItems.clear();
@@ -269,6 +323,7 @@ void DiagramScene::applyChangeSet(const ChangeSet &changeSet)
         delete item;
     }
     for (EntityId id : changeSet.removedEntities) {
+        m_obstacles.remove(id);
         if (m_connectionSource == id)
             m_connectionSource = 0;
         VariableItem *item = m_entityItems.take(id);
@@ -286,11 +341,21 @@ void DiagramScene::applyChangeSet(const ChangeSet &changeSet)
             continue;
         const qds::core::Vec2 position = m_controller->document().diagram().position(id);
         item->refresh(*variable, QPointF(position.x, position.y));
+        m_obstacles.upsert(id, item->sceneBoundingRect().adjusted(-12.0, -12.0, 12.0, 12.0));
     }
     for (ConnectionId id : changeSet.updatedConnections) {
-        if (ConnectionItem *item = m_connectionItems.value(id))
-            item->updatePosition();
+        ConnectionItem *item = m_connectionItems.value(id);
+        const qds::core::Connection *connection = m_controller->document().connection(id);
+        if (!item || !connection)
+            continue;
+        VariableItem *from = m_entityItems.value(connection->from);
+        VariableItem *to = m_entityItems.value(connection->to);
+        if (from && to)
+            item->rebind(from, to);
+        item->setRoute(m_controller->document().diagram().route(id));
+        updateAutomaticRoute(item);
     }
+    syncControlPoints();
     updateSceneRect();
 }
 
@@ -302,6 +367,7 @@ VariableItem *DiagramScene::createVariableItem(EntityId id)
     const qds::core::Vec2 position = m_controller->document().diagram().position(id);
     VariableItem *item = new VariableItem(*variable, QPointF(position.x, position.y));
     addItem(item);
+    m_obstacles.upsert(id, item->sceneBoundingRect().adjusted(-12.0, -12.0, 12.0, 12.0));
     m_entityItems.insert(id, item);
     connect(item, &VariableItem::positionChanged, this, [this](EntityId id, const QPointF &) {
         updateConnections(id);
@@ -319,17 +385,159 @@ ConnectionItem *DiagramScene::createConnectionItem(ConnectionId id)
     VariableItem *to = m_entityItems.value(connection->to);
     if (!from || !to)
         return nullptr;
-    ConnectionItem *item = new ConnectionItem(id, connection->type, from, to);
+    ConnectionItem *item = new ConnectionItem(id, connection->type, from, to, m_controller->document().diagram().route(id));
     addItem(item);
     m_connectionItems.insert(id, item);
+    updateAutomaticRoute(item);
     return item;
 }
 
 void DiagramScene::updateConnections(EntityId id)
 {
     for (ConnectionItem *connection : m_connectionItems) {
-        if (connection->connects(id))
+        if (connection->connects(id)) {
             connection->updatePosition();
+            updateAutomaticRoute(connection);
+        }
+    }
+    for (ControlPointHandle *handle : m_controlHandles) {
+        ConnectionItem *connection = m_connectionItems.value(handle->connectionId());
+        if (!connection)
+            continue;
+        if (handle->index() == -1 && connection->from()->id() == id)
+            handle->setPos(connection->from()->pos());
+        else if (handle->index() == -2 && connection->to()->id() == id)
+            handle->setPos(connection->to()->pos());
+    }
+}
+
+void DiagramScene::syncControlPoints()
+{
+    ConnectionItem *selected = qgraphicsitem_cast<ConnectionItem *>(selectedItems().value(0));
+    const qds::core::Route route = selected
+        ? m_controller->document().diagram().route(selected->id())
+        : qds::core::Route();
+    int required = 0;
+    if (selected)
+        required = 2 + (route.mode == qds::core::RouteMode::Straight ? 0 : static_cast<int>(route.controlPoints.size()));
+
+    auto updateHandle = [this](int handleIndex, qds::core::ConnectionId id, int pointIndex,
+                              ControlPointHandle::Role role, const QPointF &position) {
+        if (handleIndex == m_controlHandles.size()) {
+            ControlPointHandle *handle = new ControlPointHandle(id, pointIndex, role, position);
+            addItem(handle);
+            m_controlHandles.append(handle);
+            connect(handle, &ControlPointHandle::moved, this, &DiagramScene::previewControlPoint);
+            connect(handle, &ControlPointHandle::finished, this, &DiagramScene::finishControlPoint);
+            connect(handle, &ControlPointHandle::removeRequested, this, &DiagramScene::removeControlPoint);
+        }
+        m_controlHandles[handleIndex]->assign(id, pointIndex, role, position);
+    };
+
+    if (selected) {
+        updateHandle(0, selected->id(), -1, ControlPointHandle::Role::Source, selected->from()->pos());
+        updateHandle(1, selected->id(), -2, ControlPointHandle::Role::Target, selected->to()->pos());
+        if (route.mode != qds::core::RouteMode::Straight) {
+            for (std::size_t index = 0; index < route.controlPoints.size(); ++index) {
+                const qds::core::Vec2 point = route.controlPoints[index];
+                updateHandle(
+                    static_cast<int>(index) + 2,
+                    selected->id(),
+                    static_cast<int>(index),
+                    ControlPointHandle::Role::ControlPoint,
+                    QPointF(point.x, point.y));
+            }
+        }
+    }
+    for (int index = required; index < m_controlHandles.size(); ++index)
+        m_controlHandles[index]->hide();
+}
+
+void DiagramScene::previewControlPoint(ConnectionId id, int index, const QPointF &position)
+{
+    if (index < 0)
+        return;
+    ConnectionItem *item = m_connectionItems.value(id);
+    if (!item)
+        return;
+    qds::core::Route route = m_controller->document().diagram().route(id);
+    if (index >= static_cast<int>(route.controlPoints.size()))
+        return;
+    route.controlPoints[static_cast<std::size_t>(index)] = {position.x(), position.y()};
+    route.manual = true;
+    item->setRoute(route);
+}
+
+void DiagramScene::finishControlPoint(ConnectionId id, int index, const QPointF &position)
+{
+    ConnectionItem *item = m_connectionItems.value(id);
+    const qds::core::Connection *connection = m_controller->document().connection(id);
+    if (!item || !connection)
+        return;
+    if (index >= 0) {
+        qds::core::Route route = m_controller->document().diagram().route(id);
+        if (index >= static_cast<int>(route.controlPoints.size()))
+            return;
+        const QPointF snapped = snapPoint(position);
+        route.controlPoints[static_cast<std::size_t>(index)] = {snapped.x(), snapped.y()};
+        route.manual = true;
+        m_controller->setRoute(id, route);
+        return;
+    }
+
+    EntityId target = 0;
+    const QList<QGraphicsItem *> candidates = items(position);
+    for (QGraphicsItem *candidate : candidates) {
+        if (VariableItem *variable = qgraphicsitem_cast<VariableItem *>(candidate)) {
+            target = variable->id();
+            break;
+        }
+    }
+    if (target == 0) {
+        syncControlPoints();
+        return;
+    }
+    const EntityId from = index == -1 ? target : connection->from;
+    const EntityId to = index == -2 ? target : connection->to;
+    if (!m_controller->reconnectConnection(id, from, to))
+        syncControlPoints();
+}
+
+void DiagramScene::removeControlPoint(ConnectionId id, int index)
+{
+    qds::core::Route route = m_controller->document().diagram().route(id);
+    if (index < 0 || index >= static_cast<int>(route.controlPoints.size()))
+        return;
+    route.controlPoints.erase(route.controlPoints.begin() + index);
+    route.manual = true;
+    m_controller->setRoute(id, route);
+}
+
+void DiagramScene::updateAutomaticRoute(ConnectionItem *item)
+{
+    if (!item)
+        return;
+    const qds::core::Route route = m_controller->document().diagram().route(item->id());
+    if (route.manual || route.locked || route.mode != qds::core::RouteMode::Orthogonal)
+        return;
+    item->setRoute(m_router.route(
+        item->from()->pos(), item->to()->pos(), item->from()->id(), item->to()->id(), m_obstacles));
+}
+
+void DiagramScene::rerouteAll()
+{
+    for (ConnectionItem *item : m_connectionItems)
+        updateAutomaticRoute(item);
+}
+
+void DiagramScene::toggleSelectedRouteLock()
+{
+    for (QGraphicsItem *item : selectedItems()) {
+        if (ConnectionItem *connection = qgraphicsitem_cast<ConnectionItem *>(item)) {
+            qds::core::Route route = m_controller->document().diagram().route(connection->id());
+            route.locked = !route.locked;
+            m_controller->setRoute(connection->id(), route);
+        }
     }
 }
 

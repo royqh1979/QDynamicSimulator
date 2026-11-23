@@ -2,7 +2,9 @@
 #include "DiagramScene.h"
 #include "DiagramView.h"
 #include "DocumentController.h"
+#include "Routing.h"
 
+#include <QGraphicsSceneMouseEvent>
 #include <QtTest>
 
 using namespace qds::core;
@@ -23,6 +25,11 @@ private slots:
     void layoutOperations();
     void gridAndSceneBounds();
     void viewOperations();
+    void routeModesAndGeometry();
+    void controlPointDoubleClick();
+    void reconnectUndo();
+    void boundaryEndpoints();
+    void spatialIndexAndRouter();
 };
 
 void TestEditor::createUndoRedo()
@@ -200,6 +207,127 @@ void TestEditor::viewOperations()
     QCOMPARE(view.transform().m11(), 1.0);
     view.fitAll();
     QVERIFY(view.transform().m11() > 0.0);
+}
+
+void TestEditor::routeModesAndGeometry()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
+    const EntityId flow = controller.createVariable(VariableType::Flow, QPointF(240.0, 0.0));
+    const ConnectionId id = controller.createConnection(flow, stock, ConnectionType::MaterialFlow);
+    ConnectionItem *item = scene.connectionItem(id);
+    QVERIFY(!item->geometryPath().isEmpty());
+    item->setSelected(true);
+    scene.setSelectedRouteMode(RouteMode::Bezier);
+    QCOMPARE(controller.document().diagram().route(id).controlPoints.size(), std::size_t(2));
+    QVERIFY(!item->geometryPath().isEmpty());
+    controller.undoStack()->undo();
+    QCOMPARE(controller.document().diagram().route(id).mode, RouteMode::Orthogonal);
+    scene.setSelectedRouteMode(RouteMode::Straight);
+    QVERIFY(controller.document().diagram().route(id).controlPoints.empty());
+    scene.resetSelectedRoute();
+    QCOMPARE(controller.document().diagram().route(id), Route());
+    scene.toggleSelectedRouteLock();
+    QVERIFY(controller.document().diagram().route(id).locked);
+    controller.undoStack()->undo();
+    QVERIFY(!controller.document().diagram().route(id).locked);
+}
+
+void TestEditor::controlPointDoubleClick()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
+    const EntityId auxiliary = controller.createVariable(VariableType::Auxiliary, QPointF(240.0, 0.0));
+    const ConnectionId id = controller.createConnection(stock, auxiliary);
+    QGraphicsSceneMouseEvent event(QEvent::GraphicsSceneMouseDoubleClick);
+    event.setButton(Qt::LeftButton);
+    event.setButtons(Qt::LeftButton);
+    event.setScenePos(QPointF(120.0, 0.0));
+    QApplication::sendEvent(&scene, &event);
+    QCOMPARE(controller.document().diagram().route(id).controlPoints.size(), std::size_t(1));
+    controller.undoStack()->undo();
+    QVERIFY(controller.document().diagram().route(id).controlPoints.empty());
+
+    QGraphicsScene handleScene;
+    ControlPointHandle *handle = new ControlPointHandle(id, 0, ControlPointHandle::Role::ControlPoint, QPointF());
+    handleScene.addItem(handle);
+    qRegisterMetaType<ConnectionId>("qds::core::ConnectionId");
+    QSignalSpy removeSpy(handle, &ControlPointHandle::removeRequested);
+    QGraphicsSceneMouseEvent removeEvent(QEvent::GraphicsSceneMouseDoubleClick);
+    removeEvent.setScenePos(QPointF());
+    removeEvent.setButton(Qt::LeftButton);
+    removeEvent.setButtons(Qt::LeftButton);
+    QApplication::sendEvent(&handleScene, &removeEvent);
+    QCOMPARE(removeSpy.count(), 1);
+}
+
+void TestEditor::reconnectUndo()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId first = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
+    const EntityId second = controller.createVariable(VariableType::Stock, QPointF(100.0, 0.0));
+    const EntityId auxiliary = controller.createVariable(VariableType::Auxiliary, QPointF(200.0, 0.0));
+    const ConnectionId id = controller.createConnection(first, auxiliary);
+    QVERIFY(controller.reconnectConnection(id, second, auxiliary));
+    QCOMPARE(scene.connectionItem(id)->from(), scene.variableItem(second));
+    controller.undoStack()->undo();
+    QCOMPARE(scene.connectionItem(id)->from(), scene.variableItem(first));
+    QVERIFY(!controller.reconnectConnection(id, 9999, auxiliary));
+}
+
+void TestEditor::boundaryEndpoints()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
+    VariableItem *item = scene.variableItem(stock);
+    QCOMPARE(item->boundaryPointToward(QPointF(100.0, 0.0)), QPointF(60.0, 0.0));
+    QCOMPARE(item->boundaryPointToward(QPointF(0.0, 100.0)), QPointF(0.0, 25.0));
+    QCOMPARE(item->boundaryPointToward(QPointF(0.0, 0.0)), QPointF(0.0, 0.0));
+}
+
+void TestEditor::spatialIndexAndRouter()
+{
+    ObstacleIndex index;
+    index.upsert(3, QRectF(80.0, -20.0, 40.0, 40.0));
+    index.upsert(4, QRectF(80.0, 200.0, 40.0, 40.0));
+    QCOMPARE(index.query(QRectF(70.0, -30.0, 60.0, 60.0)).size(), 1);
+    index.upsert(3, QRectF(300.0, 300.0, 40.0, 40.0));
+    QVERIFY(index.query(QRectF(70.0, -30.0, 60.0, 60.0)).isEmpty());
+    index.remove(4);
+    QVERIFY(index.query(QRectF(70.0, 190.0, 60.0, 60.0)).isEmpty());
+
+    index.clear();
+    index.upsert(3, QRectF(80.0, -20.0, 40.0, 40.0));
+    OrthogonalRouter router;
+    const Route route = router.route(QPointF(0.0, 0.0), QPointF(200.0, 0.0), 1, 2, index);
+    QVERIFY(!route.controlPoints.empty());
+    QVector<QPointF> points {QPointF(0.0, 0.0)};
+    for (const Vec2 &point : route.controlPoints)
+        points.append(QPointF(point.x, point.y));
+    points.append(QPointF(200.0, 0.0));
+    QPainterPath path(points.front());
+    for (int i = 1; i < points.size(); ++i)
+        path.lineTo(points[i]);
+    const QRectF obstacle(80.0, -20.0, 40.0, 40.0);
+    const QLineF edges[] = {
+        QLineF(obstacle.topLeft(), obstacle.topRight()), QLineF(obstacle.topRight(), obstacle.bottomRight()),
+        QLineF(obstacle.bottomRight(), obstacle.bottomLeft()), QLineF(obstacle.bottomLeft(), obstacle.topLeft())};
+    bool collision = false;
+    for (int i = 1; i < points.size() && !collision; ++i) {
+        const QLineF segment(points[i - 1], points[i]);
+        for (const QLineF &edge : edges) {
+            QPointF intersection;
+            if (segment.intersect(edge, &intersection) == QLineF::BoundedIntersection) {
+                collision = true;
+                break;
+            }
+        }
+    }
+    QVERIFY(!collision);
 }
 
 QTEST_MAIN(TestEditor)

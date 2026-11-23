@@ -213,6 +213,27 @@ void MainWindow::createActions()
     snapAction->setChecked(true);
     connect(snapAction, &QAction::toggled, m_scene, &DiagramScene::setSnapEnabled);
     viewMenu->addAction(snapAction);
+
+    QMenu *routeMenu = menuBar()->addMenu(tr("布线(&R)"));
+    auto addRouteMode = [this, routeMenu](const QString &text, qds::core::RouteMode mode) {
+        QAction *action = new QAction(text, this);
+        connect(action, &QAction::triggered, this, [this, mode]() {
+            m_scene->setSelectedRouteMode(mode);
+        });
+        routeMenu->addAction(action);
+    };
+    addRouteMode(tr("直线"), qds::core::RouteMode::Straight);
+    addRouteMode(tr("直角线"), qds::core::RouteMode::Orthogonal);
+    addRouteMode(tr("贝塞尔曲线"), qds::core::RouteMode::Bezier);
+    QAction *resetRoute = new QAction(tr("重置自动路径"), this);
+    connect(resetRoute, &QAction::triggered, m_scene, &DiagramScene::resetSelectedRoute);
+    routeMenu->addAction(resetRoute);
+    QAction *toggleLock = new QAction(tr("锁定/解锁路径"), this);
+    connect(toggleLock, &QAction::triggered, m_scene, &DiagramScene::toggleSelectedRouteLock);
+    routeMenu->addAction(toggleLock);
+    QAction *rerouteAll = new QAction(tr("全图重新布线"), this);
+    connect(rerouteAll, &QAction::triggered, m_scene, &DiagramScene::rerouteAll);
+    routeMenu->addAction(rerouteAll);
 }
 
 void MainWindow::createPropertyPanel()
