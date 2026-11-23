@@ -298,8 +298,9 @@ QString variableTag(core::VariableType type)
     return {};
 }
 
-QByteArray writeXml(const core::Model &model)
+QByteArray writeXml(const core::Document &document)
 {
+    const core::Model &model = document.model();
     QByteArray output;
     QXmlStreamWriter writer(&output);
     writer.setAutoFormatting(true);
@@ -336,10 +337,10 @@ QByteArray writeXml(const core::Model &model)
             for (const core::Connection &connection : model.connections()) {
                 const core::Variable *from = model.variable(connection.from);
                 const core::Variable *to = model.variable(connection.to);
-                if (from && to && from->type == core::VariableType::Flow && connection.to == variable.name)
-                    writer.writeTextElement(QStringLiteral("inflow"), QString::fromStdString(connection.from));
-                if (from && to && to->type == core::VariableType::Flow && connection.from == variable.name)
-                    writer.writeTextElement(QStringLiteral("outflow"), QString::fromStdString(connection.to));
+                if (from && to && from->type == core::VariableType::Flow && connection.to == variable.id)
+                    writer.writeTextElement(QStringLiteral("inflow"), QString::fromStdString(from->name));
+                if (from && to && to->type == core::VariableType::Flow && connection.from == variable.id)
+                    writer.writeTextElement(QStringLiteral("outflow"), QString::fromStdString(to->name));
             }
         }
         writer.writeEndElement();
@@ -351,15 +352,20 @@ QByteArray writeXml(const core::Model &model)
     writer.writeAttribute(QStringLiteral("type"), QStringLiteral("stock_flow"));
     for (const core::Variable &variable : model.variables()) {
         writer.writeStartElement(variableTag(variable.type));
+        const core::Vec2 position = document.diagram().position(variable.id);
         writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(variable.name));
-        writer.writeAttribute(QStringLiteral("x"), QString::number(variable.x, 'g', 15));
-        writer.writeAttribute(QStringLiteral("y"), QString::number(variable.y, 'g', 15));
+        writer.writeAttribute(QStringLiteral("x"), QString::number(position.x, 'g', 15));
+        writer.writeAttribute(QStringLiteral("y"), QString::number(position.y, 'g', 15));
         writer.writeEndElement();
     }
     for (const core::Connection &connection : model.connections()) {
+        const core::Variable *from = model.variable(connection.from);
+        const core::Variable *to = model.variable(connection.to);
+        if (!from || !to)
+            continue;
         writer.writeStartElement(QStringLiteral("connector"));
-        writer.writeTextElement(QStringLiteral("from"), QString::fromStdString(connection.from));
-        writer.writeTextElement(QStringLiteral("to"), QString::fromStdString(connection.to));
+        writer.writeTextElement(QStringLiteral("from"), QString::fromStdString(from->name));
+        writer.writeTextElement(QStringLiteral("to"), QString::fromStdString(to->name));
         writer.writeEndElement();
     }
     writer.writeEndElement();
@@ -374,7 +380,7 @@ using PendingConnection = std::pair<std::string, std::string>;
 
 bool parseVariable(
     QXmlStreamReader &reader,
-    core::Model &model,
+    core::Document &model,
     std::vector<PendingConnection> &pendingConnections,
     QString *errorMessage)
 {
@@ -412,7 +418,7 @@ bool parseVariable(
             reader.skipCurrentElement();
     }
 
-    if (!model.addVariable(variable)) {
+    if (model.addVariable(variable) == 0) {
         setError(errorMessage, translate("The model contains a duplicate variable name: %1").arg(name));
         return false;
     }
@@ -425,7 +431,7 @@ bool parseVariable(
 
 bool parseVariables(
     QXmlStreamReader &reader,
-    core::Model &model,
+    core::Document &model,
     std::vector<PendingConnection> &pendingConnections,
     QString *errorMessage)
 {
@@ -465,7 +471,7 @@ void parseConnector(QXmlStreamReader &reader, std::vector<PendingConnection> &pe
         pendingConnections.emplace_back(from.toStdString(), to.toStdString());
 }
 
-void parseView(QXmlStreamReader &reader, core::Model &model, std::vector<PendingConnection> &pendingConnections)
+void parseView(QXmlStreamReader &reader, core::Document &model, std::vector<PendingConnection> &pendingConnections)
 {
     while (reader.readNext() != QXmlStreamReader::Invalid) {
         if (reader.isEndElement() && reader.name() == QStringLiteral("view"))
@@ -477,22 +483,23 @@ void parseView(QXmlStreamReader &reader, core::Model &model, std::vector<Pending
         if (tag == QStringLiteral("stock") || tag == QStringLiteral("flow") || tag == QStringLiteral("aux")) {
             const QXmlStreamAttributes attributes = reader.attributes();
             const std::string name = attributes.value(QStringLiteral("name")).toString().toStdString();
+            const core::Variable *variable = model.model().variableByName(name);
             bool xOk = false;
             bool yOk = false;
             const double x = attributes.value(QStringLiteral("x")).toDouble(&xOk);
             const double y = attributes.value(QStringLiteral("y")).toDouble(&yOk);
-            if (xOk && yOk)
-                model.setPosition(name, x, y);
+            if (variable && xOk && yOk)
+                model.setPosition(variable->id, {x, y});
         } else if (tag == QStringLiteral("connector")) {
             parseConnector(reader, pendingConnections);
         }
     }
 }
 
-bool parseXml(const QByteArray &xml, core::Model &model, QString *errorMessage)
+bool parseXml(const QByteArray &xml, core::Document &model, QString *errorMessage)
 {
     QXmlStreamReader reader(xml);
-    core::Model parsed;
+    core::Document parsed;
     std::vector<PendingConnection> pendingConnections;
     bool foundRoot = false;
     bool foundView = false;
@@ -524,14 +531,20 @@ bool parseXml(const QByteArray &xml, core::Model &model, QString *errorMessage)
         return false;
     }
 
-    for (const PendingConnection &connection : pendingConnections)
-        parsed.addConnection(connection.first, connection.second);
+    for (const PendingConnection &connection : pendingConnections) {
+        const core::Variable *from = parsed.model().variableByName(connection.first);
+        const core::Variable *to = parsed.model().variableByName(connection.second);
+        if (from && to)
+            parsed.createConnection(from->id, to->id);
+    }
 
     if (!foundView) {
-        const int count = static_cast<int>(parsed.variables().size());
-        for (int index = 0; index < count; ++index) {
-            const std::string name = parsed.variables()[static_cast<std::size_t>(index)].name;
-            parsed.setPosition(name, 100.0 + (index % 5) * 180.0, 100.0 + (index / 5) * 140.0);
+        const auto &variables = parsed.model().variables();
+        for (std::size_t index = 0; index < variables.size(); ++index) {
+            parsed.setPosition(
+                variables[index].id,
+                {100.0 + static_cast<int>(index % 5) * 180.0,
+                 100.0 + static_cast<int>(index / 5) * 140.0});
         }
     }
 
@@ -541,7 +554,7 @@ bool parseXml(const QByteArray &xml, core::Model &model, QString *errorMessage)
 
 } // namespace
 
-bool saveXmile(const QString &fileName, const core::Model &model, QString *errorMessage)
+bool saveXmile(const QString &fileName, const core::Document &model, QString *errorMessage)
 {
     const QByteArray xml = writeXml(model);
     const QByteArray archive = makeZip(xml);
@@ -562,7 +575,7 @@ bool saveXmile(const QString &fileName, const core::Model &model, QString *error
     return true;
 }
 
-bool loadXmile(const QString &fileName, core::Model &model, QString *errorMessage)
+bool loadXmile(const QString &fileName, core::Document &model, QString *errorMessage)
 {
     QFile file(fileName);
     if (!file.open(QIODevice::ReadOnly)) {

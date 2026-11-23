@@ -1,6 +1,6 @@
 #pragma once
 
-#include <qds/core/Model.h>
+#include <qds/core/Document.h>
 
 #include <QGraphicsItem>
 #include <QGraphicsObject>
@@ -12,23 +12,27 @@ class VariableItem : public QGraphicsObject
 public:
     enum { Type = UserType + 1 };
 
-    VariableItem(QString name, qds::core::VariableType variableType, QGraphicsItem *parent = nullptr);
+    VariableItem(const qds::core::Variable &variable, const QPointF &position, QGraphicsItem *parent = nullptr);
 
     int type() const override;
     QRectF boundingRect() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
+    qds::core::EntityId id() const;
     QString name() const;
     qds::core::VariableType variableType() const;
-    void setName(const QString &name);
+    void refresh(const qds::core::Variable &variable, const QPointF &position);
 
 signals:
-    void positionChanged(const QString &name, const QPointF &position);
+    void positionChanged(qds::core::EntityId id, const QPointF &position);
+    void moveFinished(qds::core::EntityId id, const QPointF &position);
 
 protected:
     QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
+    void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
 
 private:
+    qds::core::EntityId m_id;
     QString m_name;
     qds::core::VariableType m_variableType;
 };
@@ -38,14 +42,15 @@ class ConnectionItem : public QGraphicsItem
 public:
     enum { Type = UserType + 2 };
 
-    ConnectionItem(VariableItem *from, VariableItem *to, QGraphicsItem *parent = nullptr);
+    ConnectionItem(qds::core::ConnectionId id, VariableItem *from, VariableItem *to, QGraphicsItem *parent = nullptr);
 
     int type() const override;
     QRectF boundingRect() const override;
     QPainterPath shape() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
-    bool connects(const QString &name) const;
+    qds::core::ConnectionId id() const;
+    bool connects(qds::core::EntityId id) const;
     VariableItem *from() const;
     VariableItem *to() const;
     void updatePosition();
@@ -53,6 +58,7 @@ public:
 private:
     QLineF line() const;
 
+    qds::core::ConnectionId m_id;
     VariableItem *m_from;
     VariableItem *m_to;
 };

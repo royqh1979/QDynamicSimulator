@@ -1,37 +1,31 @@
 #include "DiagramScene.h"
 
 #include "DiagramItems.h"
+#include "DocumentController.h"
 
 #include <QGraphicsSceneMouseEvent>
 
-DiagramScene::DiagramScene(QObject *parent)
+#include <vector>
+
+using qds::core::ChangeSet;
+using qds::core::ConnectionId;
+using qds::core::EntityId;
+
+DiagramScene::DiagramScene(DocumentController *controller, QObject *parent)
     : QGraphicsScene(parent)
+    , m_controller(controller)
 {
     setSceneRect(-3000.0, -3000.0, 6000.0, 6000.0);
-}
-
-const qds::core::Model &DiagramScene::model() const
-{
-    return m_model;
-}
-
-void DiagramScene::setModel(const qds::core::Model &model)
-{
-    clear();
-    m_items.clear();
-    m_connectionSource = nullptr;
-    m_model = model;
-
-    for (const qds::core::Variable &variable : m_model.variables())
-        createVariableItem(variable);
-    for (const qds::core::Connection &connection : m_model.connections())
-        createConnectionItem(connection);
+    connect(m_controller, &DocumentController::documentChanged, this, &DiagramScene::applyChangeSet);
+    ChangeSet reset;
+    reset.documentReset = true;
+    applyChangeSet(reset);
 }
 
 void DiagramScene::setTool(Tool tool)
 {
     m_tool = tool;
-    m_connectionSource = nullptr;
+    m_connectionSource = 0;
 }
 
 DiagramScene::Tool DiagramScene::tool() const
@@ -41,41 +35,19 @@ DiagramScene::Tool DiagramScene::tool() const
 
 void DiagramScene::removeSelected()
 {
+    std::vector<EntityId> ids;
     const QList<QGraphicsItem *> selection = selectedItems();
-    QVector<VariableItem *> variables;
     for (QGraphicsItem *item : selection) {
         if (VariableItem *variable = qgraphicsitem_cast<VariableItem *>(item))
-            variables.append(variable);
+            ids.push_back(variable->id());
     }
-
-    for (VariableItem *item : variables) {
-        const QString name = item->name();
-        removeConnections(name);
-        m_items.remove(name);
-        m_model.removeVariable(name.toStdString());
-        delete item;
-    }
-    if (!variables.isEmpty())
-        emit contentChanged();
+    m_controller->removeVariables(ids);
 }
 
 bool DiagramScene::renameSelected(const QString &newName)
 {
     VariableItem *item = qgraphicsitem_cast<VariableItem *>(selectedItems().value(0));
-    if (!item)
-        return false;
-    const QString oldName = item->name();
-    const QString name = newName.trimmed();
-    if (oldName == name)
-        return true;
-    if (!m_model.renameVariable(oldName.toStdString(), name.toStdString()))
-        return false;
-
-    m_items.remove(oldName);
-    item->setName(name);
-    m_items.insert(name, item);
-    emit contentChanged();
-    return true;
+    return item ? m_controller->renameVariable(item->id(), newName) : false;
 }
 
 bool DiagramScene::setSelectedEquation(const QString &equation)
@@ -83,26 +55,30 @@ bool DiagramScene::setSelectedEquation(const QString &equation)
     VariableItem *item = qgraphicsitem_cast<VariableItem *>(selectedItems().value(0));
     if (!item)
         return false;
-    const std::string name = item->name().toStdString();
-    const qds::core::Variable *variable = m_model.variable(name);
-    if (!variable || variable->equation == equation.toStdString())
-        return true;
-    const bool changed = m_model.setEquation(name, equation.toStdString());
-    if (changed)
-        emit contentChanged();
-    return changed;
+    m_controller->setEquation(item->id(), equation);
+    return true;
 }
 
 const qds::core::Variable *DiagramScene::selectedVariable() const
 {
     VariableItem *item = qgraphicsitem_cast<VariableItem *>(selectedItems().value(0));
-    return item ? m_model.variable(item->name().toStdString()) : nullptr;
+    return item ? m_controller->document().variable(item->id()) : nullptr;
+}
+
+VariableItem *DiagramScene::variableItem(EntityId id) const
+{
+    return m_entityItems.value(id);
+}
+
+ConnectionItem *DiagramScene::connectionItem(ConnectionId id) const
+{
+    return m_connectionItems.value(id);
 }
 
 void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
 {
     if (event->button() == Qt::RightButton && m_tool == Tool::Connect) {
-        m_connectionSource = nullptr;
+        m_connectionSource = 0;
         clearSelection();
         event->accept();
         return;
@@ -115,12 +91,10 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
         else if (m_tool == Tool::AddAuxiliary)
             type = qds::core::VariableType::Auxiliary;
 
-        const QPointF position = event->scenePos();
-        const std::string name = m_model.createVariable(type, position.x(), position.y());
-        VariableItem *item = createVariableItem(*m_model.variable(name));
+        const EntityId id = m_controller->createVariable(type, event->scenePos());
         clearSelection();
-        item->setSelected(true);
-        emit contentChanged();
+        if (VariableItem *item = m_entityItems.value(id))
+            item->setSelected(true);
         event->accept();
         return;
     }
@@ -128,24 +102,20 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
     if (event->button() == Qt::LeftButton && m_tool == Tool::Connect) {
         VariableItem *item = qgraphicsitem_cast<VariableItem *>(itemAt(event->scenePos(), QTransform()));
         if (!item) {
-            m_connectionSource = nullptr;
+            m_connectionSource = 0;
             clearSelection();
             event->accept();
             return;
         }
-        if (!m_connectionSource) {
-            m_connectionSource = item;
+        if (m_connectionSource == 0) {
+            m_connectionSource = item->id();
             clearSelection();
             item->setSelected(true);
-        } else if (m_connectionSource != item) {
-            const qds::core::Connection connection {
-                m_connectionSource->name().toStdString(), item->name().toStdString()};
-            if (m_model.addConnection(connection.from, connection.to))
-                createConnectionItem(connection);
-            m_connectionSource = nullptr;
+        } else if (m_connectionSource != item->id()) {
+            m_controller->createConnection(m_connectionSource, item->id());
+            m_connectionSource = 0;
             clearSelection();
             item->setSelected(true);
-            emit contentChanged();
         }
         event->accept();
         return;
@@ -154,50 +124,95 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
     QGraphicsScene::mousePressEvent(event);
 }
 
-VariableItem *DiagramScene::createVariableItem(const qds::core::Variable &variable)
+void DiagramScene::applyChangeSet(const ChangeSet &changeSet)
 {
-    const QString name = QString::fromStdString(variable.name);
-    VariableItem *item = new VariableItem(name, variable.type);
-    item->setPos(variable.x, variable.y);
+    if (changeSet.documentReset) {
+        clear();
+        m_entityItems.clear();
+        m_connectionItems.clear();
+        m_connectionSource = 0;
+        for (const qds::core::Variable &variable : m_controller->document().model().variables())
+            createVariableItem(variable.id);
+        for (const qds::core::Connection &connection : m_controller->document().model().connections())
+            createConnectionItem(connection.id);
+        return;
+    }
+
+    for (ConnectionId id : changeSet.removedConnections) {
+        ConnectionItem *item = m_connectionItems.take(id);
+        delete item;
+    }
+    for (EntityId id : changeSet.removedEntities) {
+        if (m_connectionSource == id)
+            m_connectionSource = 0;
+        VariableItem *item = m_entityItems.take(id);
+        delete item;
+    }
+    for (EntityId id : changeSet.addedEntities)
+        createVariableItem(id);
+    for (ConnectionId id : changeSet.addedConnections)
+        createConnectionItem(id);
+
+    for (EntityId id : changeSet.updatedEntities) {
+        VariableItem *item = m_entityItems.value(id);
+        const qds::core::Variable *variable = m_controller->document().variable(id);
+        if (!item || !variable)
+            continue;
+        const qds::core::Vec2 position = m_controller->document().diagram().position(id);
+        item->refresh(*variable, QPointF(position.x, position.y));
+    }
+    for (ConnectionId id : changeSet.updatedConnections) {
+        if (ConnectionItem *item = m_connectionItems.value(id))
+            item->updatePosition();
+    }
+}
+
+VariableItem *DiagramScene::createVariableItem(EntityId id)
+{
+    const qds::core::Variable *variable = m_controller->document().variable(id);
+    if (!variable)
+        return nullptr;
+    const qds::core::Vec2 position = m_controller->document().diagram().position(id);
+    VariableItem *item = new VariableItem(*variable, QPointF(position.x, position.y));
     addItem(item);
-    m_items.insert(name, item);
-    connect(item, &VariableItem::positionChanged, this, &DiagramScene::updateVariablePosition);
+    m_entityItems.insert(id, item);
+    connect(item, &VariableItem::positionChanged, this, [this](EntityId id, const QPointF &) {
+        updateConnections(id);
+    });
+    connect(item, &VariableItem::moveFinished, this, &DiagramScene::finishMove);
     return item;
 }
 
-void DiagramScene::createConnectionItem(const qds::core::Connection &connection)
+ConnectionItem *DiagramScene::createConnectionItem(ConnectionId id)
 {
-    VariableItem *from = m_items.value(QString::fromStdString(connection.from));
-    VariableItem *to = m_items.value(QString::fromStdString(connection.to));
-    if (from && to)
-        addItem(new ConnectionItem(from, to));
+    const qds::core::Connection *connection = m_controller->document().connection(id);
+    if (!connection)
+        return nullptr;
+    VariableItem *from = m_entityItems.value(connection->from);
+    VariableItem *to = m_entityItems.value(connection->to);
+    if (!from || !to)
+        return nullptr;
+    ConnectionItem *item = new ConnectionItem(id, from, to);
+    addItem(item);
+    m_connectionItems.insert(id, item);
+    return item;
 }
 
-void DiagramScene::updateVariablePosition(const QString &name, const QPointF &position)
+void DiagramScene::updateConnections(EntityId id)
 {
-    m_model.setPosition(name.toStdString(), position.x(), position.y());
-    updateConnections(name);
-    emit contentChanged();
-}
-
-void DiagramScene::updateConnections(const QString &name)
-{
-    const QList<QGraphicsItem *> allItems = items();
-    for (QGraphicsItem *item : allItems) {
-        if (ConnectionItem *connection = qgraphicsitem_cast<ConnectionItem *>(item)) {
-            if (connection->connects(name))
-                connection->updatePosition();
-        }
+    for (ConnectionItem *connection : m_connectionItems) {
+        if (connection->connects(id))
+            connection->updatePosition();
     }
 }
 
-void DiagramScene::removeConnections(const QString &name)
+void DiagramScene::finishMove()
 {
-    const QList<QGraphicsItem *> allItems = items();
-    for (QGraphicsItem *item : allItems) {
-        if (ConnectionItem *connection = qgraphicsitem_cast<ConnectionItem *>(item)) {
-            if (connection->connects(name))
-                delete connection;
-        }
+    std::vector<std::pair<EntityId, QPointF>> positions;
+    const QList<QGraphicsItem *> selection = selectedItems();
+    for (QGraphicsItem *item : selection) {
+        if (VariableItem *variable = qgraphicsitem_cast<VariableItem *>(item))
+            positions.emplace_back(variable->id(), variable->pos());
     }
+    m_controller->moveVariables(positions);
 }

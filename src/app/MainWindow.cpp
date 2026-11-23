@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "DiagramView.h"
+#include "DocumentController.h"
 #include <qds/io/XmileFile.h>
 
 #include <QAction>
@@ -20,15 +21,16 @@
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
-    , m_scene(new DiagramScene(this))
+    , m_controller(new DocumentController(this))
+    , m_scene(new DiagramScene(m_controller, this))
     , m_view(new DiagramView(m_scene, this))
 {
     setCentralWidget(m_view);
     createActions();
     createPropertyPanel();
 
-    connect(m_scene, &DiagramScene::contentChanged, this, [this]() {
-        setDirty(true);
+    connect(m_controller->undoStack(), &QUndoStack::cleanChanged, this, [this](bool clean) {
+        setDirty(!clean);
     });
     connect(m_scene, &QGraphicsScene::selectionChanged, this, &MainWindow::updatePropertyEditor);
 
@@ -39,14 +41,14 @@ MainWindow::MainWindow(QWidget *parent)
 
 bool MainWindow::openFile(const QString &fileName)
 {
-    qds::core::Model model;
+    qds::core::Document document;
     QString error;
-    if (!qds::io::loadXmile(fileName, model, &error)) {
+    if (!qds::io::loadXmile(fileName, document, &error)) {
         QMessageBox::warning(this, tr("打开失败"), error);
         return false;
     }
 
-    m_scene->setModel(model);
+    m_controller->replaceDocument(std::move(document));
     setCurrentFile(fileName);
     setDirty(false);
     if (!m_scene->items().isEmpty())
@@ -103,6 +105,16 @@ void MainWindow::createActions()
 
     QMenu *editMenu = menuBar()->addMenu(tr("编辑(&E)"));
     QToolBar *editToolBar = addToolBar(tr("编辑"));
+    QAction *undoAction = m_controller->undoStack()->createUndoAction(this, tr("撤销(&U)"));
+    undoAction->setShortcut(QKeySequence::Undo);
+    QAction *redoAction = m_controller->undoStack()->createRedoAction(this, tr("重做(&R)"));
+    redoAction->setShortcut(QKeySequence::Redo);
+    editMenu->addAction(undoAction);
+    editMenu->addAction(redoAction);
+    editMenu->addSeparator();
+    editToolBar->addAction(undoAction);
+    editToolBar->addAction(redoAction);
+    editToolBar->addSeparator();
     QActionGroup *toolGroup = new QActionGroup(this);
 
     auto addToolAction = [this, toolGroup, editMenu, editToolBar](const QString &text, DiagramScene::Tool tool) {
@@ -169,7 +181,7 @@ void MainWindow::newFile()
 {
     if (!maybeSave())
         return;
-    m_scene->setModel(qds::core::Model());
+    m_controller->replaceDocument(qds::core::Document());
     setCurrentFile(QString());
     setDirty(false);
     updatePropertyEditor();
@@ -218,11 +230,12 @@ bool MainWindow::saveAs()
 bool MainWindow::saveFile(const QString &fileName)
 {
     QString error;
-    if (!qds::io::saveXmile(fileName, m_scene->model(), &error)) {
+    if (!qds::io::saveXmile(fileName, m_controller->document(), &error)) {
         QMessageBox::warning(this, tr("保存失败"), error);
         return false;
     }
     setCurrentFile(fileName);
+    m_controller->undoStack()->setClean();
     setDirty(false);
     statusBar()->showMessage(tr("已保存 %1").arg(QFileInfo(fileName).fileName()), 5000);
     return true;

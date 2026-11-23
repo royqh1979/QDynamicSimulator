@@ -7,6 +7,7 @@
 class QCloseEvent;
 class QLineEdit;
 class DiagramView;
+class DocumentController;
 
 class MainWindow : public QMainWindow
 {
@@ -33,6 +34,7 @@ private:
     void setTool(DiagramScene::Tool tool);
     void updatePropertyEditor();
 
+    DocumentController *m_controller;
     DiagramScene *m_scene;
     DiagramView *m_view;
     QLineEdit *m_nameEdit = nullptr;

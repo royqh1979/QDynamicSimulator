@@ -1,12 +1,12 @@
 #pragma once
 
-#include <qds/core/Model.h>
+#include <qds/core/Document.h>
 
 class QString;
 
 namespace qds::io {
 
-bool saveXmile(const QString &fileName, const core::Model &model, QString *errorMessage = nullptr);
-bool loadXmile(const QString &fileName, core::Model &model, QString *errorMessage = nullptr);
+bool saveXmile(const QString &fileName, const core::Document &document, QString *errorMessage = nullptr);
+bool loadXmile(const QString &fileName, core::Document &document, QString *errorMessage = nullptr);
 
 } // namespace qds::io

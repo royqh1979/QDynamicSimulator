@@ -1,11 +1,14 @@
 #pragma once
 
-#include <qds/core/Model.h>
+#include <qds/core/ChangeSet.h>
+#include <qds/core/Document.h>
 
 #include <QGraphicsScene>
 #include <QHash>
 
+class DocumentController;
 class VariableItem;
+class ConnectionItem;
 
 class DiagramScene : public QGraphicsScene
 {
@@ -20,10 +23,8 @@ public:
         Connect
     };
 
-    explicit DiagramScene(QObject *parent = nullptr);
+    explicit DiagramScene(DocumentController *controller, QObject *parent = nullptr);
 
-    const qds::core::Model &model() const;
-    void setModel(const qds::core::Model &model);
     void setTool(Tool tool);
     Tool tool() const;
 
@@ -31,22 +32,22 @@ public:
     bool renameSelected(const QString &newName);
     bool setSelectedEquation(const QString &equation);
     const qds::core::Variable *selectedVariable() const;
-
-signals:
-    void contentChanged();
+    VariableItem *variableItem(qds::core::EntityId id) const;
+    ConnectionItem *connectionItem(qds::core::ConnectionId id) const;
 
 protected:
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
 
 private:
-    VariableItem *createVariableItem(const qds::core::Variable &variable);
-    void createConnectionItem(const qds::core::Connection &connection);
-    void updateVariablePosition(const QString &name, const QPointF &position);
-    void updateConnections(const QString &name);
-    void removeConnections(const QString &name);
+    void applyChangeSet(const qds::core::ChangeSet &changeSet);
+    VariableItem *createVariableItem(qds::core::EntityId id);
+    ConnectionItem *createConnectionItem(qds::core::ConnectionId id);
+    void updateConnections(qds::core::EntityId id);
+    void finishMove();
 
-    qds::core::Model m_model;
-    QHash<QString, VariableItem *> m_items;
+    DocumentController *m_controller;
+    QHash<qds::core::EntityId, VariableItem *> m_entityItems;
+    QHash<qds::core::ConnectionId, ConnectionItem *> m_connectionItems;
     Tool m_tool = Tool::Select;
-    VariableItem *m_connectionSource = nullptr;
+    qds::core::EntityId m_connectionSource = 0;
 };

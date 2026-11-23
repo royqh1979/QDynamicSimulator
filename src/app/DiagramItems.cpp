@@ -1,20 +1,22 @@
 #include "DiagramItems.h"
 
 #include <QFontMetrics>
+#include <QGraphicsSceneMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QStyleOptionGraphicsItem>
 
 #include <cmath>
-#include <utility>
 
-VariableItem::VariableItem(QString name, qds::core::VariableType variableType, QGraphicsItem *parent)
+VariableItem::VariableItem(const qds::core::Variable &variable, const QPointF &position, QGraphicsItem *parent)
     : QGraphicsObject(parent)
-    , m_name(std::move(name))
-    , m_variableType(variableType)
+    , m_id(variable.id)
+    , m_name(QString::fromStdString(variable.name))
+    , m_variableType(variable.type)
 {
     setFlags(ItemIsMovable | ItemIsSelectable | ItemSendsGeometryChanges);
     setCursor(Qt::OpenHandCursor);
+    setPos(position);
 }
 
 int VariableItem::type() const
@@ -60,6 +62,11 @@ void VariableItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *opti
     painter->drawText(textRect, Qt::AlignCenter, label);
 }
 
+qds::core::EntityId VariableItem::id() const
+{
+    return m_id;
+}
+
 QString VariableItem::name() const
 {
     return m_name;
@@ -70,21 +77,31 @@ qds::core::VariableType VariableItem::variableType() const
     return m_variableType;
 }
 
-void VariableItem::setName(const QString &name)
+void VariableItem::refresh(const qds::core::Variable &variable, const QPointF &position)
 {
-    m_name = name;
+    m_name = QString::fromStdString(variable.name);
+    m_variableType = variable.type;
+    if (pos() != position)
+        setPos(position);
     update();
 }
 
 QVariant VariableItem::itemChange(GraphicsItemChange change, const QVariant &value)
 {
     if (change == ItemPositionHasChanged && scene())
-        emit positionChanged(m_name, value.toPointF());
+        emit positionChanged(m_id, value.toPointF());
     return QGraphicsObject::itemChange(change, value);
 }
 
-ConnectionItem::ConnectionItem(VariableItem *from, VariableItem *to, QGraphicsItem *parent)
+void VariableItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
+{
+    QGraphicsObject::mouseReleaseEvent(event);
+    emit moveFinished(m_id, pos());
+}
+
+ConnectionItem::ConnectionItem(qds::core::ConnectionId id, VariableItem *from, VariableItem *to, QGraphicsItem *parent)
     : QGraphicsItem(parent)
+    , m_id(id)
     , m_from(from)
     , m_to(to)
 {
@@ -132,9 +149,14 @@ void ConnectionItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, 
     painter->drawPolygon(QPolygonF({connection.p2(), arrow1, arrow2}));
 }
 
-bool ConnectionItem::connects(const QString &name) const
+qds::core::ConnectionId ConnectionItem::id() const
 {
-    return m_from->name() == name || m_to->name() == name;
+    return m_id;
+}
+
+bool ConnectionItem::connects(qds::core::EntityId id) const
+{
+    return m_from->id() == id || m_to->id() == id;
 }
 
 VariableItem *ConnectionItem::from() const
