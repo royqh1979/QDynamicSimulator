@@ -1,0 +1,166 @@
+#include "DiagramItems.h"
+
+#include <QFontMetrics>
+#include <QPainter>
+#include <QPainterPath>
+#include <QStyleOptionGraphicsItem>
+
+#include <cmath>
+#include <utility>
+
+VariableItem::VariableItem(QString name, qds::core::VariableType variableType, QGraphicsItem *parent)
+    : QGraphicsObject(parent)
+    , m_name(std::move(name))
+    , m_variableType(variableType)
+{
+    setFlags(ItemIsMovable | ItemIsSelectable | ItemSendsGeometryChanges);
+    setCursor(Qt::OpenHandCursor);
+}
+
+int VariableItem::type() const
+{
+    return Type;
+}
+
+QRectF VariableItem::boundingRect() const
+{
+    return QRectF(-65.0, -32.0, 130.0, 72.0);
+}
+
+void VariableItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *)
+{
+    Q_UNUSED(option)
+    painter->setRenderHint(QPainter::Antialiasing);
+    QPen pen(isSelected() ? QColor(35, 120, 210) : QColor(45, 55, 65), isSelected() ? 2.0 : 1.4);
+    painter->setPen(pen);
+    painter->setBrush(Qt::white);
+
+    QRectF textRect;
+    if (m_variableType == qds::core::VariableType::Stock) {
+        const QRectF stockRect(-60.0, -25.0, 120.0, 50.0);
+        painter->drawRect(stockRect);
+        textRect = stockRect.adjusted(5.0, 0.0, -5.0, 0.0);
+    } else if (m_variableType == qds::core::VariableType::Flow) {
+        painter->drawLine(QPointF(-60.0, 0.0), QPointF(60.0, 0.0));
+        painter->drawLine(QPointF(50.0, -6.0), QPointF(60.0, 0.0));
+        painter->drawLine(QPointF(50.0, 6.0), QPointF(60.0, 0.0));
+        const QPolygonF leftValve({QPointF(-12.0, -10.0), QPointF(0.0, 0.0), QPointF(-12.0, 10.0)});
+        const QPolygonF rightValve({QPointF(12.0, -10.0), QPointF(0.0, 0.0), QPointF(12.0, 10.0)});
+        painter->drawPolygon(leftValve);
+        painter->drawPolygon(rightValve);
+        textRect = QRectF(-60.0, 12.0, 120.0, 24.0);
+    } else {
+        const QRectF auxiliaryRect(-45.0, -25.0, 90.0, 50.0);
+        painter->drawEllipse(auxiliaryRect);
+        textRect = auxiliaryRect.adjusted(5.0, 0.0, -5.0, 0.0);
+    }
+
+    painter->setPen(QColor(25, 30, 35));
+    const QString label = painter->fontMetrics().elidedText(m_name, Qt::ElideRight, static_cast<int>(textRect.width()));
+    painter->drawText(textRect, Qt::AlignCenter, label);
+}
+
+QString VariableItem::name() const
+{
+    return m_name;
+}
+
+qds::core::VariableType VariableItem::variableType() const
+{
+    return m_variableType;
+}
+
+void VariableItem::setName(const QString &name)
+{
+    m_name = name;
+    update();
+}
+
+QVariant VariableItem::itemChange(GraphicsItemChange change, const QVariant &value)
+{
+    if (change == ItemPositionHasChanged && scene())
+        emit positionChanged(m_name, value.toPointF());
+    return QGraphicsObject::itemChange(change, value);
+}
+
+ConnectionItem::ConnectionItem(VariableItem *from, VariableItem *to, QGraphicsItem *parent)
+    : QGraphicsItem(parent)
+    , m_from(from)
+    , m_to(to)
+{
+    setZValue(-1.0);
+}
+
+int ConnectionItem::type() const
+{
+    return Type;
+}
+
+QRectF ConnectionItem::boundingRect() const
+{
+    return QRectF(line().p1(), line().p2()).normalized().adjusted(-12.0, -12.0, 12.0, 12.0);
+}
+
+QPainterPath ConnectionItem::shape() const
+{
+    QPainterPath path(line().p1());
+    path.lineTo(line().p2());
+    QPainterPathStroker stroker;
+    stroker.setWidth(12.0);
+    return stroker.createStroke(path);
+}
+
+void ConnectionItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
+{
+    painter->setRenderHint(QPainter::Antialiasing);
+    painter->setPen(QPen(QColor(75, 85, 95), 1.4));
+    const QLineF connection = line();
+    if (connection.length() < 1.0)
+        return;
+
+    painter->drawLine(connection);
+    const qreal angle = std::atan2(-connection.dy(), connection.dx());
+    const qreal arrowSize = 10.0;
+    constexpr qreal pi = 3.14159265358979323846;
+    const QPointF arrow1 = connection.p2() - QPointF(
+        std::cos(angle + pi / 6.0) * arrowSize,
+        -std::sin(angle + pi / 6.0) * arrowSize);
+    const QPointF arrow2 = connection.p2() - QPointF(
+        std::cos(angle - pi / 6.0) * arrowSize,
+        -std::sin(angle - pi / 6.0) * arrowSize);
+    painter->setBrush(QColor(75, 85, 95));
+    painter->drawPolygon(QPolygonF({connection.p2(), arrow1, arrow2}));
+}
+
+bool ConnectionItem::connects(const QString &name) const
+{
+    return m_from->name() == name || m_to->name() == name;
+}
+
+VariableItem *ConnectionItem::from() const
+{
+    return m_from;
+}
+
+VariableItem *ConnectionItem::to() const
+{
+    return m_to;
+}
+
+void ConnectionItem::updatePosition()
+{
+    prepareGeometryChange();
+    update();
+}
+
+QLineF ConnectionItem::line() const
+{
+    const QPointF start = m_from->pos();
+    const QPointF end = m_to->pos();
+    const QLineF centerLine(start, end);
+    if (centerLine.length() <= 120.0)
+        return centerLine;
+
+    const QPointF direction = (end - start) / centerLine.length();
+    return QLineF(start + direction * 55.0, end - direction * 55.0);
+}

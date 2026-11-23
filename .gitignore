@@ -1,0 +1,10 @@
+build/
+build-*/
+out/
+CMakeUserPresets.json
+.vs/
+.idea/
+*.user
+*.user.*
+.DS_Store
+docs/env/local/
