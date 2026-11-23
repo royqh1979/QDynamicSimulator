@@ -3,7 +3,7 @@
 ## 当前结构
 
 - `qdynamic-simulator`：Qt Widgets 可执行程序，负责 SFD 画布、变量编辑和后续交互。
-- `DocumentController` 与 `QUndoStack` 统一处理编辑命令，并通过 ChangeSet 驱动 Scene 增量同步。
+- `DocumentController` 与 `QUndoStack` 统一处理编辑命令，并通过 ChangeNotification 驱动 Scene 增量同步。
 - `qds-core`（别名 `QDS::Core`）：独立纯 C++ 静态库，承载稳定 ID、变量、连接、图形布局和后续仿真能力。
 - `qds-io`（别名 `QDS::IO`）：QtCore I/O 静态库，负责标准 XMILE XML 和 ZIP deflate 容器读写。
 - 应用只能依赖核心库与 I/O 库的公开头文件，核心库不得依赖 Qt 或反向依赖应用。
@@ -17,4 +17,5 @@ M1 先交付 SFD 建模、方程编辑、Euler/RK4、折线图和文件保存，
 ## 模块设计索引
 
 - [SFD 查看与编辑器设计](sfd-editor.md)：完整功能清单、连接线/布线子系统和实施计划。
-- [SFD 核心模型与画布 Item 架构](sfd-item-architecture.md)：Item 类体系、稳定 ID 互找、Document 单一事实来源、ChangeSet 同步及撤销设计。
+- [SFD 核心模型与画布 Item 架构](sfd-item-architecture.md)：DocumentElement、统一 ID 与命名、Flow/Connector、ChangeSet 撤销、ChangeNotification 同步、生命周期及阀门几何。
+- [Vensim、XMILE 与本程序概念对应](vensim-xmile-mapping.md)：元素、Rate、Arrow、Cloud、Comment 的语义和重构边界。

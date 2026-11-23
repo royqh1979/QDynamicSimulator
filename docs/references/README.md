@@ -1,0 +1,17 @@
+# 参考文献本地存档
+
+本目录保存设计所引用的公开文档，供离线核对。文档权利归原站点及作者所有；本地存档不改变其许可证，不作为本项目代码或图标素材使用。
+
+| 本地文件 | 原始来源 | 用途 |
+| --- | --- | --- |
+| `xmile-1.0-os.html` | https://docs.oasis-open.org/xmile/xmile/v1.0/os/xmile-v1.0-os.html | XMILE 1.0 正式规范，原始 HTML |
+| `vensim-sketch-tools.md` | https://www.vensim.com/documentation/ref_sketch_tools.html | Level、Arrow、Rate、Sketch Comment 工具 |
+| `vensim-rate-class.md` | https://www.vensim.com/documentation/22930.html | Rate、Valve、管线与源/汇云团 |
+| `vensim-auxiliaries-arrows.md` | https://www.vensim.com/documentation/20335.html | Arrow 与 Rate 名称/阀门的结构关系 |
+| `vensim-variable-types.md` | https://www.vensim.com/documentation/ref_variable_types.html | Level、Auxiliary、Constant、Data 等变量类型 |
+| `vensim-sketch-comment.md` | https://www.vensim.com/documentation/22940.html | Comment、Arrow Junction 与模型结构的区别 |
+| `vensim-glossary.md` | https://www.vensim.com/documentation/glossary.html | Arrow、Exogenous 等术语正文摘录 |
+
+XMILE 文件为原始 HTML。Vensim 站点拒绝本机直接下载，因此 Vensim 文件保存为成功读取的页面正文 Markdown 存档，而非原始 HTML；`vensim-glossary.md` 明确为相关术语摘录。远程图片和样式未存档，概念结论以正文为准。
+
+设计引用入口为 `docs/design/vensim-xmile-mapping.md`。
