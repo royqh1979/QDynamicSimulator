@@ -118,6 +118,35 @@ int main(int argc, char **argv)
     }
     const qint64 contextMenuNs = timer.nsecsElapsed();
 
+    DocumentController guideController;
+    DiagramScene guideScene(&guideController);
+    const EntityId guideFrom = guideController.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
+    const EntityId guideTo = guideController.createVariable(VariableType::Auxiliary, QPointF(200.0, 0.0));
+    const ConnectionId guideConnection = guideController.createConnection(guideFrom, guideTo);
+    guideScene.connectionItem(guideConnection)->setSelected(true);
+    guideScene.setSelectedRouteMode(RouteMode::Bezier);
+    ConnectionItem *guideItem = guideScene.connectionItem(guideConnection);
+    Route guideRoute = guideController.document().diagram().route(guideConnection);
+    timer.restart();
+    int guideCount = 0;
+    for (int index = 0; index < 1000; ++index) {
+        const double y = index % 2 == 0 ? -80.0 : 80.0;
+        guideRoute.controlPoints[0].y = y;
+        guideRoute.controlPoints[1].y = y;
+        guideItem->setRoute(guideRoute);
+        guideCount += guideItem->controlGuides().size();
+    }
+    const qint64 bezierGuideNs = timer.nsecsElapsed();
+
+    timer.restart();
+    int singleSelectionGuideCount = 0;
+    for (int index = 0; index < 1000; ++index) {
+        guideScene.variableItem(guideFrom)->setSelected(index % 2 == 0);
+        singleSelectionGuideCount += guideItem->controlGuides().size();
+    }
+    guideScene.variableItem(guideFrom)->setSelected(false);
+    const qint64 guideSelectionNs = timer.nsecsElapsed();
+
     QTemporaryDir directory;
     if (!directory.isValid())
         return 3;
@@ -147,9 +176,12 @@ int main(int argc, char **argv)
                         << "editor_search_100," << count * 100 << "," << searchNs / 1e6 << "," << searchNs / 1000.0 / (count * 100) << "\n"
                         << "rubber_preview,1000," << previewNs / 1e6 << "," << previewNs / 1000.0 / 1000 << "\n"
                         << "connection_context_menu,1000," << contextMenuNs / 1e6 << "," << contextMenuNs / 1000.0 / 1000 << "\n"
+                        << "bezier_control_guide_updates,1000," << bezierGuideNs / 1e6 << "," << bezierGuideNs / 1000.0 / 1000 << "\n"
+                        << "bezier_guide_single_selection,1000," << guideSelectionNs / 1e6 << "," << guideSelectionNs / 1000.0 / 1000 << "\n"
                         << "xmile_save," << count << "," << saveNs / 1e6 << "," << saveNs / 1000.0 / count << "\n"
                         << "xmile_load," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n";
-    const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0 && matches > 0
+    const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
+        && matches > 0 && guideCount == 2000 && singleSelectionGuideCount == 1000
         && loaded.model().variables().size() == static_cast<std::size_t>(count);
     if (!valid)
         QTextStream(stderr) << "validation failed: commands=" << commands << ", points=" << pointCount

@@ -43,6 +43,7 @@ private slots:
     void gridAndSceneBounds();
     void viewOperations();
     void routeModesAndGeometry();
+    void bezierControlGuideRendering();
     void controlPointDoubleClick();
     void reconnectUndo();
     void boundaryEndpoints();
@@ -253,7 +254,13 @@ void TestEditor::routeModesAndGeometry()
     QCOMPARE(controller.document().diagram().route(id).controlPoints.size(), std::size_t(2));
     QVERIFY(!item->geometryPath().isEmpty());
     QVERIFY(!item->arrowHead().isEmpty());
+    const QVector<QLineF> guides = item->controlGuides();
+    QCOMPARE(guides.size(), 2);
+    const auto controls = controller.document().diagram().route(id).controlPoints;
+    QCOMPARE(guides[0].p2(), QPointF(controls[0].x, controls[0].y));
+    QCOMPARE(guides[1].p1(), QPointF(controls[1].x, controls[1].y));
     controller.undoStack()->undo();
+    QVERIFY(item->controlGuides().isEmpty());
     QCOMPARE(controller.document().diagram().route(id).mode, RouteMode::Orthogonal);
     scene.setSelectedRouteMode(RouteMode::Straight);
     QVERIFY(controller.document().diagram().route(id).controlPoints.empty());
@@ -263,6 +270,90 @@ void TestEditor::routeModesAndGeometry()
     QVERIFY(controller.document().diagram().route(id).locked);
     controller.undoStack()->undo();
     QVERIFY(!controller.document().diagram().route(id).locked);
+}
+
+void TestEditor::bezierControlGuideRendering()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    scene.setGridVisible(false);
+    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
+    const EntityId auxiliary = controller.createVariable(VariableType::Auxiliary, QPointF(300.0, 0.0));
+    const ConnectionId id = controller.createConnection(stock, auxiliary);
+    ConnectionItem *item = scene.connectionItem(id);
+    item->setSelected(true);
+    QVERIFY(item->zValue() > scene.variableItem(stock)->zValue());
+    Route route;
+    route.mode = RouteMode::Bezier;
+    route.manual = true;
+    route.controlPoints = {{100.0, -100.0}, {200.0, -100.0}};
+    controller.setRoute(id, route);
+
+    DiagramView view(&scene);
+    view.resize(640, 480);
+    view.centerOn(150.0, 0.0);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    QTest::qWait(20);
+    const QImage before = view.grab().toImage();
+    const QLineF oldGuide = item->controlGuides().front();
+    QVector<QPoint> samples;
+    for (int index = 3; index <= 17; ++index)
+        samples.append(view.mapFromScene(oldGuide.pointAt(index / 20.0)));
+
+    route.controlPoints = {{100.0, 100.0}, {200.0, 100.0}};
+    item->setRoute(route);
+    QTest::qWait(20);
+    const QImage after = view.grab().toImage();
+    int clearedPixels = 0;
+    const QColor background(250, 250, 250);
+    for (const QPoint &sample : samples) {
+        if (before.pixelColor(sample) != background && after.pixelColor(sample) == background)
+            ++clearedPixels;
+    }
+    QVERIFY(clearedPixels > 0);
+
+    item->setSelected(false);
+    QVERIFY(item->zValue() > scene.variableItem(stock)->zValue());
+    QVERIFY(item->controlGuides().isEmpty());
+    QTest::qWait(20);
+    const QImage deselected = view.grab().toImage();
+    for (const QPoint &sample : samples)
+        QCOMPARE(deselected.pixelColor(sample), background);
+
+    auto visibleHandleCount = [&scene]() {
+        int count = 0;
+        for (QGraphicsItem *sceneItem : scene.items()) {
+            if (qgraphicsitem_cast<ControlPointHandle *>(sceneItem) && sceneItem->isVisible())
+                ++count;
+        }
+        return count;
+    };
+    item->setSelected(true);
+    QCOMPARE(item->controlGuides().size(), 2);
+    QCOMPARE(visibleHandleCount(), 4);
+    scene.variableItem(stock)->setSelected(true);
+    QVERIFY(item->controlGuides().isEmpty());
+    QCOMPARE(visibleHandleCount(), 0);
+    scene.variableItem(stock)->setSelected(false);
+    QCOMPARE(item->controlGuides().size(), 2);
+    QCOMPARE(visibleHandleCount(), 4);
+
+    QGraphicsSceneMouseEvent press(QEvent::GraphicsSceneMousePress);
+    press.setButton(Qt::LeftButton);
+    press.setButtons(Qt::LeftButton);
+    press.setModifiers(Qt::ControlModifier);
+    press.setScenePos(QPointF(500.0, 500.0));
+    QApplication::sendEvent(&scene, &press);
+    QVERIFY(item->controlGuides().isEmpty());
+    QCOMPARE(visibleHandleCount(), 0);
+    QGraphicsSceneMouseEvent release(QEvent::GraphicsSceneMouseRelease);
+    release.setButton(Qt::LeftButton);
+    release.setModifiers(Qt::ControlModifier);
+    release.setScenePos(QPointF(550.0, 550.0));
+    QApplication::sendEvent(&scene, &release);
+    QCOMPARE(item->controlGuides().size(), 2);
+    QCOMPARE(visibleHandleCount(), 4);
 }
 
 void TestEditor::controlPointDoubleClick()

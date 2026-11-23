@@ -62,6 +62,8 @@ public:
     VariableItem *to() const;
     QPainterPath geometryPath() const;
     QPolygonF arrowHead() const;
+    QVector<QLineF> controlGuides() const;
+    void setControlGuidesVisible(bool visible);
     void setRoute(const qds::core::Route &route);
     void rebind(VariableItem *from, VariableItem *to);
     void updatePosition();
@@ -74,6 +76,7 @@ private:
     VariableItem *m_from;
     VariableItem *m_to;
     qds::core::Route m_route;
+    bool m_controlGuidesVisible = false;
 };
 
 class ControlPointHandle : public QGraphicsObject

@@ -306,6 +306,11 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
         return;
     }
 
+    if (event->button() == Qt::LeftButton && m_tool == Tool::Select
+        && !itemAt(event->scenePos(), QTransform())) {
+        m_areaSelecting = true;
+        syncControlPoints();
+    }
     QGraphicsScene::mousePressEvent(event);
 }
 
@@ -347,6 +352,10 @@ void DiagramScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
         return;
     }
     QGraphicsScene::mouseReleaseEvent(event);
+    if (m_areaSelecting) {
+        m_areaSelecting = false;
+        syncControlPoints();
+    }
 }
 
 void DiagramScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
@@ -424,6 +433,7 @@ void DiagramScene::applyChangeSet(const ChangeSet &changeSet)
         m_entityItems.clear();
         m_connectionItems.clear();
         m_connectionSource = 0;
+        m_areaSelecting = false;
         for (const qds::core::Variable &variable : m_controller->document().model().variables())
             createVariableItem(variable.id);
         for (const qds::core::Connection &connection : m_controller->document().model().connections())
@@ -527,7 +537,12 @@ void DiagramScene::updateConnections(EntityId id)
 
 void DiagramScene::syncControlPoints()
 {
-    ConnectionItem *selected = qgraphicsitem_cast<ConnectionItem *>(selectedItems().value(0));
+    const QList<QGraphicsItem *> selection = selectedItems();
+    ConnectionItem *selected = !m_areaSelecting && selection.size() == 1
+        ? qgraphicsitem_cast<ConnectionItem *>(selection.front())
+        : nullptr;
+    for (ConnectionItem *connection : m_connectionItems)
+        connection->setControlGuidesVisible(connection == selected);
     const qds::core::Route route = selected
         ? m_controller->document().diagram().route(selected->id())
         : qds::core::Route();

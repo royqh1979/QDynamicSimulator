@@ -96,5 +96,6 @@ private:
     OrthogonalRouter m_router;
     bool m_gridVisible = true;
     bool m_snapEnabled = true;
+    bool m_areaSelecting = false;
     double m_gridSize = 20.0;
 };

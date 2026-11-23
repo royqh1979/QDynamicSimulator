@@ -163,7 +163,7 @@ ConnectionItem::ConnectionItem(
     , m_route(route)
 {
     setFlag(ItemIsSelectable);
-    setZValue(-1.0);
+    setZValue(1.0);
 }
 
 int ConnectionItem::type() const
@@ -186,6 +186,16 @@ QPainterPath ConnectionItem::shape() const
 void ConnectionItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
 {
     painter->setRenderHint(QPainter::Antialiasing);
+    const QVector<QLineF> guides = controlGuides();
+    if (!guides.isEmpty()) {
+        painter->save();
+        QPen guidePen(QColor(70, 95, 120), 2.0, Qt::DashLine);
+        guidePen.setCosmetic(true);
+        painter->setPen(guidePen);
+        for (const QLineF &guide : guides)
+            painter->drawLine(guide);
+        painter->restore();
+    }
     QColor color(75, 85, 95);
     qreal width = 1.4;
     Qt::PenStyle style = Qt::DashLine;
@@ -232,6 +242,27 @@ QPolygonF ConnectionItem::arrowHead() const
     return QPolygonF({end, arrow1, arrow2});
 }
 
+QVector<QLineF> ConnectionItem::controlGuides() const
+{
+    if (!m_controlGuidesVisible || m_route.mode != qds::core::RouteMode::Bezier)
+        return {};
+    const QVector<QPointF> pathPoints = points();
+    if (pathPoints.size() < 3)
+        return {};
+    QVector<QLineF> guides {QLineF(pathPoints.front(), pathPoints[1])};
+    const QPointF finalControl = pathPoints.size() >= 4 ? pathPoints[2] : pathPoints[1];
+    guides.append(QLineF(finalControl, pathPoints.back()));
+    return guides;
+}
+
+void ConnectionItem::setControlGuidesVisible(bool visible)
+{
+    if (m_controlGuidesVisible == visible)
+        return;
+    m_controlGuidesVisible = visible;
+    update();
+}
+
 qds::core::ConnectionId ConnectionItem::id() const
 {
     return m_id;
@@ -272,15 +303,17 @@ QPainterPath ConnectionItem::geometryPath() const
 
 void ConnectionItem::setRoute(const qds::core::Route &route)
 {
+    prepareGeometryChange();
     m_route = route;
-    updatePosition();
+    update();
 }
 
 void ConnectionItem::rebind(VariableItem *from, VariableItem *to)
 {
+    prepareGeometryChange();
     m_from = from;
     m_to = to;
-    updatePosition();
+    update();
 }
 
 void ConnectionItem::updatePosition()
