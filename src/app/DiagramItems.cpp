@@ -206,24 +206,30 @@ void ConnectionItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, 
     const QPainterPath path = geometryPath();
     painter->drawPath(path);
 
+    painter->setBrush(color);
+    const QPolygonF arrow = arrowHead();
+    if (!arrow.isEmpty())
+        painter->drawPolygon(arrow);
+}
+
+QPolygonF ConnectionItem::arrowHead() const
+{
     const QVector<QPointF> pathPoints = points();
     if (pathPoints.size() < 2)
-        return;
+        return {};
     const QPointF end = pathPoints.back();
-    const int tangentIndex = m_route.mode == qds::core::RouteMode::Bezier && pathPoints.size() >= 4
-        ? pathPoints.size() - 2
-        : pathPoints.size() - 2;
-    const QPointF before = pathPoints[tangentIndex];
+    const QPointF before = m_route.mode == qds::core::RouteMode::Bezier && pathPoints.size() >= 4
+        ? pathPoints[2]
+        : pathPoints[pathPoints.size() - 2];
     const QLineF tangent(before, end);
     if (tangent.length() < 1e-9)
-        return;
+        return {};
     const qreal angle = std::atan2(-tangent.dy(), tangent.dx());
     const qreal arrowSize = 10.0;
     constexpr qreal pi = 3.14159265358979323846;
     const QPointF arrow1 = end - QPointF(std::cos(angle + pi / 6.0) * arrowSize, -std::sin(angle + pi / 6.0) * arrowSize);
     const QPointF arrow2 = end - QPointF(std::cos(angle - pi / 6.0) * arrowSize, -std::sin(angle - pi / 6.0) * arrowSize);
-    painter->setBrush(color);
-    painter->drawPolygon(QPolygonF({end, arrow1, arrow2}));
+    return QPolygonF({end, arrow1, arrow2});
 }
 
 qds::core::ConnectionId ConnectionItem::id() const
@@ -285,24 +291,39 @@ void ConnectionItem::updatePosition()
 
 QVector<QPointF> ConnectionItem::points() const
 {
+    const auto samePoint = [](const QPointF &left, const QPointF &right) {
+        return QLineF(left, right).length() < 1e-9;
+    };
     QVector<QPointF> controls;
-    for (const qds::core::Vec2 &point : m_route.controlPoints)
-        controls.append(QPointF(point.x, point.y));
+    for (const qds::core::Vec2 &point : m_route.controlPoints) {
+        const QPointF candidate(point.x, point.y);
+        if (samePoint(candidate, m_from->pos()) || samePoint(candidate, m_to->pos()))
+            continue;
+        if (controls.isEmpty() || !samePoint(candidate, controls.back()))
+            controls.append(candidate);
+    }
 
     const QPointF fromTarget = controls.isEmpty() ? m_to->pos() : controls.front();
     const QPointF toTarget = controls.isEmpty() ? m_from->pos() : controls.back();
     const QPointF start = m_from->boundaryPointToward(fromTarget);
     const QPointF end = m_to->boundaryPointToward(toTarget);
+    QVector<QPointF> result;
     if (m_route.mode == qds::core::RouteMode::Straight || m_route.mode == qds::core::RouteMode::Bezier
         || !controls.isEmpty()) {
-        QVector<QPointF> result {start};
+        result = {start};
         result += controls;
         result.append(end);
-        return result;
+    } else {
+        const double middleX = (start.x() + end.x()) / 2.0;
+        result = {start, QPointF(middleX, start.y()), QPointF(middleX, end.y()), end};
     }
 
-    const double middleX = (start.x() + end.x()) / 2.0;
-    return {start, QPointF(middleX, start.y()), QPointF(middleX, end.y()), end};
+    QVector<QPointF> normalized;
+    for (const QPointF &point : result) {
+        if (normalized.isEmpty() || !samePoint(point, normalized.back()))
+            normalized.append(point);
+    }
+    return normalized;
 }
 
 ControlPointHandle::ControlPointHandle(qds::core::ConnectionId id, int index, Role role, const QPointF &position)

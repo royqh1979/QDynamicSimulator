@@ -3,9 +3,11 @@
 #include "DocumentController.h"
 #include <qds/io/XmileFile.h>
 
+#include <QActionGroup>
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QGraphicsLineItem>
+#include <QMenu>
 #include <QTemporaryDir>
 #include <QTextStream>
 
@@ -58,8 +60,12 @@ int main(int argc, char **argv)
 
     timer.restart();
     int pointCount = 0;
-    for (ConnectionId id : connectionIds)
-        pointCount += scene.connectionItem(id)->geometryPath().elementCount();
+    int arrowCount = 0;
+    for (ConnectionId id : connectionIds) {
+        ConnectionItem *item = scene.connectionItem(id);
+        pointCount += item->geometryPath().elementCount();
+        arrowCount += item->arrowHead().isEmpty() ? 0 : 1;
+    }
     const qint64 routeGeometryNs = timer.nsecsElapsed();
 
     timer.restart();
@@ -99,6 +105,19 @@ int main(int argc, char **argv)
     }
     const qint64 previewNs = timer.nsecsElapsed();
 
+    timer.restart();
+    for (int index = 0; index < 1000; ++index) {
+        QMenu menu;
+        QMenu *routeMenu = menu.addMenu(QStringLiteral("Route"));
+        QActionGroup group(&menu);
+        for (int mode = 0; mode < 3; ++mode) {
+            QAction *action = routeMenu->addAction(QString::number(mode));
+            action->setCheckable(true);
+            group.addAction(action);
+        }
+    }
+    const qint64 contextMenuNs = timer.nsecsElapsed();
+
     QTemporaryDir directory;
     if (!directory.isValid())
         return 3;
@@ -127,12 +146,13 @@ int main(int argc, char **argv)
                         << "editor_paste," << pasted.size() << "," << pasteNs / 1e6 << "," << pasteNs / 1000.0 / count << "\n"
                         << "editor_search_100," << count * 100 << "," << searchNs / 1e6 << "," << searchNs / 1000.0 / (count * 100) << "\n"
                         << "rubber_preview,1000," << previewNs / 1e6 << "," << previewNs / 1000.0 / 1000 << "\n"
+                        << "connection_context_menu,1000," << contextMenuNs / 1e6 << "," << contextMenuNs / 1000.0 / 1000 << "\n"
                         << "xmile_save," << count << "," << saveNs / 1e6 << "," << saveNs / 1000.0 / count << "\n"
                         << "xmile_load," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n";
-    const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && matches > 0
+    const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0 && matches > 0
         && loaded.model().variables().size() == static_cast<std::size_t>(count);
     if (!valid)
         QTextStream(stderr) << "validation failed: commands=" << commands << ", points=" << pointCount
-                            << ", loaded=" << loaded.model().variables().size() << "\n";
+                            << ", arrows=" << arrowCount << ", loaded=" << loaded.model().variables().size() << "\n";
     return valid ? 0 : 1;
 }

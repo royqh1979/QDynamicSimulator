@@ -61,6 +61,7 @@ public:
     VariableItem *from() const;
     VariableItem *to() const;
     QPainterPath geometryPath() const;
+    QPolygonF arrowHead() const;
     void setRoute(const qds::core::Route &route);
     void rebind(VariableItem *from, VariableItem *to);
     void updatePosition();

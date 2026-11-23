@@ -3,8 +3,11 @@
 #include "DiagramItems.h"
 #include "DocumentController.h"
 
+#include <QActionGroup>
 #include <QGraphicsLineItem>
+#include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSceneMouseEvent>
+#include <QMenu>
 #include <QPainter>
 #include <QtMath>
 
@@ -344,6 +347,56 @@ void DiagramScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
         return;
     }
     QGraphicsScene::mouseReleaseEvent(event);
+}
+
+void DiagramScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
+{
+    ConnectionItem *connection = qgraphicsitem_cast<ConnectionItem *>(itemAt(event->scenePos(), QTransform()));
+    if (!connection || isConnectionTool(m_tool)) {
+        QGraphicsScene::contextMenuEvent(event);
+        return;
+    }
+
+    clearSelection();
+    connection->setSelected(true);
+    QMenu menu;
+    QMenu *routeMenu = menu.addMenu(tr("布线类型"));
+    QActionGroup *modes = new QActionGroup(&menu);
+    modes->setExclusive(true);
+    const qds::core::Route current = m_controller->document().diagram().route(connection->id());
+    const struct {
+        QString text;
+        qds::core::RouteMode mode;
+    } definitions[] = {
+        {tr("直线"), qds::core::RouteMode::Straight},
+        {tr("直角线"), qds::core::RouteMode::Orthogonal},
+        {tr("贝塞尔曲线"), qds::core::RouteMode::Bezier}};
+    for (const auto &definition : definitions) {
+        QAction *action = routeMenu->addAction(definition.text);
+        action->setCheckable(true);
+        action->setChecked(current.mode == definition.mode);
+        modes->addAction(action);
+        connect(action, &QAction::triggered, this, [this, mode = definition.mode]() {
+            setSelectedRouteMode(mode);
+        });
+    }
+
+    QAction *reset = menu.addAction(tr("重置自动路径"));
+    connect(reset, &QAction::triggered, this, &DiagramScene::resetSelectedRoute);
+    QAction *locked = menu.addAction(tr("锁定路径"));
+    locked->setCheckable(true);
+    locked->setChecked(current.locked);
+    connect(locked, &QAction::toggled, this, [this, id = connection->id()](bool checked) {
+        qds::core::Route route = m_controller->document().diagram().route(id);
+        route.locked = checked;
+        m_controller->setRoute(id, route);
+    });
+    menu.addSeparator();
+    QAction *remove = menu.addAction(tr("删除连接"));
+    connect(remove, &QAction::triggered, this, &DiagramScene::removeSelected);
+
+    menu.exec(event->screenPos());
+    event->accept();
 }
 
 void DiagramScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)

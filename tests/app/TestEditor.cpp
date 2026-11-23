@@ -9,9 +9,14 @@
 #include "Routing.h"
 
 #include <QDropEvent>
+#include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSceneMouseEvent>
+#include <QMenu>
 #include <QMimeData>
+#include <QTimer>
 #include <QtTest>
+
+#include <cmath>
 
 using namespace qds::core;
 
@@ -47,6 +52,8 @@ private slots:
     void recentSearchAndMiniMap();
     void paletteDrop();
     void rubberConnectionAndSelection();
+    void connectionContextMenu();
+    void orthogonalArrowDirections();
 };
 
 void TestEditor::createUndoRedo()
@@ -245,6 +252,7 @@ void TestEditor::routeModesAndGeometry()
     scene.setSelectedRouteMode(RouteMode::Bezier);
     QCOMPARE(controller.document().diagram().route(id).controlPoints.size(), std::size_t(2));
     QVERIFY(!item->geometryPath().isEmpty());
+    QVERIFY(!item->arrowHead().isEmpty());
     controller.undoStack()->undo();
     QCOMPARE(controller.document().diagram().route(id).mode, RouteMode::Orthogonal);
     scene.setSelectedRouteMode(RouteMode::Straight);
@@ -473,6 +481,92 @@ void TestEditor::rubberConnectionAndSelection()
     release.setScenePos(QPointF(500.0, 500.0));
     QApplication::sendEvent(&scene, &release);
     QCOMPARE(controller.document().model().connections().size(), std::size_t(1));
+}
+
+void TestEditor::connectionContextMenu()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
+    const EntityId auxiliary = controller.createVariable(VariableType::Auxiliary, QPointF(240.0, 0.0));
+    const ConnectionId id = controller.createConnection(stock, auxiliary);
+
+    struct State {
+        bool executed = false;
+        bool valid = false;
+    };
+    auto state = std::make_shared<State>();
+    QTimer::singleShot(0, &scene, [state]() {
+        state->executed = true;
+        QMenu *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+        if (!menu)
+            return;
+        const QList<QMenu *> menus = menu->findChildren<QMenu *>();
+        QMenu *routeMenu = nullptr;
+        for (QMenu *child : menus) {
+            if (child->title() == QStringLiteral("布线类型"))
+                routeMenu = child;
+        }
+        if (!routeMenu)
+            return;
+        const QList<QAction *> actions = routeMenu->actions();
+        state->valid = actions.size() == 3;
+        QActionGroup *group = routeMenu->actions().front()->actionGroup();
+        state->valid = state->valid && group && group->isExclusive();
+        for (QAction *action : actions) {
+            state->valid = state->valid && action->isCheckable();
+            if (action->text() == QStringLiteral("直角线"))
+                state->valid = state->valid && action->isChecked();
+            if (action->text() == QStringLiteral("贝塞尔曲线")) {
+                action->trigger();
+                menu->close();
+            }
+        }
+    });
+
+    QGraphicsSceneContextMenuEvent event(QEvent::GraphicsSceneContextMenu);
+    event.setReason(QGraphicsSceneContextMenuEvent::Mouse);
+    event.setScenePos(QPointF(120.0, 0.0));
+    event.setScreenPos(QPoint(100, 100));
+    QApplication::sendEvent(&scene, &event);
+    QVERIFY(state->executed);
+    QVERIFY(state->valid);
+    QCOMPARE(controller.document().diagram().route(id).mode, RouteMode::Bezier);
+}
+
+void TestEditor::orthogonalArrowDirections()
+{
+    auto arrowFor = [](const QPointF &sourcePosition) {
+        DocumentController controller;
+        DiagramScene scene(&controller);
+        const EntityId source = controller.createVariable(VariableType::Auxiliary, sourcePosition);
+        const EntityId target = controller.createVariable(VariableType::Stock, QPointF());
+        const ConnectionId id = controller.createConnection(source, target);
+        return scene.connectionItem(id)->arrowHead();
+    };
+    const QPolygonF left = arrowFor(QPointF(-200.0, 0.0));
+    const QPolygonF right = arrowFor(QPointF(200.0, 0.0));
+    const QPolygonF above = arrowFor(QPointF(0.0, -200.0));
+    const QPolygonF below = arrowFor(QPointF(0.0, 200.0));
+    QVERIFY(!left.isEmpty());
+    QVERIFY(!right.isEmpty());
+    QVERIFY(!above.isEmpty());
+    QVERIFY(!below.isEmpty());
+    const auto direction = [](const QPolygonF &arrow) {
+        return arrow[0] - (arrow[1] + arrow[2]) / 2.0;
+    };
+    QVERIFY(direction(left).x() > 0.0);
+    QVERIFY(direction(right).x() < 0.0);
+    QVERIFY(direction(above).y() > 0.0);
+    QVERIFY(direction(below).y() < 0.0);
+    QCOMPARE(left[0], QPointF(-60.0, 0.0));
+    QCOMPARE(right[0], QPointF(60.0, 0.0));
+    QCOMPARE(above[0], QPointF(0.0, -25.0));
+    QCOMPARE(below[0], QPointF(0.0, 25.0));
+    const QPolygonF diagonal = arrowFor(QPointF(200.0, 200.0));
+    QVERIFY(!diagonal.isEmpty());
+    QVERIFY(std::abs(direction(diagonal).x()) > 0.0);
+    QVERIFY(std::abs(direction(diagonal).y()) > 0.0);
 }
 
 QTEST_MAIN(TestEditor)
