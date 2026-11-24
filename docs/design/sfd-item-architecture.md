@@ -194,7 +194,7 @@ std::unordered_map<std::string, EntityId> m_nameIndex; // nameKey -> ModelElemen
 
 XMILE `uid` 只是文件内显示对象的引用标识，不替代内部 EntityId。XMILE 1.1 第 5.1.3 节规定 uid 在一次文件内唯一且线性递增，但不要求跨多次读写稳定。保存时可生成文件内 uid，加载时建立“uid → 新 EntityId”映射；不得把 uid 当作撤销身份或跨文档永久身份。
 
-标准 `<text_box>` 等显示对象在标准允许且需要被引用时使用 uid。XMILE 1.1 没有标准 `<cloud>` 标签，Cloud 的位置和 Flow 对 Cloud 的引用写入独立 workspace；workspace 可使用自己的文件内 uid 引用机制，但不能声称这是标准 XMILE Cloud。Stock 的 `<inflow>`/`<outflow>` 始终引用 Flow 名称，不引用 Cloud uid。
+标准 `<text_box>` 等显示对象在标准允许且需要被引用时使用 uid。XMILE 1.1 没有标准 `<cloud>` 标签，Cloud 的位置和 Flow 对 Cloud 的引用只完整保存在原生 QDS `document.xml` 中，不使用标准 XMILE Cloud 或 ZIP workspace。Stock 的 `<inflow>`/`<outflow>` 始终引用 Flow 名称，不引用 Cloud uid。
 
 ## 4. 画布 Item 类体系
 
@@ -294,9 +294,17 @@ C - 12N - 10T，C，C - 12N + 10T
 
 ### 4.2.3 Flow 的 XMILE 边界
 
-目标版本为 XMILE 1.1。Flow 名称和方程写入标准 `<flow>`，Stock 使用 `<inflow>`/`<outflow>` 引用 Flow；不生成物料 Connector。Flow 的标准视图信息写入 view flow，Cloud 端点、Cloud 位置、RouteMode、贝塞尔控制数据、manual/locked 等无标准承载的信息写入独立 workspace.xml。Constant/Data 在标准 XMILE 中仍写为 aux，workspace 以可选 `variable-kind` 记录保留内部变量分类；无该记录的普通 XMILE aux 始终导入为 Auxiliary。XMILE 1.1 没有标准 `<cloud>`，不得输出该标签冒充标准内容。
+目标版本为 XMILE 1.1，仅用于未压缩 XML 的导入/导出。Flow 名称和方程写入标准 `<flow>`，Stock 使用 `<inflow>`/`<outflow>` 引用 Flow；不生成物料 Connector。Constant/Data 在标准 XMILE 中写为 aux，普通 aux 导入为 Auxiliary。XMILE 1.1 没有标准 `<cloud>`，不得输出该标签冒充标准内容。
 
-加载原生容器时，通过 workspace 的文件内 uid 恢复 Cloud 与 Flow 端点，再映射为新 EntityId。加载不带 workspace 的纯 XMILE 时，根据 Stock 的 inflow/outflow 和 Flow 路径补建开放端 Cloud；没有视图或路径时生成确定性的默认布局。名称、端点、视图补齐和索引建立必须属于同一事务，失败时保留原 Document。
+导入纯 XMILE 时，根据 Stock 的 inflow/outflow 和 Flow 路径补建开放端 Cloud；没有视图或路径时生成确定性的默认布局。名称、端点、视图补齐和索引建立必须属于同一事务，失败时保留原 Document。导出不得声称保留 Cloud 图形、Constant/Data 分类、Comment Connector、私有路径和工作区语义。
+
+### 4.2.4 原生 QDS 单 XML 格式
+
+I/O 职责按格式拆分为独立类和源码文件：`DocumentFile` 负责 QDS/ZIP，`XmileFile` 只负责未压缩 XMILE 导入/导出，不共享格式兼容层。原生文件使用 `.qds` 后缀，ZIP 容器中只有一个 `document.xml`。XML 根元素为 `<qds-document version="1">`，内部以 `<model>`、`<diagram>` 和可选 `<workspace>` 分区；代码模型与视图分层不要求拆成多个文件。开发阶段不读取旧版 model.xmile/workspace.xml ZIP，也不为其设置兼容层。
+
+`model` 保存 Stock、Flow、Auxiliary、Constant、Data 及方程、单位、说明和 Flow 端点；`diagram` 保存 Cloud、Comment、Connector、位置和 Route。所有对象使用文件内 uid 引用，加载时重新分配 EntityId 并建立 uid→EntityId 映射。displayName 持久化，nameKey 加载时派生；Comment 保存 content，Cloud 不使用名称。
+
+原生读取采用两阶段构建：先建立非路由对象，再按映射建立 Flow、Connector。原生往返必须完整保留 ElementKind、重复 Comment、Cloud、端点、路径模式、控制点和锁定状态。ZIP 中缺少 document.xml、XML 损坏或引用无效时加载失败并保留原 Document。XMILE 导入通道遇到 ZIP 直接报错，不尝试猜测旧格式。
 
 ### 4.3 吸附点和端口
 

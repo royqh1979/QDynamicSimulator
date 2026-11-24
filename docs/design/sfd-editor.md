@@ -132,9 +132,10 @@
 
 ### 3.7 XMILE 与布局保存
 
-- 以 XMILE 1.1 为目标版本，保存标准变量、方程和存量流入/流出关系。
+- 原生保存/另存为只生成 `.qds`：ZIP 内单个 `document.xml`，以 model、diagram、workspace 分区完整保存变量、Cloud、注释、位置、连接路由和工作区。
+- XMILE 1.1 仅用于导入/导出未压缩 XML，不得作为 ZIP 处理；开发阶段不兼容旧 model.xmile/workspace.xml ZIP。
 - 保存全部元素位置、连接路由和注释；所有语义变量必须在当前视图可见，纯 XMILE 缺少视图时由导入器补齐，不得丢弃公式。
-- XMILE 1.1 没有标准 `<cloud>`；Cloud 布局及其 Flow 端点引用保存在独立 workspace。标准显示对象 uid 和 workspace 文件内 uid 都只用于当次读写，加载后映射为新 EntityId。
+- 原生文件使用文件内 uid 建立对象引用，加载后映射为新 EntityId；XMILE 导出需明确 Cloud 图形、变量分类、私有路径和工作区等降级或丢失项。
 - 保存多个视图及当前视图。
 - 工作区状态放入容器内独立专有 XML。
 - 打开后恢复画布位置、缩放比例和必要的窗口状态。

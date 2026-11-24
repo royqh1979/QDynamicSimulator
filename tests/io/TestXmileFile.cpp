@@ -1,3 +1,4 @@
+#include <qds/io/DocumentFile.h>
 #include <qds/io/XmileFile.h>
 
 #include <QFile>
@@ -9,7 +10,7 @@ using namespace qds::core;
 
 namespace {
 
-QByteArray extractModelXml(const QString &path)
+QByteArray extractDocumentXml(const QString &path)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
@@ -58,19 +59,21 @@ class TestXmileFile : public QObject
     Q_OBJECT
 
 private slots:
-    void zipRoundTrip();
+    void nativeRoundTrip();
     void plainXmlOpen();
+    void xmileExport();
+    void xmileRejectsZip();
     void missingViewsAreCompleted();
     void invalidInput();
     void duplicateNames();
     void missingFile();
 };
 
-void TestXmileFile::zipRoundTrip()
+void TestXmileFile::nativeRoundTrip()
 {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
-    const QString path = directory.filePath(QStringLiteral("model.xmile"));
+    const QString path = directory.filePath(QStringLiteral("model.qds"));
     Document document;
     const EntityId stock = document.createVariable(ElementKind::Stock, {120.5, 80.25});
     const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary, {300.0, 240.0});
@@ -102,20 +105,28 @@ void TestXmileFile::zipRoundTrip()
     document.setRoute(flow, route);
 
     QString error;
-    QVERIFY2(qds::io::saveXmile(path, document, &error), qPrintable(error));
+    QVERIFY2(qds::io::DocumentFile::save(path, document, &error), qPrintable(error));
     QFile file(path);
     QVERIFY(file.open(QIODevice::ReadOnly));
     QCOMPARE(file.read(2), QByteArray("PK"));
+    file.seek(0);
+    const QByteArray archive = file.readAll();
+    QCOMPARE(archive.count("PK\x03\x04"), 1);
     file.close();
-    const QByteArray xml = extractModelXml(path);
-    QVERIFY(xml.contains("<xmile"));
-    QVERIFY(xml.contains("version=\"1.1\""));
-    QVERIFY(!xml.contains("<cloud"));
-    QCOMPARE(xml.count("<text_box"), 2);
-    QCOMPARE(xml.count("uid="), 4);
+    const QByteArray xml = extractDocumentXml(path);
+    QVERIFY(xml.contains("<qds-document version=\"1\">"));
+    QVERIFY(xml.contains("<model>"));
+    QVERIFY(xml.contains("<diagram>"));
+    QVERIFY(xml.contains("<workspace"));
+    QCOMPARE(xml.count("<cloud"), 2);
+    QCOMPARE(xml.count("<comment"), 2);
+    QVERIFY(xml.contains("<constant"));
+    QVERIFY(xml.contains("<data"));
 
     Document loaded;
-    QVERIFY2(qds::io::loadXmile(path, loaded, &error), qPrintable(error));
+    bool nativeFormat = false;
+    QVERIFY2(qds::io::DocumentFile::open(path, loaded, &error, &nativeFormat), qPrintable(error));
+    QVERIFY(nativeFormat);
     std::size_t modelCount = 0;
     std::size_t connectorCount = 0;
     for (const ModelElement &element : loaded.model().elements()) {
@@ -197,7 +208,9 @@ void TestXmileFile::plainXmlOpen()
     file.close();
     Document document;
     QString error;
-    QVERIFY2(qds::io::loadXmile(path, document, &error), qPrintable(error));
+    bool nativeFormat = true;
+    QVERIFY2(qds::io::DocumentFile::open(path, document, &error, &nativeFormat), qPrintable(error));
+    QVERIFY(!nativeFormat);
     QVERIFY(document.findByName("S"));
     QCOMPARE(document.findByName("A")->kind(), ElementKind::Auxiliary);
     const auto *flow = dynamic_cast<const Flow *>(document.findByName("F"));
@@ -210,6 +223,50 @@ void TestXmileFile::plainXmlOpen()
     QVERIFY(document.diagram().position(flow->endpoints.to).x
             > document.diagram().position(flow->endpoints.from).x);
     QVERIFY(document.diagram().position(document.findByName("S")->id()).x > 0.0);
+}
+
+void TestXmileFile::xmileExport()
+{
+    QTemporaryDir directory;
+    const QString path = directory.filePath(QStringLiteral("export.xmile"));
+    Document document;
+    const EntityId stock = document.createVariable(ElementKind::Stock, {100.0, 100.0});
+    const EntityId cloud = document.createCloud({300.0, 100.0});
+    document.createFlow(stock, cloud);
+    document.createVariable(ElementKind::Constant, {100.0, 300.0});
+    document.createComment("Note", {400.0, 300.0});
+    QString error;
+    QVERIFY2(qds::io::XmileFile::exportFile(path, document, &error), qPrintable(error));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const QByteArray xml = file.readAll();
+    QVERIFY(!xml.startsWith("PK"));
+    QVERIFY(xml.contains("<xmile"));
+    QVERIFY(xml.contains("version=\"1.1\""));
+    QVERIFY(!xml.contains("<cloud"));
+    QVERIFY(!xml.contains("qds-workspace"));
+
+    Document imported;
+    QVERIFY2(qds::io::XmileFile::importFile(path, imported, &error), qPrintable(error));
+    const auto *importedFlow = dynamic_cast<const Flow *>(imported.findByName("Flow1"));
+    QVERIFY(importedFlow);
+    QCOMPARE(imported.find(importedFlow->endpoints.from)->kind(), ElementKind::Stock);
+    QCOMPARE(imported.find(importedFlow->endpoints.to)->kind(), ElementKind::Cloud);
+    QCOMPARE(imported.findByName("Constant1")->kind(), ElementKind::Auxiliary);
+    QCOMPARE(imported.model().findByName("Stock1")->id(), importedFlow->endpoints.from);
+}
+
+void TestXmileFile::xmileRejectsZip()
+{
+    QTemporaryDir directory;
+    const QString path = directory.filePath(QStringLiteral("native.qds"));
+    Document document;
+    document.createVariable(ElementKind::Stock);
+    QString error;
+    QVERIFY(qds::io::DocumentFile::save(path, document, &error));
+    Document imported;
+    QVERIFY(!qds::io::XmileFile::importFile(path, imported, &error));
+    QVERIFY(error.contains("uncompressed XML"));
 }
 
 void TestXmileFile::missingViewsAreCompleted()
@@ -232,7 +289,7 @@ void TestXmileFile::missingViewsAreCompleted()
     file.close();
     Document document;
     QString error;
-    QVERIFY2(qds::io::loadXmile(path, document, &error), qPrintable(error));
+    QVERIFY2(qds::io::DocumentFile::open(path, document, &error), qPrintable(error));
     const auto *flow = dynamic_cast<const Flow *>(document.findByName("F"));
     QVERIFY(flow);
     QCOMPARE(document.find(flow->endpoints.from)->kind(), ElementKind::Stock);
@@ -266,7 +323,7 @@ void TestXmileFile::invalidInput()
     Document document;
     document.createVariable(ElementKind::Stock);
     QString error;
-    QVERIFY(!qds::io::loadXmile(path, document, &error));
+    QVERIFY(!qds::io::DocumentFile::open(path, document, &error));
     QVERIFY(!error.isEmpty());
     QCOMPARE(document.elements().begin()->kind(), ElementKind::Stock);
 }
@@ -285,7 +342,7 @@ void TestXmileFile::duplicateNames()
     Document document;
     document.createVariable(ElementKind::Stock);
     QString error;
-    QVERIFY(!qds::io::loadXmile(path, document, &error));
+    QVERIFY(!qds::io::DocumentFile::open(path, document, &error));
     QVERIFY(!error.isEmpty());
     QVERIFY(document.elements().begin()->kind() == ElementKind::Stock);
 }
@@ -294,7 +351,7 @@ void TestXmileFile::missingFile()
 {
     Document document;
     QString error;
-    QVERIFY(!qds::io::loadXmile(QStringLiteral("R:/definitely-missing-qds-model.xmile"), document, &error));
+    QVERIFY(!qds::io::DocumentFile::open(QStringLiteral("R:/definitely-missing-qds-model.xmile"), document, &error));
     QVERIFY(!error.isEmpty());
 }
 
