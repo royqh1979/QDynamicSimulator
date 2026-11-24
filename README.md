@@ -36,7 +36,7 @@ cmake -S . -B R:/build-qdynamic-simulator-qt5-release \
 cmake --build R:/build-qdynamic-simulator-qt5-release --parallel
 ```
 
-如 CMake 无法自动找到 Qt，请在配置时通过 `CMAKE_PREFIX_PATH` 指定 Qt 安装目录。
+如 CMake 无法自动找到 Qt，请在配置时通过 `CMAKE_PREFIX_PATH` 指定 Qt 安装目录。测试模型使用 SDXorg/test-models 子模块，首次检出或 CI 中执行 `git submodule update --init 3rdparty/test-models`。
 
 ## 目录结构
 
@@ -46,6 +46,7 @@ src/
 ├── core/                独立于 UI 的纯 C++ 核心库
 └── io/                  基于 QtCore 的 XMILE/ZIP 读写
 docs/design/             架构与模块设计文档
+3rdparty/test-models/    SDXorg 测试模型子模块
 .github/workflows/       跨平台 CI
 ```
 

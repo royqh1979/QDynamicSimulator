@@ -141,7 +141,7 @@
 - 保存后重新打开，模型结构和布局一致。
 - 对暂不支持的 XMILE 内容尽量保留，避免静默丢失。
 - 导出剥离专有数据的纯 XMILE。
-- 使用标准样例和第三方 XMILE 文件验证互操作性。
+- 使用标准样例和第三方 XMILE 文件验证互操作性；测试来源为 `3rdparty/test-models` 子模块（https://github.com/SDXorg/test-models），选用模型时保留对应 README 和规范输出作为验收依据。
 - XML、ZIP 损坏和超大文件保护。
 
 ## 4. 连接线与布线子系统

@@ -80,6 +80,7 @@
 - `docs/design/sfd-editor.md`：SFD 完整功能清单与实施计划。
 - `docs/design/sfd-item-architecture.md`：核心模型、Item 类体系和同步设计。
 - `docs/profile/README.md`：性能基线、报告、优化结果与工具索引；开始性能工作后建立。
+- `docs/references/README.md`：参考文献及 `3rdparty/test-models` 测试模型子模块的来源、许可证和使用约定。
 
 ## 8. Git 与安全规则
 
