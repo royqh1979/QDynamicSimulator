@@ -137,7 +137,10 @@ void TestXmileFile::nativeRoundTrip()
     QVERIFY(document.rename(auxiliary, "\u8F85\u52A9\u53D8\u91CF"));
     QVERIFY(document.rename(constant, "\u5E38\u91CF"));
     QVERIFY(document.rename(data, "\u5916\u90E8\u6570\u636E"));
-    document.createConnector(stock, auxiliary);
+    const EntityId automaticConnector = document.createConnector(stock, auxiliary);
+    Route automaticRoute = defaultConnectorRoute();
+    automaticRoute.controlPoints[1].relative.y = -automaticRoute.controlPoints[1].relative.y;
+    document.setRoute(automaticConnector, automaticRoute);
     document.createConnector(auxiliary, flow);
     document.createConnector(note, flow);
     document.createConnector(secondNote, auxiliary);

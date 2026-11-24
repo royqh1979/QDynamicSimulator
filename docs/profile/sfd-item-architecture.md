@@ -93,9 +93,14 @@
 | 操作 | 数量 | 总耗时 ms | 每操作 μs |
 | --- | ---: | ---: | ---: |
 | bezier_control_guide_updates | 1000 | 0.7701 | 0.7701 |
+| automatic_bezier_edit_reset | 1000 | 1.1954 | 1.1954 |
+| connector_drag_selection | 1000 | 42.4483 | 42.4483 |
+| endpoint_preview_cancel | 1000 | 46.2102 | 46.2102 |
 | bezier_guide_single_selection | 1000 | 4.5462 | 4.5462 |
 | flow_center_boundary | 1000 | 9.1708 | 9.1708 |
 | xmile_sir_import | 100 | 10.3845 | 103.845 |
 | sir_dependent_route_moves | 1000 | 72.6264 | 72.6264 |
+
+`automatic_bezier_edit_reset` 每轮恢复两个自动点、计算辅助线，再通过控制句柄位置变化预览编辑，并验证两个点成组转为手动；覆盖自动点显示和编辑路径，而非只测量几何函数。`connector_drag_selection` 通过 Scene 鼠标按下、移动和释放测量框选状态切换，校验拖动中辅助线数量为零、释放后恢复为两条且曲线保持选中；真实 Viewport 反向拖动和释放重绘由编辑器单元测试覆盖。`endpoint_preview_cancel` 使用真实 DiagramView 鼠标事件执行端点按下、空白拖动和取消，校验预览中无辅助线或中间控制句柄、取消后恢复两条辅助线；控制句柄启用 ItemIgnoresTransformations，不能用缺少 View 的 Scene 事件替代。
 
 该结果用于后续同场景回归比较。当前两级依赖刷新直接遍历 Scene 图元，不引入额外派生索引；只有后续 profile 证明需要时才调整索引结构。

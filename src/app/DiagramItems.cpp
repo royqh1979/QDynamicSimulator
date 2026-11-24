@@ -258,7 +258,8 @@ RoutedItem::RoutedItem(DiagramItem *from, DiagramItem *to, const qds::core::Rout
 
 QRectF RoutedItem::boundingRect() const
 {
-    return geometryPath().boundingRect().adjusted(-16.0, -16.0, 16.0, 16.0);
+    const QPainterPath path = geometryPath();
+    return path.boundingRect().united(path.controlPointRect()).adjusted(-16.0, -16.0, 16.0, 16.0);
 }
 
 QPainterPath RoutedItem::shape() const
@@ -363,11 +364,6 @@ QPolygonF RoutedItem::arrowHead() const
 QVector<QLineF> RoutedItem::controlGuides() const
 {
     if (!m_controlGuidesVisible || m_route.mode != qds::core::RouteMode::Bezier)
-        return {};
-    if (!m_route.controlPoints.empty()
-        && std::all_of(m_route.controlPoints.begin(), m_route.controlPoints.end(), [](const qds::core::RoutePoint &point) {
-            return point.automatic;
-        }))
         return {};
     const QVector<QPointF> pathPoints = points();
     if (pathPoints.size() < 3)

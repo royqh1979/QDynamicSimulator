@@ -249,7 +249,7 @@ Route defaultConnectorRoute()
 {
     Route route;
     route.mode = RouteMode::Bezier;
-    route.controlPoints = {{1.0 / 3.0, -50.0, true}, {2.0 / 3.0, 50.0, true}};
+    route.controlPoints = {{1.0 / 3.0, -50.0, true}, {2.0 / 3.0, -50.0, true}};
     return route;
 }
 
@@ -400,6 +400,11 @@ bool Document::restore(const ElementData &data)
     Route route = data.route;
     if (data.kind == ElementKind::Flow && route.mode == RouteMode::Orthogonal)
         return false;
+    if (data.kind == ElementKind::Connector && !route.manual && route.mode == RouteMode::Bezier) {
+        const bool locked = route.locked;
+        route = defaultConnectorRoute();
+        route.locked = locked;
+    }
     if (insert(std::move(element), data.position) == 0)
         return false;
     if (data.kind == ElementKind::Flow || data.kind == ElementKind::Connector)

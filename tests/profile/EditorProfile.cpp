@@ -1,5 +1,6 @@
 #include "DiagramItems.h"
 #include "DiagramScene.h"
+#include "DiagramView.h"
 #include "DocumentController.h"
 #include "PropertyPanel.h"
 #include <qds/io/DocumentFile.h>
@@ -11,6 +12,7 @@
 #include <QGraphicsLineItem>
 #include <QGraphicsSceneMouseEvent>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QTemporaryDir>
 #include <QTextStream>
 
@@ -179,6 +181,87 @@ int main(int argc, char **argv)
         guideCount += guideItem->controlGuides().size();
     }
     const qint64 bezierGuideNs = timer.nsecsElapsed();
+
+    guideScene.resetSelectedRoute();
+    ControlPointHandle *automaticHandle = nullptr;
+    for (QGraphicsItem *item : guideScene.items()) {
+        auto *handle = qgraphicsitem_cast<ControlPointHandle *>(item);
+        if (handle && handle->isVisible() && handle->routeId() == guideConnection && handle->index() == 0)
+            automaticHandle = handle;
+    }
+    if (!automaticHandle)
+        return 15;
+    timer.restart();
+    int automaticGuideCount = 0;
+    bool automaticGroupManual = true;
+    for (int index = 0; index < 1000; ++index) {
+        guideScene.resetSelectedRoute();
+        automaticGuideCount += guideItem->controlGuides().size();
+        automaticHandle->setPos(automaticHandle->pos() + QPointF(1.0, 0.0));
+        for (const RoutePoint &point : guideItem->route().controlPoints)
+            automaticGroupManual = automaticGroupManual && !point.automatic;
+    }
+    const qint64 automaticBezierEditNs = timer.nsecsElapsed();
+
+    timer.restart();
+    int connectorDragGuideCount = 0;
+    bool connectorDragStateValid = true;
+    for (int index = 0; index < 1000; ++index) {
+        const QPointF position = guideItem->geometryPath().pointAtPercent(0.5);
+        QGraphicsSceneMouseEvent press(QEvent::GraphicsSceneMousePress);
+        press.setButton(Qt::LeftButton);
+        press.setButtons(Qt::LeftButton);
+        press.setScenePos(position);
+        QApplication::sendEvent(&guideScene, &press);
+        QGraphicsSceneMouseEvent move(QEvent::GraphicsSceneMouseMove);
+        move.setButtons(Qt::LeftButton);
+        move.setScenePos(position + QPointF(100.0, 80.0));
+        QApplication::sendEvent(&guideScene, &move);
+        connectorDragGuideCount += guideItem->controlGuides().size();
+        QGraphicsSceneMouseEvent release(QEvent::GraphicsSceneMouseRelease);
+        release.setButton(Qt::LeftButton);
+        release.setButtons(Qt::NoButton);
+        release.setScenePos(position + QPointF(100.0, 80.0));
+        QApplication::sendEvent(&guideScene, &release);
+        connectorDragGuideCount += guideItem->controlGuides().size();
+        connectorDragStateValid = connectorDragStateValid && guideItem->isSelected();
+    }
+    const qint64 connectorDragStateNs = timer.nsecsElapsed();
+
+    ControlPointHandle *targetHandle = nullptr;
+    for (QGraphicsItem *item : guideScene.items()) {
+        auto *handle = qgraphicsitem_cast<ControlPointHandle *>(item);
+        if (handle && handle->isVisible() && handle->routeId() == guideConnection && handle->index() == -2)
+            targetHandle = handle;
+    }
+    if (!targetHandle)
+        return 16;
+    DiagramView guideView(&guideScene);
+    guideView.resize(640, 480);
+    guideView.centerOn(100.0, 0.0);
+    timer.restart();
+    int endpointPreviewGuideCount = 0;
+    bool endpointPreviewHandlesValid = true;
+    for (int index = 0; index < 1000; ++index) {
+        const QPoint start = guideView.mapFromScene(targetHandle->pos());
+        const QPoint end = guideView.mapFromScene(targetHandle->pos() + QPointF(200.0, 200.0));
+        QMouseEvent press(QEvent::MouseButtonPress, start, guideView.viewport()->mapToGlobal(start), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(guideView.viewport(), &press);
+        QMouseEvent move(QEvent::MouseMove, end, guideView.viewport()->mapToGlobal(end), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(guideView.viewport(), &move);
+        endpointPreviewGuideCount += guideItem->controlGuides().size();
+        for (QGraphicsItem *item : guideScene.items()) {
+            const auto *handle = qgraphicsitem_cast<ControlPointHandle *>(item);
+            if (handle && handle->routeId() == guideConnection
+                && handle->role() == ControlPointHandle::Role::ControlPoint)
+                endpointPreviewHandlesValid = endpointPreviewHandlesValid && !handle->isVisible();
+        }
+        QMouseEvent release(QEvent::MouseButtonRelease, end, guideView.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(guideView.viewport(), &release);
+        endpointPreviewGuideCount += guideItem->controlGuides().size();
+        endpointPreviewHandlesValid = endpointPreviewHandlesValid && !guideItem->previewing();
+    }
+    const qint64 endpointPreviewNs = timer.nsecsElapsed();
 
     timer.restart();
     int singleSelectionGuideCount = 0;
@@ -404,6 +487,9 @@ int main(int argc, char **argv)
                         << "connector_line_style,1000," << connectorStyleNs / 1e6 << "," << connectorStyleNs / 1000.0 / 1000 << "\n"
                         << "orthogonal_auto_route,1000," << automaticRouteNs / 1e6 << "," << automaticRouteNs / 1000.0 / 1000 << "\n"
                         << "bezier_control_guide_updates,1000," << bezierGuideNs / 1e6 << "," << bezierGuideNs / 1000.0 / 1000 << "\n"
+                        << "automatic_bezier_edit_reset,1000," << automaticBezierEditNs / 1e6 << "," << automaticBezierEditNs / 1000.0 / 1000 << "\n"
+                        << "connector_drag_selection,1000," << connectorDragStateNs / 1e6 << "," << connectorDragStateNs / 1000.0 / 1000 << "\n"
+                        << "endpoint_preview_cancel,1000," << endpointPreviewNs / 1e6 << "," << endpointPreviewNs / 1000.0 / 1000 << "\n"
                         << "bezier_guide_single_selection,1000," << guideSelectionNs / 1e6 << "," << guideSelectionNs / 1000.0 / 1000 << "\n"
                         << "flow_valve_geometry,1000," << valveNs / 1e6 << "," << valveNs / 1000.0 / 1000 << "\n"
                         << "flow_pipeline_geometry,1000," << pipelineNs / 1e6 << "," << pipelineNs / 1000.0 / 1000 << "\n"
@@ -421,7 +507,10 @@ int main(int argc, char **argv)
                         << "xmile_sir_import,100," << sirImportNs / 1e6 << "," << sirImportNs / 1000.0 / 100 << "\n"
                         << "sir_dependent_route_moves,1000," << sirDependentMoveNs / 1e6 << "," << sirDependentMoveNs / 1000.0 / 1000 << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
-        && matches > 0 && guideCount == 2000 && singleSelectionGuideCount == 1000 && valveCount == 2000
+        && matches > 0 && guideCount == 2000 && automaticGuideCount == 2000 && automaticGroupManual
+        && connectorDragGuideCount == 2000 && connectorDragStateValid
+        && endpointPreviewGuideCount == 2000 && endpointPreviewHandlesValid
+        && singleSelectionGuideCount == 1000 && valveCount == 2000
         && lineStyleChecksum == 3000 && automaticPointCount > 0 && automaticFlagsValid
         && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000
         && centerBoundaryCount == 1000 && variableKindsMatch

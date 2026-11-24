@@ -224,7 +224,7 @@ QGraphicsObject
 - 通过独立 `center()` 虚函数提供几何中心，默认等于 `pos()`；FlowItem 返回路径中点作为阀门中心，RoutedItem 不使用 `setPos()` 移动。
 - 提供端口布局和边界交点查询；所有连接都以 center 为定位参考，但实际端点是路径与实体边界的交点。
 - 选中路由对象时，端点句柄直接放在路径首尾边界交点，拖动句柄只重连，不修改实体中心。
-- RoutedItem 通过统一 `updateLayout()` 声明旧/新几何失效；boundingRect 必须覆盖路径、阀门、文字和辅助线。创建连接与端点拖动使用不同预览对象，取消、重连和文档重置时按各自生命周期清理，避免残影。
+- RoutedItem 通过统一 `updateLayout()` 声明旧/新几何失效；boundingRect 必须联合 `geometryPath().boundingRect()` 与 `controlPointRect()`，并覆盖阀门、文字和辅助线，确保远离曲线实际控制点的手柄也纳入失效区域。创建连接与端点拖动使用不同预览对象，取消、重连和文档重置时按各自生命周期清理，避免残影。
 - 根据文档变化刷新显示缓存。
 
 子类只实现真正不同的外形、端口和交互。Constant、Data 与 Auxiliary 如果行为一致，可共用 VariableItem，并通过绘制策略区分外观。
@@ -249,7 +249,7 @@ ArrowItem 与 FlowItem 都保存 EntityId 并复用 RoutedItem 的路径能力�
 - 响应端点移动和路径变化。
 - 管理选中时显示的控制句柄。
 
-连接线固定在实体上方、控制句柄下方。贝塞尔辅助线及控制句柄仅在单独选中一条曲线时显示，多选和区域选择过程中隐藏。路径预览必须先调用 `prepareGeometryChange()` 通知旧区域，再替换路由数据，确保拖动时旧轨迹被清除。
+连接线固定在实体上方、控制句柄下方。贝塞尔辅助线及控制句柄仅在单独选中一条曲线时显示，多选和区域选择过程中隐藏。左键从空白或不可移动 RoutedItem 开始时都进入同一个 area-selecting 状态，不能只在空白按下时设置；释放后清除该状态、按最终选择同步句柄并刷新最后一次框选区域。路径预览必须先调用 `prepareGeometryChange()` 通知旧区域，再替换路由数据，确保拖动时旧轨迹被清除。
 
 它不直接修改核心连接关系，不承担自动避障、吸附决策和撤销命令职责。Flow 默认使用直线；Arrow 默认使用带两个自动相对控制点的贝塞尔曲线，也可显式选择直线或直角自动布线。
 
@@ -283,9 +283,9 @@ Flow.from/to 是唯一权威关系。当前不引入 Stock 流入/流出派生�
 
 所有 RoutedItem 的 Route 按统一 EntityId 存入 DiagramDefinition。Flow 只接受 Straight/Bezier，默认 Straight，不运行直角自动避障；Arrow 默认由 `defaultConnectorRoute()` 生成 Bezier 路径，可显式选择 Straight 或 Orthogonal。
 
-RoutePoint 使用相对坐标：`relative.x` 是沿源→目标方向的比例，`relative.y` 是沿路径法线的像素偏移，场景坐标仅在绘制和拖动时派生。`automatic=true` 表示自动布线点，`false` 表示用户手动点；控制句柄只显示手动点。QDS 同时保存相对值和 automatic 属性。
+RoutePoint 使用相对坐标：`relative.x` 是沿源→目标方向的比例，`relative.y` 是沿路径法线的像素偏移，场景坐标仅在绘制和拖动时派生。`automatic=true` 表示自动布线点，`false` 表示用户手动点。自动贝塞尔点与手动点一样显示控制句柄和辅助线并可编辑；任意控制点新增、移动或删除时，整条曲线的全部控制点成组转为手动。正交自动布线点仍隐藏。QDS 同时保存相对值和 automatic 属性；恢复未手动编辑的贝塞尔 Connector 时按当前 `defaultConnectorRoute()` 重建派生点，保留 locked，手动路径原样恢复。
 
-端点拖动预览直接由原 RoutedItem 计算，不复制图元、不隐藏原图元，也不修改 Document。预览端点可位于空白或非法目标上，此时不校验端点约束；释放后才校验并提交，非法释放恢复原路径。
+端点拖动预览直接由原 RoutedItem 计算，不复制图元、不隐藏原图元，也不修改 Document。预览端点可位于空白或非法目标上，此时不校验端点约束；释放后才校验并提交，非法释放恢复原路径。预览期间保留两个端点句柄，隐藏全部中间控制句柄和贝塞尔辅助线；统一由 `syncControlPoints()` 在开始、有效提交和取消时切换可见性并恢复选中曲线的句柄，不能只更新预览路径。
 
 删除 Stock/Cloud 时必须级联删除所有以其为端点的 Flow 及相关 Arrow。Flow 和 Arrow 只有在两端对象一并复制时才可粘贴，不允许保留外部端点。
 
