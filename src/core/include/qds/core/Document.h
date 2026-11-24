@@ -204,7 +204,7 @@ private:
     template <typename T>
     EntityId insert(std::unique_ptr<T> element, Vec2 position);
     bool validFlowEndpoint(EntityId id) const;
-    bool validConnectorEndpoint(EntityId id) const;
+    bool validConnectorEndpoints(EntityId from, EntityId to) const;
     std::string uniqueName(ElementKind kind);
     void updateReferences(EntityId id, const std::string &oldName, const std::string &newName);
 

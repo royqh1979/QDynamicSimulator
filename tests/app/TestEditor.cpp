@@ -291,6 +291,14 @@ void TestEditor::connectorValidation()
     auto *arrow = dynamic_cast<ArrowItem *>(scene.item(information));
     QVERIFY(arrow);
     QCOMPARE(arrow->linePaths().size(), 1);
+    QCOMPARE(arrow->lineStyle(), Qt::SolidLine);
+
+    const EntityId comment = controller.createComment(QStringLiteral("Note"), QPointF(100.0, 100.0));
+    const EntityId otherComment = controller.createComment(QStringLiteral("Note"), QPointF(200.0, 100.0));
+    const EntityId annotation = controller.createConnector(comment, stock);
+    QVERIFY(annotation != 0);
+    QCOMPARE(dynamic_cast<ArrowItem *>(scene.item(annotation))->lineStyle(), Qt::DashLine);
+    QCOMPARE(controller.createConnector(comment, otherComment), EntityId(0));
 }
 
 void TestEditor::connectionDeleteUndo()

@@ -251,6 +251,8 @@ ArrowItem 与 FlowItem 都保存 EntityId 并复用 RoutedItem 的路径能力�
 
 它不直接修改核心连接关系，不承担自动避障、吸附决策和撤销命令职责。流量仅支持直线和贝塞尔路径，默认直线；Arrow 保留直角自动布线。
 
+Connector 的端点合法性由 Document 聚合层统一校验，create、restore、reconnect 共用同一规则：Comment 只能作为一端 Junction，禁止 Comment→Comment。ArrowItem 在普通端点间绘制单实线，在 Comment 与另一端之间绘制虚线；该显示规则不改变 Connector 的因果或展示语义。
+
 ### 4.2.1 Flow 实体与路径
 
 Flow 是 ModelElement，直接持有 FlowEndpoints，不是 Connector：

@@ -60,6 +60,7 @@ public:
     QRectF boundingRect() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     qds::core::EntityId id() const override { return m_id; }
+    qds::core::ElementKind kind() const { return m_kind; }
     QString text() const { return m_text; }
     QPointF boundaryPointToward(const QPointF &target) const override;
     void refresh(const qds::core::ViewElement &object, const QPointF &position);
@@ -113,6 +114,7 @@ public:
     int type() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     qds::core::EntityId id() const override { return m_id; }
+    Qt::PenStyle lineStyle() const;
 
 private:
     qds::core::EntityId m_id;

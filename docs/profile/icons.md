@@ -19,6 +19,6 @@ cmake --build <RELEASE_BUILD_DIR> --target test-icons profile-icons --parallel
 
 | 操作 | 数量 | 总耗时 ms | 每次 μs |
 | --- | ---: | ---: | ---: |
-| SVG 图标加载与渲染 | 4800 | 685.153 | 142.740 |
+| SVG 图标加载与渲染 | 4800 | 686.812 | 143.086 |
 
 全部 48 个图标在 Release 资源测试中通过，无空图标或渲染失败。

@@ -143,6 +143,14 @@ int main(int argc, char **argv)
     const EntityId guideTo = guideController.createVariable(ElementKind::Auxiliary, QPointF(200.0, 0.0));
     const EntityId guideConnection = guideController.createConnector(guideFrom, guideTo);
     auto *guideItem = dynamic_cast<ArrowItem *>(guideScene.item(guideConnection));
+    const EntityId guideComment = guideController.createComment(QStringLiteral("Note"), QPointF(100.0, 100.0));
+    const EntityId guideAnnotation = guideController.createConnector(guideComment, guideFrom);
+    auto *annotationItem = dynamic_cast<ArrowItem *>(guideScene.item(guideAnnotation));
+    timer.restart();
+    int lineStyleChecksum = 0;
+    for (int index = 0; index < 1000; ++index)
+        lineStyleChecksum += guideItem->lineStyle() + annotationItem->lineStyle();
+    const qint64 connectorStyleNs = timer.nsecsElapsed();
     guideItem->setSelected(true);
     guideScene.setSelectedRouteMode(RouteMode::Bezier);
     Route guideRoute = guideController.document().diagram().route(guideConnection);
@@ -330,6 +338,7 @@ int main(int argc, char **argv)
                         << "editor_search_100," << count * 100 << "," << searchNs / 1e6 << "," << searchNs / 1000.0 / (count * 100) << "\n"
                         << "rubber_preview,1000," << previewNs / 1e6 << "," << previewNs / 1000.0 / 1000 << "\n"
                         << "connection_context_menu,1000," << contextMenuNs / 1e6 << "," << contextMenuNs / 1000.0 / 1000 << "\n"
+                        << "connector_line_style,1000," << connectorStyleNs / 1e6 << "," << connectorStyleNs / 1000.0 / 1000 << "\n"
                         << "bezier_control_guide_updates,1000," << bezierGuideNs / 1e6 << "," << bezierGuideNs / 1000.0 / 1000 << "\n"
                         << "bezier_guide_single_selection,1000," << guideSelectionNs / 1e6 << "," << guideSelectionNs / 1000.0 / 1000 << "\n"
                         << "flow_valve_geometry,1000," << valveNs / 1e6 << "," << valveNs / 1000.0 / 1000 << "\n"
@@ -346,6 +355,7 @@ int main(int argc, char **argv)
                         << "xmile_sir_import,100," << sirImportNs / 1e6 << "," << sirImportNs / 1000.0 / 100 << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
         && matches > 0 && guideCount == 2000 && singleSelectionGuideCount == 1000 && valveCount == 2000
+        && lineStyleChecksum == 3000
         && pipelineCount == 2000 && flowArrowPointCount == 3000 && variableKindsMatch
         && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic
         && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();

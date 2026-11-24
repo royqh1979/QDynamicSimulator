@@ -434,6 +434,15 @@ int ArrowItem::type() const
     return Type;
 }
 
+Qt::PenStyle ArrowItem::lineStyle() const
+{
+    const auto *source = dynamic_cast<const ViewObjectItem *>(m_from);
+    const auto *target = dynamic_cast<const ViewObjectItem *>(m_to);
+    const bool commented = (source && source->kind() == qds::core::ElementKind::Comment)
+        || (target && target->kind() == qds::core::ElementKind::Comment);
+    return commented ? Qt::DashLine : Qt::SolidLine;
+}
+
 void ArrowItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
     Q_UNUSED(option)
@@ -448,7 +457,7 @@ void ArrowItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
             painter->drawLine(guide);
     }
     const QColor color = isSelected() ? QColor(35, 120, 210) : QColor(75, 85, 95);
-    painter->setPen(QPen(color, isSelected() ? 2.4 : 1.4, Qt::DashLine));
+    painter->setPen(QPen(color, isSelected() ? 2.4 : 1.4, lineStyle()));
     painter->drawPath(geometryPath());
     painter->setBrush(color);
     const QPolygonF arrow = arrowHead();

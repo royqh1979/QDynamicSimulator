@@ -94,7 +94,7 @@
 
 - Flow 是 ModelElement，直接持有 Stock/Cloud 端点；Arrow 是 DiagramDefinition 中唯一的 Connector 类型。
 - 表达 Stock→Stock、Cloud→Stock、Stock→Cloud 的 Flow，不额外生成物料 Connector。
-- Arrow 表达变量→变量、变量→Flow 的因果关系，也可连接 Comment Junction。
+- Arrow 表达变量→变量、变量→Flow 的因果关系，也可连接 Comment Junction；Comment 只能位于一端，禁止 Comment→Comment。普通 Connector 使用单实线，任一端为 Comment 时使用虚线。
 - 检查非法端点、自连接、重复连接和悬空引用。
 - 删除 Stock/Cloud 时必须级联删除所有关联 Flow 及相关 Arrow，并通过 ChangeSet 整体撤销。
 - Flow 和 Arrow 只有在两端对象一并复制时才可粘贴，不保留外部端点。

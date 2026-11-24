@@ -247,7 +247,7 @@ EntityId Document::createFlow(EntityId from, EntityId to)
 
 EntityId Document::createConnector(EntityId from, EntityId to)
 {
-    if (from == to || !validConnectorEndpoint(from) || !validConnectorEndpoint(to))
+    if (!validConnectorEndpoints(from, to))
         return 0;
     for (const DocumentElement &element : elements()) {
         if (element.kind() == ElementKind::Connector) {
@@ -362,7 +362,7 @@ bool Document::restore(const ElementData &data)
         flow->endpoints = data.flowEndpoints;
         element = std::move(flow);
     } else if (data.kind == ElementKind::Connector) {
-        if (!validConnectorEndpoint(data.from) || !validConnectorEndpoint(data.to) || data.from == data.to)
+        if (!validConnectorEndpoints(data.from, data.to))
             return false;
         auto connector = std::make_unique<Connector>(id);
         connector->from = data.from;
@@ -527,7 +527,7 @@ bool Document::reconnectFlow(EntityId id, EntityId from, EntityId to)
 bool Document::reconnectConnector(EntityId id, EntityId from, EntityId to)
 {
     auto *connector = dynamic_cast<Connector *>(find(id));
-    if (!connector || from == to || !validConnectorEndpoint(from) || !validConnectorEndpoint(to))
+    if (!connector || !validConnectorEndpoints(from, to))
         return false;
     for (const DocumentElement &element : elements()) {
         if (element.id() == id || element.kind() != ElementKind::Connector)
@@ -567,10 +567,14 @@ bool Document::validFlowEndpoint(EntityId id) const
     return element && (element->kind() == ElementKind::Stock || element->kind() == ElementKind::Cloud);
 }
 
-bool Document::validConnectorEndpoint(EntityId id) const
+bool Document::validConnectorEndpoints(EntityId from, EntityId to) const
 {
-    const DocumentElement *element = find(id);
-    return element && element->kind() != ElementKind::Cloud && element->kind() != ElementKind::Connector;
+    const DocumentElement *source = find(from);
+    const DocumentElement *target = find(to);
+    if (!source || !target || from == to || source->kind() == ElementKind::Cloud || target->kind() == ElementKind::Cloud
+        || source->kind() == ElementKind::Connector || target->kind() == ElementKind::Connector)
+        return false;
+    return source->kind() != ElementKind::Comment || target->kind() != ElementKind::Comment;
 }
 
 std::string Document::uniqueName(ElementKind kind)

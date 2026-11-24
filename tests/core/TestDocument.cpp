@@ -230,6 +230,12 @@ void TestDocument::entityAndConnectorTypes()
     QVERIFY(arrow != 0);
     QCOMPARE(document.createConnector(stock, auxiliary), EntityId(0));
     QVERIFY(document.createConnector(comment, flow) != 0);
+    QCOMPARE(document.createConnector(comment, secondComment), EntityId(0));
+    ElementData invalidCommentLink;
+    invalidCommentLink.kind = ElementKind::Connector;
+    invalidCommentLink.from = comment;
+    invalidCommentLink.to = secondComment;
+    QVERIFY(!document.restore(invalidCommentLink));
     QCOMPARE(document.createConnector(cloud, auxiliary), EntityId(0));
 }
 

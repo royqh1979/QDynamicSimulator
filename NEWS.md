@@ -23,6 +23,7 @@
 - XMILE 1.1 仅用于未压缩 XML 的导入/导出，不再作为 ZIP 或原生保存格式；普通 aux 导入为 Auxiliary，被 Stock 引用的 aux 可分类为 Flow，导出时明确专有语义降级。
 - XMILE 的 x/y、pts、angle 仅作为布局参考，导入后自动重算路径且不保存固定控制点；Connector 导出参考端点与出线角，不再写内部控制手柄。
 - 新增 SIR 真实导入及导出重导入验证；`QDS_ENABLE_XMILE_CORPUS_TESTS` 默认 OFF，开启后验证全部 67 个 SDXorg XMILE 文件，并分类记录不支持结构、损坏 XML 和暂缓的公式孤立判断。
+- Connector 在普通端点间使用单实线，在 Comment 与另一端之间使用虚线；创建、恢复和重连均禁止 Comment→Comment。
 - 注释正文可在属性面板编辑，修改、撤销/重做会同步画布和属性输入框，并通过 XMILE text_box 持久化。
 - Data 在界面和资源命名中不再称为外生变量；Flow 改为双实线管线与沙漏形阀门，Arrow 保持单实线，相关 SVG 箭头同步加长。
 - 放大 Flow 箭头并让双实线在箭头前截止，修复管线穿入箭头的问题；Flow 图标缩小双线间距，箭头移到两线中央，沙漏左移以保留间距。
