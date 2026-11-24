@@ -21,6 +21,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMimeData>
+#include <QMouseEvent>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QToolBar>
@@ -64,6 +65,9 @@ private slots:
     void controlPointDoubleClick();
     void reconnectUndo();
     void boundaryEndpoints();
+    void sirCanvasConnections();
+    void endpointHandleReconnect();
+    void rubberBandReverseRepaint();
     void spatialIndexAndRouter();
     void equationEditor();
     void clipboardOperations();
@@ -645,6 +649,102 @@ void TestEditor::boundaryEndpoints()
     QCOMPARE(item->boundaryPointToward(QPointF(100.0, 0.0)), QPointF(60.0, 0.0));
     QCOMPARE(item->boundaryPointToward(QPointF(0.0, 100.0)), QPointF(0.0, 25.0));
     QCOMPARE(item->boundaryPointToward(QPointF(0.0, 0.0)), QPointF(0.0, 0.0));
+}
+
+void TestEditor::sirCanvasConnections()
+{
+    Document imported;
+    QString error;
+    QVERIFY2(qds::io::XmileFile::importFile(QStringLiteral(QDS_SIR_XMILE_PATH), imported, &error), qPrintable(error));
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    controller.replaceDocument(std::move(imported));
+    int connectorCount = 0;
+    for (const ViewElement &element : controller.document().diagram().elements()) {
+        if (element.kind() != ElementKind::Connector)
+            continue;
+        ++connectorCount;
+        const auto &connector = static_cast<const Connector &>(element);
+        auto *arrow = dynamic_cast<ArrowItem *>(scene.item(connector.id()));
+        QVERIFY(arrow && arrow->from() && arrow->to());
+        for (DiagramItem *endpoint : {arrow->from(), arrow->to()}) {
+            if (auto *flow = dynamic_cast<FlowItem *>(endpoint)) {
+                QCOMPARE(flow->pos(), QPointF());
+                QCOMPARE(flow->center(), flow->geometryPath().pointAtPercent(0.5));
+                const DiagramItem *other = endpoint == arrow->from() ? arrow->to() : arrow->from();
+                const QPointF boundary = flow->boundaryPointToward(other->center());
+                QVERIFY2(QLineF(boundary, flow->center()).length() <= 60.1,
+                         qPrintable(QString("center=%1,%2 boundary=%3,%4")
+                             .arg(flow->center().x()).arg(flow->center().y())
+                             .arg(boundary.x()).arg(boundary.y())));
+            }
+        }
+    }
+    QCOMPARE(connectorCount, 6);
+}
+
+void TestEditor::endpointHandleReconnect()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId source = controller.createVariable(ElementKind::Auxiliary, QPointF(0.0, 0.0));
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(0.0, 200.0));
+    const EntityId targetStock = controller.createVariable(ElementKind::Stock, QPointF(0.0, -200.0));
+    const EntityId cloud = controller.createCloud(QPointF(400.0, 0.0));
+    const EntityId flow = controller.createFlow(stock, cloud);
+    const EntityId connector = controller.createConnector(source, flow);
+    auto *arrow = dynamic_cast<ArrowItem *>(scene.item(connector));
+    arrow->setSelected(true);
+
+    ControlPointHandle *targetHandle = nullptr;
+    for (QGraphicsItem *item : scene.items()) {
+        auto *handle = qgraphicsitem_cast<ControlPointHandle *>(item);
+        if (handle && handle->routeId() == connector && handle->index() == -2)
+            targetHandle = handle;
+    }
+    QVERIFY(targetHandle);
+    QCOMPARE(targetHandle->pos(), arrow->geometryPath().pointAtPercent(1.0));
+
+    DiagramView view(&scene);
+    view.resize(640, 480);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    const QPointF destination = scene.item(targetStock)->pos();
+    view.centerOn(targetHandle);
+    const QPoint start = view.mapFromScene(targetHandle->pos());
+    const QPoint end = view.mapFromScene(destination);
+    QCOMPARE(view.itemAt(start), targetHandle);
+    QMouseEvent press(QEvent::MouseButtonPress, start, view.viewport()->mapToGlobal(start), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &press);
+    QCOMPARE(scene.mouseGrabberItem(), targetHandle);
+    QMouseEvent move(QEvent::MouseMove, end, view.viewport()->mapToGlobal(end), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &move);
+    QVERIFY(QLineF(targetHandle->pos(), destination).length() < 0.3);
+    QMouseEvent release(QEvent::MouseButtonRelease, end, view.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &release);
+
+    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, targetStock);
+    controller.undoStack()->undo();
+    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, flow);
+}
+
+void TestEditor::rubberBandReverseRepaint()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    scene.setGridVisible(false);
+    DiagramView view(&scene);
+    view.resize(640, 480);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    QTest::qWait(20);
+    const QImage before = view.grab().toImage();
+    QTest::mousePress(view.viewport(), Qt::LeftButton, Qt::NoModifier, QPoint(400, 300));
+    QTest::mouseMove(view.viewport(), QPoint(100, 100));
+    QTest::mouseMove(view.viewport(), QPoint(200, 200));
+    QTest::mouseRelease(view.viewport(), Qt::LeftButton, Qt::NoModifier, QPoint(200, 200));
+    const QImage after = view.grab().toImage();
+    QCOMPARE(after, before);
 }
 
 void TestEditor::spatialIndexAndRouter()

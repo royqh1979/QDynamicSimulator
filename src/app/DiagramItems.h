@@ -15,6 +15,7 @@ public:
     }
 
     virtual qds::core::EntityId id() const = 0;
+    virtual QPointF center() const { return pos(); }
     virtual QPointF boundaryPointToward(const QPointF &target) const;
 
 signals:
@@ -90,6 +91,9 @@ public:
     virtual QVector<QPainterPath> linePaths() const;
     QVector<QLineF> controlGuides() const;
     void setControlGuidesVisible(bool visible);
+    void updateLayout(const qds::core::Route &route);
+    void updateLayout(DiagramItem *from, DiagramItem *to);
+    void updateLayout();
     void setRoute(const qds::core::Route &route);
     void rebind(DiagramItem *from, DiagramItem *to);
     void updatePosition();
@@ -138,6 +142,7 @@ public:
     QRectF labelRect() const;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     qds::core::EntityId id() const override { return m_id; }
+    QPointF center() const override;
     qreal arrowSize() const override { return 16.0; }
     QVector<QPainterPath> linePaths() const override;
     QVector<QPolygonF> valvePolygons() const;

@@ -21,3 +21,16 @@ cmake --build R:/build-qdynamic-simulator-qt5-release --parallel
 ```
 
 `R:` 为内存盘时，重启后必须重新配置。非 Windows 环境选择对应生成器，并将构建目录替换为本机 `R:` 等价位置。
+
+## 测试输出与 GUI 诊断
+
+直接运行 Qt Test 时设置 `QT_FORCE_STDERR_LOGGING=1`，确保 qDebug/qWarning 输出到 stderr；需要定位鼠标或绘制问题时，根据实际插件可用性选择 `QT_QPA_PLATFORM`，并设置 `QT_QPA_FONTDIR=<FONT_DIR>`。动态 Qt 可使用 offscreen；静态 Qt 若只提供 windows 插件则不得强制 offscreen。Windows 本机通常使用 `C:/Windows/Fonts`。
+
+```bash
+export QT_FORCE_STDERR_LOGGING=1
+export QT_QPA_PLATFORM=offscreen
+export QT_QPA_FONTDIR=<FONT_DIR>
+<BUILD_DIR>/tests/app/test-editor.exe <TEST_CASE> -o <RESULT_FILE>,txt
+```
+
+仅写结果文件不能替代诊断日志；调试 qDebug/qWarning 时保留 stderr 重定向。

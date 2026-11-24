@@ -74,13 +74,13 @@ QList<QPolygonF> trimmedPolygons(const QPainterPath &path, double trailingLength
 
 QPointF DiagramItem::boundaryPointToward(const QPointF &target) const
 {
-    const QPointF delta = target - pos();
+    const QPointF delta = target - center();
     if (delta.isNull())
-        return pos();
+        return center();
     const QRectF bounds(-60.0, -25.0, 120.0, 50.0);
     const double xScale = std::abs(delta.x()) > 1e-12 ? bounds.width() / 2.0 / std::abs(delta.x()) : 1e12;
     const double yScale = std::abs(delta.y()) > 1e-12 ? bounds.height() / 2.0 / std::abs(delta.y()) : 1e12;
-    return pos() + delta * std::min(xScale, yScale);
+    return center() + delta * std::min(xScale, yScale);
 }
 
 QVariant DiagramItem::itemChange(GraphicsItemChange change, const QVariant &value)
@@ -173,7 +173,7 @@ QPointF VariableItem::boundaryPointToward(const QPointF &target) const
         const double yScale = std::abs(delta.y()) > 1e-12 ? halfHeight / std::abs(delta.y()) : 1e12;
         scale = std::min(xScale, yScale);
     }
-    return pos() + delta * scale;
+    return center() + delta * scale;
 }
 
 void VariableItem::refresh(const qds::core::ModelElement &variable, const QPointF &position)
@@ -363,14 +363,14 @@ void RoutedItem::setControlGuidesVisible(bool visible)
     update();
 }
 
-void RoutedItem::setRoute(const qds::core::Route &route)
+void RoutedItem::updateLayout(const qds::core::Route &route)
 {
     prepareGeometryChange();
     m_route = route;
     update();
 }
 
-void RoutedItem::rebind(DiagramItem *from, DiagramItem *to)
+void RoutedItem::updateLayout(DiagramItem *from, DiagramItem *to)
 {
     prepareGeometryChange();
     m_from = from;
@@ -378,10 +378,25 @@ void RoutedItem::rebind(DiagramItem *from, DiagramItem *to)
     update();
 }
 
-void RoutedItem::updatePosition()
+void RoutedItem::updateLayout()
 {
     prepareGeometryChange();
     update();
+}
+
+void RoutedItem::setRoute(const qds::core::Route &route)
+{
+    updateLayout(route);
+}
+
+void RoutedItem::rebind(DiagramItem *from, DiagramItem *to)
+{
+    updateLayout(from, to);
+}
+
+void RoutedItem::updatePosition()
+{
+    updateLayout();
 }
 
 QVector<QPointF> RoutedItem::points() const
@@ -505,6 +520,11 @@ QVector<QPainterPath> FlowItem::linePaths() const
     return result;
 }
 
+QPointF FlowItem::center() const
+{
+    return geometryPath().pointAtPercent(0.5);
+}
+
 QRectF FlowItem::boundingRect() const
 {
     return RoutedItem::boundingRect().united(labelRect().adjusted(-2.0, -2.0, 2.0, 2.0));
@@ -571,6 +591,7 @@ ControlPointHandle::ControlPointHandle(qds::core::EntityId id, int index, Role r
     , m_role(role)
 {
     setFlags(ItemIsMovable | ItemSendsGeometryChanges);
+    setAcceptedMouseButtons(Qt::LeftButton);
     setFlag(ItemIgnoresTransformations);
     setZValue(10.0);
     setPos(position);

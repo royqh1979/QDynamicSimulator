@@ -203,6 +203,16 @@ int main(int argc, char **argv)
         flowLabelCount += flowItem->boundingRect().contains(flowItem->labelRect()) ? 1 : 0;
     const qint64 flowLabelNs = timer.nsecsElapsed();
 
+    const EntityId flowArrow = guideController.createConnector(guideTo, valveFlow);
+    auto *flowArrowItem = dynamic_cast<ArrowItem *>(guideScene.item(flowArrow));
+    timer.restart();
+    int centerBoundaryCount = 0;
+    for (int index = 0; index < 1000; ++index) {
+        const QPointF boundary = flowItem->boundaryPointToward(flowArrowItem->from()->center());
+        centerBoundaryCount += QLineF(boundary, flowItem->center()).length() > 0.0 ? 1 : 0;
+    }
+    const qint64 centerBoundaryNs = timer.nsecsElapsed();
+
     DocumentController dragController;
     DiagramScene dragScene(&dragController);
     const EntityId dragStock = dragController.createVariable(ElementKind::Stock, QPointF());
@@ -351,6 +361,7 @@ int main(int argc, char **argv)
                         << "flow_pipeline_geometry,1000," << pipelineNs / 1e6 << "," << pipelineNs / 1000.0 / 1000 << "\n"
                         << "flow_arrow_geometry,1000," << flowArrowNs / 1e6 << "," << flowArrowNs / 1000.0 / 1000 << "\n"
                         << "flow_label_geometry,1000," << flowLabelNs / 1e6 << "," << flowLabelNs / 1000.0 / 1000 << "\n"
+                        << "flow_center_boundary,1000," << centerBoundaryNs / 1e6 << "," << centerBoundaryNs / 1000.0 / 1000 << "\n"
                         << "shift_drag,1000," << modifierDragNs / 1e6 << "," << modifierDragNs / 1000.0 / 1000 << "\n"
                         << "blank_flow_create_undo_redo,1000," << blankFlowNs / 1e6 << "," << blankFlowNs / 1000.0 / 1000 << "\n"
                         << "comment_content_edit,1000," << commentEditNs / 1e6 << "," << commentEditNs / 1000.0 / 1000 << "\n"
@@ -363,7 +374,8 @@ int main(int argc, char **argv)
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
         && matches > 0 && guideCount == 2000 && singleSelectionGuideCount == 1000 && valveCount == 2000
         && lineStyleChecksum == 3000
-        && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000 && variableKindsMatch
+        && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000
+        && centerBoundaryCount == 1000 && variableKindsMatch
         && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic
         && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)
