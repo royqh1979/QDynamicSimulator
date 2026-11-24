@@ -38,6 +38,38 @@ QPolygonF offsetPolygon(const QPolygonF &points, double offset)
     return result;
 }
 
+QList<QPolygonF> trimmedPolygons(const QPainterPath &path, double trailingLength)
+{
+    QList<QPolygonF> result;
+    const QList<QPolygonF> polygons = path.toSubpathPolygons();
+    for (const QPolygonF &polygon : polygons) {
+        if (polygon.size() < 2)
+            continue;
+        QPolygonF trimmed;
+        trimmed.append(polygon.front());
+        double remaining = trailingLength;
+        for (int index = 1; index < polygon.size(); ++index) {
+            const QLineF segment(polygon[index - 1], polygon[index]);
+            const double length = segment.length();
+            if (length < 1e-9)
+                continue;
+            if (remaining >= length) {
+                trimmed.append(polygon[index]);
+                remaining -= length;
+                if (remaining <= 1e-9)
+                    break;
+                continue;
+            }
+            trimmed.append(segment.pointAt((length - remaining) / length));
+            remaining = 0.0;
+            break;
+        }
+        if (trimmed.size() >= 2 && remaining <= 1e-9)
+            result.append(trimmed);
+    }
+    return result;
+}
+
 } // namespace
 
 QPointF DiagramItem::boundaryPointToward(const QPointF &target) const
@@ -285,6 +317,11 @@ QPainterPath RoutedItem::geometryPath() const
     return path;
 }
 
+qreal RoutedItem::arrowSize() const
+{
+    return 10.0;
+}
+
 QPolygonF RoutedItem::arrowHead() const
 {
     const QVector<QPointF> pathPoints = points();
@@ -298,7 +335,7 @@ QPolygonF RoutedItem::arrowHead() const
     if (tangent.length() < 1e-9)
         return {};
     const qreal angle = std::atan2(-tangent.dy(), tangent.dx());
-    const qreal arrowSize = 10.0;
+    const qreal arrowSize = this->arrowSize();
     constexpr qreal pi = 3.14159265358979323846;
     const QPointF arrow1 = end - QPointF(std::cos(angle + pi / 6.0) * arrowSize, -std::sin(angle + pi / 6.0) * arrowSize);
     const QPointF arrow2 = end - QPointF(std::cos(angle - pi / 6.0) * arrowSize, -std::sin(angle - pi / 6.0) * arrowSize);
@@ -440,7 +477,7 @@ int FlowItem::type() const
 
 QVector<QPainterPath> FlowItem::linePaths() const
 {
-    const QList<QPolygonF> polygons = geometryPath().toSubpathPolygons();
+    const QList<QPolygonF> polygons = trimmedPolygons(geometryPath(), arrowSize());
     QVector<QPainterPath> result;
     if (polygons.isEmpty())
         return result;

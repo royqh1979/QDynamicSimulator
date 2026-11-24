@@ -241,7 +241,7 @@ DiagramItem
 ArrowItem 与 FlowItem 都保存 EntityId 并复用 RoutedItem 的路径能力。FlowItem 直接对应流量实体，不生成物料 Connector。RoutedItem 负责：
 
 - 根据端点和 Route 生成 QPainterPath。
-- 通过虚函数 `linePaths()` 提供实线路径：ArrowItem 使用基类的一条路径，FlowItem 返回两条平行偏移路径；绘制、命中和箭头仍由基类统一负责。
+- 通过虚函数 `linePaths()` 提供实线路径：ArrowItem 使用基类的一条路径，FlowItem 返回两条平行偏移路径；Flow 使用 16 像素箭头并在末端截断一个箭头长度，避免双线进入箭头。绘制、命中和箭头仍由基类统一负责。
 - 绘制线、箭头、选中状态和标签。
 - 实现比实际线更宽的 shape()，方便鼠标命中。
 - 响应端点移动和路径变化。

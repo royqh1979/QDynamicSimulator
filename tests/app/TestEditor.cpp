@@ -394,7 +394,16 @@ void TestEditor::flowRoutesAndValveGeometry()
         const EntityId cloud = controller.createCloud(targetPosition);
         const EntityId id = controller.createFlow(stock, cloud);
         auto *flow = dynamic_cast<FlowItem *>(scene.item(id));
-        QCOMPARE(flow->linePaths().size(), 2);
+        const QVector<QPainterPath> pipelines = flow->linePaths();
+        QCOMPARE(pipelines.size(), 2);
+        const QPolygonF arrow = flow->arrowHead();
+        QCOMPARE(flow->arrowSize(), 16.0);
+        QVERIFY(QLineF(arrow[1], arrow[2]).length() > 12.0);
+        const QPointF arrowBase = (arrow[1] + arrow[2]) / 2.0;
+        for (const QPainterPath &pipeline : pipelines) {
+            QVERIFY(QLineF(pipeline.pointAtPercent(1.0), arrow[0]).length()
+                    >= QLineF(arrowBase, arrow[0]).length());
+        }
         if (bezier) {
             flow->setSelected(true);
             scene.setSelectedRouteMode(RouteMode::Bezier);
@@ -411,6 +420,13 @@ void TestEditor::flowRoutesAndValveGeometry()
     checkValve(QPointF(0.0, 300.0), false);
     checkValve(QPointF(240.0, 180.0), false);
     checkValve(QPointF(240.0, 180.0), true);
+
+    DocumentController shortController;
+    DiagramScene shortScene(&shortController);
+    const EntityId shortStock = shortController.createVariable(ElementKind::Stock, QPointF());
+    const EntityId shortCloud = shortController.createCloud(QPointF(100.0, 0.0));
+    const EntityId shortFlow = shortController.createFlow(shortStock, shortCloud);
+    QVERIFY(dynamic_cast<FlowItem *>(shortScene.item(shortFlow))->linePaths().isEmpty());
 
     DocumentController controller;
     DiagramScene scene(&controller);

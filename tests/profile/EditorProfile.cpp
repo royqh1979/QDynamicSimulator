@@ -182,6 +182,12 @@ int main(int argc, char **argv)
         pipelineCount += flowItem->linePaths().size();
     const qint64 pipelineNs = timer.nsecsElapsed();
 
+    timer.restart();
+    int flowArrowPointCount = 0;
+    for (int index = 0; index < 1000; ++index)
+        flowArrowPointCount += flowItem->arrowHead().size();
+    const qint64 flowArrowNs = timer.nsecsElapsed();
+
     DocumentController dragController;
     DiagramScene dragScene(&dragController);
     const EntityId dragStock = dragController.createVariable(ElementKind::Stock, QPointF());
@@ -286,6 +292,7 @@ int main(int argc, char **argv)
                         << "bezier_guide_single_selection,1000," << guideSelectionNs / 1e6 << "," << guideSelectionNs / 1000.0 / 1000 << "\n"
                         << "flow_valve_geometry,1000," << valveNs / 1e6 << "," << valveNs / 1000.0 / 1000 << "\n"
                         << "flow_pipeline_geometry,1000," << pipelineNs / 1e6 << "," << pipelineNs / 1000.0 / 1000 << "\n"
+                        << "flow_arrow_geometry,1000," << flowArrowNs / 1e6 << "," << flowArrowNs / 1000.0 / 1000 << "\n"
                         << "shift_drag,1000," << modifierDragNs / 1e6 << "," << modifierDragNs / 1000.0 / 1000 << "\n"
                         << "blank_flow_create_undo_redo,1000," << blankFlowNs / 1e6 << "," << blankFlowNs / 1000.0 / 1000 << "\n"
                         << "comment_content_edit,1000," << commentEditNs / 1e6 << "," << commentEditNs / 1000.0 / 1000 << "\n"
@@ -294,7 +301,7 @@ int main(int argc, char **argv)
                         << "xmile_load," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
         && matches > 0 && guideCount == 2000 && singleSelectionGuideCount == 1000 && valveCount == 2000
-        && pipelineCount == 2000 && variableKindsMatch && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
+        && pipelineCount == 2000 && flowArrowPointCount == 3000 && variableKindsMatch && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)
         QTextStream(stderr) << "validation failed: commands=" << commands << ", points=" << pointCount
                             << ", arrows=" << arrowCount << ", loaded=" << elementCount(loaded) << "\n";

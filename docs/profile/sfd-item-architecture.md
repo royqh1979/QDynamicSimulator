@@ -69,7 +69,8 @@
 | editor_connect | 667 | 123.211 | 184.724 |
 | route_edit | 667 | 210.212 | 315.160 |
 | editor_paste | 1000 | 40.9090 | 40.9090 |
-| flow_pipeline_geometry | 1000 | 2.0306 | 2.0306 |
+| flow_pipeline_geometry | 1000 | 1.4258 | 1.4258 |
+| flow_arrow_geometry | 1000 | 0.4226 | 0.4226 |
 | blank_flow_create_undo_redo | 1000 | 17.2425 | 17.2425 |
 | comment_content_edit | 1000 | 417.708 | 417.708 |
 | property_panel_refresh | 1000 | 162.383 | 162.383 |

@@ -85,6 +85,7 @@ public:
     const qds::core::Route &route() const { return m_route; }
     QPainterPath geometryPath() const;
     QPolygonF arrowHead() const;
+    virtual qreal arrowSize() const;
     virtual QVector<QPainterPath> linePaths() const;
     QVector<QLineF> controlGuides() const;
     void setControlGuidesVisible(bool visible);
@@ -133,6 +134,7 @@ public:
     int type() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     qds::core::EntityId id() const override { return m_id; }
+    qreal arrowSize() const override { return 16.0; }
     QVector<QPainterPath> linePaths() const override;
     QVector<QPolygonF> valvePolygons() const;
     void refresh(const qds::core::Flow &flow, DiagramItem *from, DiagramItem *to, const QPointF &fallbackPosition);
