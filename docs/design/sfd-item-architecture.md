@@ -251,7 +251,7 @@ ArrowItem 与 FlowItem 都保存 EntityId 并复用 RoutedItem 的路径能力�
 
 连接线固定在实体上方、控制句柄下方。贝塞尔辅助线及控制句柄仅在单独选中一条曲线时显示，多选和区域选择过程中隐藏。路径预览必须先调用 `prepareGeometryChange()` 通知旧区域，再替换路由数据，确保拖动时旧轨迹被清除。
 
-它不直接修改核心连接关系，不承担自动避障、吸附决策和撤销命令职责。流量仅支持直线和贝塞尔路径，默认直线；Arrow 保留直角自动布线。
+它不直接修改核心连接关系，不承担自动避障、吸附决策和撤销命令职责。Flow 和 Arrow 都默认使用直线；Arrow 可显式选择直角自动布线。
 
 Connector 的端点合法性由 Document 聚合层统一校验，create、restore、reconnect 共用同一规则：Comment 只能作为一端 Junction，禁止 Comment→Comment。ArrowItem 在普通端点间绘制单实线，在 Comment 与另一端之间绘制虚线；该显示规则不改变 Connector 的因果或展示语义。
 
@@ -281,7 +281,11 @@ XMILE 中未被任何 Stock 引用的 Flow 仍是语义变量，导入时不得�
 
 Flow.from/to 是唯一权威关系。当前不引入 Stock 流入/流出派生索引，查询直接遍历 Flow；只有 profile 证明存在性能瓶颈时，才在 Document/Model 层统一增加集中式派生索引，不把索引分散保存在 Stock 对象中。nameKey 索引是另一项基础语义索引，按第 3.5 节始终维护。
 
-所有 RoutedItem 的 Route 按统一 EntityId 存入 DiagramDefinition。Flow 只接受 Straight/Bezier，默认 Straight，不运行直角自动避障；Arrow 默认可使用 Orthogonal。
+所有 RoutedItem 的 Route 按统一 EntityId 存入 DiagramDefinition。Flow 只接受 Straight/Bezier，默认 Straight，不运行直角自动避障；Arrow 默认 Straight，可显式选择 Orthogonal。
+
+RoutePoint 使用相对坐标：`relative.x` 是沿源→目标方向的比例，`relative.y` 是沿路径法线的像素偏移，场景坐标仅在绘制和拖动时派生。`automatic=true` 表示自动布线点，`false` 表示用户手动点；控制句柄只显示手动点。QDS 同时保存相对值和 automatic 属性。
+
+端点拖动预览直接由原 RoutedItem 计算，不复制图元、不隐藏原图元，也不修改 Document。预览端点可位于空白或非法目标上，此时不校验端点约束；释放后才校验并提交，非法释放恢复原路径。
 
 删除 Stock/Cloud 时必须级联删除所有以其为端点的 Flow 及相关 Arrow。Flow 和 Arrow 只有在两端对象一并复制时才可粘贴，不允许保留外部端点。
 

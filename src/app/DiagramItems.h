@@ -85,7 +85,12 @@ public:
     DiagramItem *from() const { return m_from; }
     DiagramItem *to() const { return m_to; }
     const qds::core::Route &route() const { return m_route; }
+    bool previewing() const { return m_previewEndpoint != 0; }
+    void previewEndpoint(int index, const QPointF &position);
+    void clearEndpointPreview();
     QPainterPath geometryPath() const;
+    QPointF scenePoint(const qds::core::RoutePoint &point) const;
+    qds::core::RoutePoint routePointFromScene(const QPointF &position) const;
     QPolygonF arrowHead() const;
     virtual qreal arrowSize() const;
     virtual QVector<QPainterPath> linePaths() const;
@@ -94,18 +99,22 @@ public:
     void updateLayout(const qds::core::Route &route);
     void updateLayout(DiagramItem *from, DiagramItem *to);
     void updateLayout();
+    void setAutomaticRoute(const qds::core::Route &route);
     void setRoute(const qds::core::Route &route);
     void rebind(DiagramItem *from, DiagramItem *to);
     void updatePosition();
 
 protected:
     QVector<QPointF> points() const;
+    void routeFrame(QPointF &from, QPointF &delta, QPointF &normal) const;
 
     DiagramItem *m_from;
     DiagramItem *m_to;
     qds::core::Route m_route;
     QPointF m_fallbackPosition;
     bool m_controlGuidesVisible = false;
+    int m_previewEndpoint = 0;
+    QPointF m_previewPosition;
 };
 
 class ArrowItem : public RoutedItem

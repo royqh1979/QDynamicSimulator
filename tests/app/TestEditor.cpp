@@ -67,7 +67,9 @@ private slots:
     void boundaryEndpoints();
     void sirCanvasConnections();
     void endpointHandleReconnect();
+    void connectorMoveRepaint();
     void rubberBandReverseRepaint();
+    void automaticAndRelativeRoutePoints();
     void spatialIndexAndRouter();
     void equationEditor();
     void clipboardOperations();
@@ -224,7 +226,7 @@ void TestEditor::routeUndoRedo()
     const EntityId id = controller.createConnector(stock, auxiliary);
     Route route;
     route.manual = true;
-    route.controlPoints = {{50.0, 50.0}};
+    route.controlPoints = {{0.5, 50.0}};
     controller.setRoute(id, route);
     QCOMPARE(controller.document().diagram().route(id), route);
     controller.undoStack()->undo();
@@ -384,11 +386,11 @@ void TestEditor::routeModesAndGeometry()
     const QVector<QLineF> guides = item->controlGuides();
     QCOMPARE(guides.size(), 2);
     const auto controls = controller.document().diagram().route(id).controlPoints;
-    QCOMPARE(guides[0].p2(), QPointF(controls[0].x, controls[0].y));
-    QCOMPARE(guides[1].p1(), QPointF(controls[1].x, controls[1].y));
+    QCOMPARE(guides[0].p2(), item->scenePoint(controls[0]));
+    QCOMPARE(guides[1].p1(), item->scenePoint(controls[1]));
     controller.undoStack()->undo();
     QVERIFY(item->controlGuides().isEmpty());
-    QCOMPARE(controller.document().diagram().route(id).mode, RouteMode::Orthogonal);
+    QCOMPARE(controller.document().diagram().route(id).mode, RouteMode::Straight);
     scene.setSelectedRouteMode(RouteMode::Straight);
     QVERIFY(controller.document().diagram().route(id).controlPoints.empty());
     scene.resetSelectedRoute();
@@ -520,7 +522,7 @@ void TestEditor::bezierControlGuideRendering()
     Route route;
     route.mode = RouteMode::Bezier;
     route.manual = true;
-    route.controlPoints = {{100.0, -100.0}, {200.0, -100.0}};
+    route.controlPoints = {{1.0 / 3.0, -100.0}, {2.0 / 3.0, -100.0}};
     controller.setRoute(id, route);
 
     DiagramView view(&scene);
@@ -535,7 +537,7 @@ void TestEditor::bezierControlGuideRendering()
     for (int index = 3; index <= 17; ++index)
         samples.append(view.mapFromScene(oldGuide.pointAt(index / 20.0)));
 
-    route.controlPoints = {{100.0, 100.0}, {200.0, 100.0}};
+    route.controlPoints = {{1.0 / 3.0, 100.0}, {2.0 / 3.0, 100.0}};
     item->setRoute(route);
     QTest::qWait(20);
     const QImage after = view.grab().toImage();
@@ -720,12 +722,47 @@ void TestEditor::endpointHandleReconnect()
     QMouseEvent move(QEvent::MouseMove, end, view.viewport()->mapToGlobal(end), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &move);
     QVERIFY(QLineF(targetHandle->pos(), destination).length() < 0.3);
+    QVERIFY(arrow->previewing());
     QMouseEvent release(QEvent::MouseButtonRelease, end, view.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &release);
+    QVERIFY(!arrow->previewing());
 
     QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, targetStock);
     controller.undoStack()->undo();
     QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, flow);
+}
+
+void TestEditor::connectorMoveRepaint()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    scene.setGridVisible(false);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(400.0, 0.0));
+    const EntityId connector = controller.createConnector(stock, auxiliary);
+    auto *arrow = dynamic_cast<ArrowItem *>(scene.item(connector));
+    DiagramView view(&scene);
+    view.resize(640, 480);
+    view.centerOn(200.0, 0.0);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    QTest::qWait(20);
+    const QImage before = view.grab().toImage();
+    const QColor background(250, 250, 250);
+    QVector<QPoint> samples;
+    int painted = 0;
+    for (int index = 1; index < 9; ++index) {
+        const QPoint sample = view.mapFromScene(arrow->geometryPath().pointAtPercent(index / 10.0));
+        samples.append(sample);
+        painted += before.pixelColor(sample) != background ? 1 : 0;
+    }
+    QVERIFY(painted > 0);
+
+    controller.moveElements({{stock, QPointF(100.0, 100.0)}});
+    QTest::qWait(20);
+    const QImage after = view.grab().toImage();
+    for (const QPoint &sample : samples)
+        QCOMPARE(after.pixelColor(sample), background);
 }
 
 void TestEditor::rubberBandReverseRepaint()
@@ -747,6 +784,39 @@ void TestEditor::rubberBandReverseRepaint()
     QCOMPARE(after, before);
 }
 
+void TestEditor::automaticAndRelativeRoutePoints()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(400.0, 0.0));
+    const EntityId connector = controller.createConnector(stock, auxiliary);
+    Route route;
+    route.mode = RouteMode::Orthogonal;
+    controller.setRoute(connector, route);
+    scene.rerouteAll();
+    auto *arrow = dynamic_cast<ArrowItem *>(scene.item(connector));
+    QVERIFY(!arrow->route().controlPoints.empty());
+    for (const RoutePoint &point : arrow->route().controlPoints) {
+        QVERIFY(point.automatic);
+        QVERIFY(point.relative.x >= 0.0 && point.relative.x <= 1.0);
+        const QPointF absolute = arrow->scenePoint(point);
+        QCOMPARE(arrow->routePointFromScene(absolute).relative, point.relative);
+    }
+    arrow->setSelected(true);
+    for (QGraphicsItem *item : scene.items()) {
+        const auto *handle = qgraphicsitem_cast<ControlPointHandle *>(item);
+        if (handle && handle->routeId() == connector && handle->role() == ControlPointHandle::Role::ControlPoint)
+            QVERIFY(!handle->isVisible());
+    }
+
+    scene.setSelectedRouteMode(RouteMode::Bezier);
+    const auto manualPoints = controller.document().diagram().route(connector).controlPoints;
+    QCOMPARE(manualPoints.size(), std::size_t(2));
+    for (const RoutePoint &point : manualPoints)
+        QVERIFY(!point.automatic);
+}
+
 void TestEditor::spatialIndexAndRouter()
 {
     ObstacleIndex index;
@@ -764,8 +834,8 @@ void TestEditor::spatialIndexAndRouter()
     const Route route = router.route(QPointF(0.0, 0.0), QPointF(200.0, 0.0), 1, 2, index);
     QVERIFY(!route.controlPoints.empty());
     QVector<QPointF> points {QPointF(0.0, 0.0)};
-    for (const Vec2 &point : route.controlPoints)
-        points.append(QPointF(point.x, point.y));
+    for (const RoutePoint &point : route.controlPoints)
+        points.append(QPointF(point.relative.x, point.relative.y));
     points.append(QPointF(200.0, 0.0));
     QPainterPath path(points.front());
     for (int i = 1; i < points.size(); ++i)
@@ -986,7 +1056,7 @@ void TestEditor::connectionContextMenu()
         state->valid = state->valid && group && group->isExclusive();
         for (QAction *action : actions) {
             state->valid = state->valid && action->isCheckable() && !action->icon().isNull();
-            if (action->text() == QStringLiteral("Orthogonal"))
+            if (action->text() == QStringLiteral("Straight"))
                 state->valid = state->valid && action->isChecked();
             if (action->text() == QStringLiteral("Bezier")) {
                 action->trigger();

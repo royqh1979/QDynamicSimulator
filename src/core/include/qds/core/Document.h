@@ -25,9 +25,17 @@ enum class RouteMode {
     Bezier
 };
 
+struct RoutePoint {
+    Vec2 relative;
+    bool automatic = false;
+
+    bool operator==(const RoutePoint &other) const { return relative == other.relative && automatic == other.automatic; }
+    bool operator!=(const RoutePoint &other) const { return !(*this == other); }
+};
+
 struct Route {
-    RouteMode mode = RouteMode::Orthogonal;
-    std::vector<Vec2> controlPoints;
+    RouteMode mode = RouteMode::Straight;
+    std::vector<RoutePoint> controlPoints;
     bool manual = false;
     bool locked = false;
 

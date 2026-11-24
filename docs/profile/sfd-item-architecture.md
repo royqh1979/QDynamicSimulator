@@ -72,8 +72,9 @@
 | connector_line_style | 1000 | 0.0568 | 0.0568 |
 | flow_pipeline_geometry | 1000 | 1.4258 | 1.4258 |
 | flow_arrow_geometry | 1000 | 0.4314 | 0.4314 |
-| flow_label_geometry | 1000 | 6.0823 | 6.0823 |
-| flow_center_boundary | 1000 | 8.4896 | 8.4896 |
+| orthogonal_auto_route | 1000 | 1.8474 | 1.8474 |
+| flow_label_geometry | 1000 | 7.1001 | 7.1001 |
+| flow_center_boundary | 1000 | 9.9470 | 9.9470 |
 | blank_flow_create_undo_redo | 1000 | 17.2425 | 17.2425 |
 | comment_content_edit | 1000 | 417.708 | 417.708 |
 | property_panel_refresh | 1000 | 162.383 | 162.383 |

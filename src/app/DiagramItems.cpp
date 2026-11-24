@@ -268,6 +268,24 @@ QPainterPath RoutedItem::shape() const
     return stroker.createStroke(geometryPath());
 }
 
+void RoutedItem::previewEndpoint(int index, const QPointF &position)
+{
+    if (index != -1 && index != -2)
+        return;
+    m_previewEndpoint = index;
+    m_previewPosition = position;
+    updateLayout();
+}
+
+void RoutedItem::clearEndpointPreview()
+{
+    if (m_previewEndpoint == 0)
+        return;
+    m_previewEndpoint = 0;
+    m_previewPosition = {};
+    updateLayout();
+}
+
 void RoutedItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
 {
     painter->setRenderHint(QPainter::Antialiasing);
@@ -384,6 +402,17 @@ void RoutedItem::updateLayout()
     update();
 }
 
+void RoutedItem::setAutomaticRoute(const qds::core::Route &route)
+{
+    qds::core::Route automatic = route;
+    for (qds::core::RoutePoint &point : automatic.controlPoints) {
+        const QPointF absolute(point.relative.x, point.relative.y);
+        point = routePointFromScene(absolute);
+        point.automatic = true;
+    }
+    updateLayout(automatic);
+}
+
 void RoutedItem::setRoute(const qds::core::Route &route)
 {
     updateLayout(route);
@@ -399,14 +428,46 @@ void RoutedItem::updatePosition()
     updateLayout();
 }
 
+void RoutedItem::routeFrame(QPointF &from, QPointF &delta, QPointF &normal) const
+{
+    const QPointF fromPosition = m_from ? m_from->pos() : m_fallbackPosition + QPointF(-60.0, 0.0);
+    const QPointF toPosition = m_to ? m_to->pos() : m_fallbackPosition + QPointF(60.0, 0.0);
+    from = fromPosition;
+    delta = toPosition - fromPosition;
+    const double length = std::sqrt(delta.x() * delta.x() + delta.y() * delta.y());
+    normal = length > 1e-9 ? QPointF(-delta.y() / length, delta.x() / length) : QPointF();
+}
+
+QPointF RoutedItem::scenePoint(const qds::core::RoutePoint &point) const
+{
+    QPointF from;
+    QPointF delta;
+    QPointF normal;
+    routeFrame(from, delta, normal);
+    return from + delta * point.relative.x + normal * point.relative.y;
+}
+
+qds::core::RoutePoint RoutedItem::routePointFromScene(const QPointF &position) const
+{
+    QPointF from;
+    QPointF delta;
+    QPointF normal;
+    routeFrame(from, delta, normal);
+    const QPointF offset = position - from;
+    const double lengthSquared = delta.x() * delta.x() + delta.y() * delta.y();
+    if (lengthSquared < 1e-12)
+        return {};
+    return {{QPointF::dotProduct(offset, delta) / lengthSquared, QPointF::dotProduct(offset, normal)}, false};
+}
+
 QVector<QPointF> RoutedItem::points() const
 {
     const auto samePoint = [](const QPointF &left, const QPointF &right) {
         return QLineF(left, right).length() < 1e-9;
     };
     QVector<QPointF> controls;
-    for (const qds::core::Vec2 &point : m_route.controlPoints) {
-        const QPointF candidate(point.x, point.y);
+    for (const qds::core::RoutePoint &point : m_previewEndpoint == 0 ? m_route.controlPoints : std::vector<qds::core::RoutePoint> {}) {
+        const QPointF candidate = scenePoint(point);
         if ((m_from && samePoint(candidate, m_from->pos())) || (m_to && samePoint(candidate, m_to->pos())))
             continue;
         if (controls.isEmpty() || !samePoint(candidate, controls.back()))
@@ -417,8 +478,10 @@ QVector<QPointF> RoutedItem::points() const
         : m_to ? m_to->pos() : m_fallbackPosition;
     const QPointF toTarget = !controls.isEmpty() ? controls.back()
         : m_from ? m_from->pos() : m_fallbackPosition;
-    const QPointF start = m_from ? m_from->boundaryPointToward(fromTarget) : m_fallbackPosition + QPointF(-60.0, 0.0);
-    const QPointF end = m_to ? m_to->boundaryPointToward(toTarget) : m_fallbackPosition + QPointF(60.0, 0.0);
+    const QPointF start = m_previewEndpoint == -1 ? m_previewPosition
+        : m_from ? m_from->boundaryPointToward(fromTarget) : m_fallbackPosition + QPointF(-60.0, 0.0);
+    const QPointF end = m_previewEndpoint == -2 ? m_previewPosition
+        : m_to ? m_to->boundaryPointToward(toTarget) : m_fallbackPosition + QPointF(60.0, 0.0);
     QVector<QPointF> result;
     if (m_route.mode == qds::core::RouteMode::Straight || m_route.mode == qds::core::RouteMode::Bezier
         || !controls.isEmpty()) {

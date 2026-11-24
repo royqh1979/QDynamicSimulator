@@ -153,7 +153,7 @@ void TestDocument::restoreWithStableIds()
     Route route;
     route.mode = RouteMode::Bezier;
     route.manual = true;
-    route.controlPoints = {{50.0, 25.0}, {100.0, 50.0}};
+    route.controlPoints = {{0.25, 25.0}, {0.75, 50.0}};
     QVERIFY(document.setRoute(flow, route));
     std::unordered_map<EntityId, ElementData> records;
     for (EntityId id : {stock, flow, connector})
@@ -181,7 +181,7 @@ void TestDocument::routeAndPositionState()
     route.mode = RouteMode::Bezier;
     route.manual = true;
     route.locked = true;
-    route.controlPoints = {{1.0, 2.0}, {3.0, 4.0}};
+    route.controlPoints = {{0.25, 2.0}, {0.75, 4.0}};
     QVERIFY(document.setPosition(stock, {99.0, 100.0}));
     QCOMPARE(document.diagram().position(flow), Vec2({149.5, 50.0}));
     QVERIFY(document.setRoute(flow, route));

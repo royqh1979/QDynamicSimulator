@@ -342,10 +342,11 @@ void writeNativeRoute(QXmlStreamWriter &writer, const core::Route &route)
     writer.writeAttribute(QStringLiteral("mode"), mode);
     writer.writeAttribute(QStringLiteral("manual"), QString::number(route.manual ? 1 : 0));
     writer.writeAttribute(QStringLiteral("locked"), QString::number(route.locked ? 1 : 0));
-    for (const core::Vec2 &point : route.controlPoints) {
+    for (const core::RoutePoint &point : route.controlPoints) {
         writer.writeStartElement(QStringLiteral("pt"));
-        writer.writeAttribute(QStringLiteral("x"), QString::number(point.x, 'g', 15));
-        writer.writeAttribute(QStringLiteral("y"), QString::number(point.y, 'g', 15));
+        writer.writeAttribute(QStringLiteral("along"), QString::number(point.relative.x, 'g', 15));
+        writer.writeAttribute(QStringLiteral("offset"), QString::number(point.relative.y, 'g', 15));
+        writer.writeAttribute(QStringLiteral("automatic"), QString::number(point.automatic ? 1 : 0));
         writer.writeEndElement();
     }
 }
@@ -432,9 +433,7 @@ bool parseNativeElement(QXmlStreamReader &reader, NativeRecord &record)
     record.data.flowEndpoints = {from, to};
     record.data.from = from;
     record.data.to = to;
-    record.data.route.mode = record.data.kind == core::ElementKind::Flow
-        ? core::RouteMode::Straight
-        : core::RouteMode::Orthogonal;
+    record.data.route.mode = core::RouteMode::Straight;
     const QString mode = attributes.value(QStringLiteral("mode")).toString();
     if (mode == QStringLiteral("straight"))
         record.data.route.mode = core::RouteMode::Straight;
@@ -460,13 +459,13 @@ bool parseNativeElement(QXmlStreamReader &reader, NativeRecord &record)
         else if (child == QStringLiteral("doc"))
             record.data.comment = reader.readElementText().toStdString();
         else if (child == QStringLiteral("pt")) {
-            bool pointXOk = false;
-            bool pointYOk = false;
-            const double x = reader.attributes().value(QStringLiteral("x")).toDouble(&pointXOk);
-            const double y = reader.attributes().value(QStringLiteral("y")).toDouble(&pointYOk);
-            if (!pointXOk || !pointYOk)
+            bool alongOk = false;
+            bool offsetOk = false;
+            const double along = reader.attributes().value(QStringLiteral("along")).toDouble(&alongOk);
+            const double offset = reader.attributes().value(QStringLiteral("offset")).toDouble(&offsetOk);
+            if (!alongOk || !offsetOk)
                 return false;
-            record.data.route.controlPoints.push_back({x, y});
+            record.data.route.controlPoints.push_back({{along, offset}, reader.attributes().value(QStringLiteral("automatic")).toInt() != 0});
         } else {
             reader.skipCurrentElement();
         }

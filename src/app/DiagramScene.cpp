@@ -264,11 +264,7 @@ void DiagramScene::setSelectedRouteMode(RouteMode mode)
         if (mode == RouteMode::Straight)
             route.controlPoints.clear();
         else if (mode == RouteMode::Bezier && route.controlPoints.size() < 2) {
-            const QPointF start = routed->from() ? routed->from()->pos() : routed->geometryPath().pointAtPercent(0.0);
-            const QPointF end = routed->to() ? routed->to()->pos() : routed->geometryPath().pointAtPercent(1.0);
-            route.controlPoints = {
-                {start.x() + (end.x() - start.x()) / 3.0, start.y() + (end.y() - start.y()) / 3.0 - 50.0},
-                {start.x() + (end.x() - start.x()) * 2.0 / 3.0, start.y() + (end.y() - start.y()) * 2.0 / 3.0 + 50.0}};
+            route.controlPoints = {{1.0 / 3.0, -50.0}, {2.0 / 3.0, 50.0}};
         }
         m_controller->setRoute(routed->id(), route);
     }
@@ -479,7 +475,7 @@ void DiagramScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
     if (routed && (routed->type() != FlowItem::Type || routed->route().mode == RouteMode::Bezier)) {
         Route route = m_controller->document().diagram().route(routed->id());
         const QPointF point = snapPoint(event->scenePos());
-        route.controlPoints.push_back({point.x(), point.y()});
+        route.controlPoints.push_back(routed->routePointFromScene(point));
         route.manual = true;
         m_controller->setRoute(routed->id(), route);
         event->accept();
@@ -494,7 +490,7 @@ void DiagramScene::applyChangeNotification(const ChangeNotification &notificatio
         m_controlHandles.clear();
         m_obstacles.clear();
         m_rubberLine = nullptr;
-        m_endpointPreview = nullptr;
+        m_endpointPreviewItem.clear();
         clear();
         m_items.clear();
         m_connectionSource = 0;
@@ -646,9 +642,11 @@ void DiagramScene::syncControlPoints()
             updateHandle(required++, selected->id(), -2, ControlPointHandle::Role::Target, path.pointAtPercent(1.0));
         if (route.mode != RouteMode::Straight) {
             for (std::size_t index = 0; index < route.controlPoints.size(); ++index) {
-                const Vec2 point = route.controlPoints[index];
+                const RoutePoint &point = route.controlPoints[index];
+                if (point.automatic)
+                    continue;
                 updateHandle(required++, selected->id(), static_cast<int>(index),
-                             ControlPointHandle::Role::ControlPoint, QPointF(point.x, point.y));
+                             ControlPointHandle::Role::ControlPoint, selected->scenePoint(point));
             }
         }
     }
@@ -662,15 +660,8 @@ void DiagramScene::previewControlPoint(EntityId id, int index, const QPointF &po
         auto *item = dynamic_cast<RoutedItem *>(m_items.value(id));
         if (!item || (index != -1 && index != -2))
             return;
-        const QPointF fixedEnd = item->geometryPath().pointAtPercent(index == -1 ? 1.0 : 0.0);
-        if (!m_endpointPreview) {
-            m_endpointPreview = new QGraphicsLineItem(QLineF(fixedEnd, position));
-            m_endpointPreview->setZValue(20.0);
-            addItem(m_endpointPreview);
-        }
-        const auto *arrow = dynamic_cast<ArrowItem *>(item);
-        m_endpointPreview->setPen(QPen(QColor(35, 120, 210), 2.0, arrow ? arrow->lineStyle() : Qt::SolidLine));
-        m_endpointPreview->setLine(QLineF(fixedEnd, position));
+        m_endpointPreviewItem = item;
+        m_endpointPreviewItem->previewEndpoint(index, position);
         return;
     }
     auto *item = dynamic_cast<RoutedItem *>(m_items.value(id));
@@ -679,7 +670,7 @@ void DiagramScene::previewControlPoint(EntityId id, int index, const QPointF &po
     Route route = m_controller->document().diagram().route(id);
     if (index >= static_cast<int>(route.controlPoints.size()))
         return;
-    route.controlPoints[static_cast<std::size_t>(index)] = {position.x(), position.y()};
+    route.controlPoints[static_cast<std::size_t>(index)] = item->routePointFromScene(position);
     route.manual = true;
     item->setRoute(route);
 }
@@ -697,7 +688,7 @@ void DiagramScene::finishControlPoint(EntityId id, int index, const QPointF &pos
         if (index >= static_cast<int>(route.controlPoints.size()))
             return;
         const QPointF snapped = snapPoint(position);
-        route.controlPoints[static_cast<std::size_t>(index)] = {snapped.x(), snapped.y()};
+        route.controlPoints[static_cast<std::size_t>(index)] = item->routePointFromScene(snapped);
         route.manual = true;
         m_controller->setRoute(id, route);
         return;
@@ -745,11 +736,9 @@ void DiagramScene::cancelRubberLine()
 
 void DiagramScene::cancelEndpointPreview()
 {
-    if (!m_endpointPreview)
-        return;
-    removeItem(m_endpointPreview);
-    delete m_endpointPreview;
-    m_endpointPreview = nullptr;
+    if (m_endpointPreviewItem)
+        m_endpointPreviewItem->clearEndpointPreview();
+    m_endpointPreviewItem.clear();
 }
 
 void DiagramScene::updateAutomaticRoute(RoutedItem *item)
@@ -759,7 +748,7 @@ void DiagramScene::updateAutomaticRoute(RoutedItem *item)
     const Route route = m_controller->document().diagram().route(item->id());
     if (route.manual || route.locked || route.mode != RouteMode::Orthogonal)
         return;
-    item->setRoute(m_router.route(item->from()->pos(), item->to()->pos(), item->from()->id(), item->to()->id(), m_obstacles));
+    item->setAutomaticRoute(m_router.route(item->from()->pos(), item->to()->pos(), item->from()->id(), item->to()->id(), m_obstacles));
 }
 
 void DiagramScene::rerouteAll()

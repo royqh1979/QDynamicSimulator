@@ -72,7 +72,7 @@ int main(int argc, char **argv)
     for (EntityId id : connectionIds) {
         Route route = controller.document().diagram().route(id);
         route.manual = true;
-        route.controlPoints = {{50.0, 60.0}};
+        route.controlPoints = {{0.5, 60.0}};
         controller.setRoute(id, route);
     }
     const qint64 routeEditNs = timer.nsecsElapsed();
@@ -151,6 +151,21 @@ int main(int argc, char **argv)
     for (int index = 0; index < 1000; ++index)
         lineStyleChecksum += guideItem->lineStyle() + annotationItem->lineStyle();
     const qint64 connectorStyleNs = timer.nsecsElapsed();
+
+    Route automaticRoute;
+    automaticRoute.mode = RouteMode::Orthogonal;
+    guideController.setRoute(guideConnection, automaticRoute);
+    timer.restart();
+    int automaticPointCount = 0;
+    bool automaticFlagsValid = true;
+    for (int index = 0; index < 1000; ++index) {
+        guideScene.rerouteAll();
+        const Route route = guideItem->route();
+        automaticPointCount += route.controlPoints.size();
+        for (const RoutePoint &point : route.controlPoints)
+            automaticFlagsValid = automaticFlagsValid && point.automatic;
+    }
+    const qint64 automaticRouteNs = timer.nsecsElapsed();
     guideItem->setSelected(true);
     guideScene.setSelectedRouteMode(RouteMode::Bezier);
     Route guideRoute = guideController.document().diagram().route(guideConnection);
@@ -158,8 +173,8 @@ int main(int argc, char **argv)
     int guideCount = 0;
     for (int index = 0; index < 1000; ++index) {
         const double y = index % 2 == 0 ? -80.0 : 80.0;
-        guideRoute.controlPoints[0].y = y;
-        guideRoute.controlPoints[1].y = y;
+        guideRoute.controlPoints[0].relative.y = y;
+        guideRoute.controlPoints[1].relative.y = y;
         guideItem->setRoute(guideRoute);
         guideCount += guideItem->controlGuides().size();
     }
@@ -355,6 +370,7 @@ int main(int argc, char **argv)
                         << "rubber_preview,1000," << previewNs / 1e6 << "," << previewNs / 1000.0 / 1000 << "\n"
                         << "connection_context_menu,1000," << contextMenuNs / 1e6 << "," << contextMenuNs / 1000.0 / 1000 << "\n"
                         << "connector_line_style,1000," << connectorStyleNs / 1e6 << "," << connectorStyleNs / 1000.0 / 1000 << "\n"
+                        << "orthogonal_auto_route,1000," << automaticRouteNs / 1e6 << "," << automaticRouteNs / 1000.0 / 1000 << "\n"
                         << "bezier_control_guide_updates,1000," << bezierGuideNs / 1e6 << "," << bezierGuideNs / 1000.0 / 1000 << "\n"
                         << "bezier_guide_single_selection,1000," << guideSelectionNs / 1e6 << "," << guideSelectionNs / 1000.0 / 1000 << "\n"
                         << "flow_valve_geometry,1000," << valveNs / 1e6 << "," << valveNs / 1000.0 / 1000 << "\n"
@@ -373,7 +389,7 @@ int main(int argc, char **argv)
                         << "xmile_sir_import,100," << sirImportNs / 1e6 << "," << sirImportNs / 1000.0 / 100 << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
         && matches > 0 && guideCount == 2000 && singleSelectionGuideCount == 1000 && valveCount == 2000
-        && lineStyleChecksum == 3000
+        && lineStyleChecksum == 3000 && automaticPointCount > 0 && automaticFlagsValid
         && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000
         && centerBoundaryCount == 1000 && variableKindsMatch
         && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic

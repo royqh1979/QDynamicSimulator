@@ -142,7 +142,7 @@ void TestXmileFile::nativeRoundTrip()
     route.manual = true;
     route.locked = true;
     route.mode = RouteMode::Bezier;
-    route.controlPoints = {{200.0, 100.0}, {260.0, 120.0}};
+    route.controlPoints = {{0.25, 100.0}, {0.75, 120.0}};
     document.setRoute(flow, route);
 
     QString error;
@@ -196,7 +196,7 @@ void TestXmileFile::nativeRoundTrip()
     QVERIFY(loadedFlow->endpoints.to != 0);
     QCOMPARE(loaded.find(loadedFlow->endpoints.to)->kind(), ElementKind::Cloud);
     const Route loadedRoute = loaded.diagram().route(loadedFlow->id());
-    QVERIFY(loadedRoute.controlPoints == std::vector<Vec2>({{200.0, 100.0}, {260.0, 120.0}}));
+    QVERIFY(loadedRoute.controlPoints == std::vector<RoutePoint>({{0.25, 100.0}, {0.75, 120.0}}));
     QCOMPARE(loadedRoute.mode, RouteMode::Bezier);
     QVERIFY(loadedRoute.locked);
     QCOMPARE(loaded.diagram().position(loadedFlow->endpoints.to), Vec2({450.0, 80.25}));

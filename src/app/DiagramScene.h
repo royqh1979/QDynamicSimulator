@@ -8,6 +8,7 @@
 
 #include <QGraphicsScene>
 #include <QHash>
+#include <QPointer>
 
 class DocumentController;
 class QGraphicsLineItem;
@@ -89,7 +90,7 @@ private:
     qds::core::EntityId m_connectionSource = 0;
     QPointF m_connectionStart;
     QGraphicsLineItem *m_rubberLine = nullptr;
-    QGraphicsLineItem *m_endpointPreview = nullptr;
+    QPointer<RoutedItem> m_endpointPreviewItem;
     QList<ControlPointHandle *> m_controlHandles;
     ObstacleIndex m_obstacles;
     OrthogonalRouter m_router;
