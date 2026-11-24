@@ -1,6 +1,7 @@
 #include "DiagramItems.h"
 #include "DiagramScene.h"
 #include "DocumentController.h"
+#include "PropertyPanel.h"
 #include <qds/io/XmileFile.h>
 
 #include <QActionGroup>
@@ -175,6 +176,12 @@ int main(int argc, char **argv)
         valveCount += flowItem->valvePolygons().size();
     const qint64 valveNs = timer.nsecsElapsed();
 
+    timer.restart();
+    int pipelineCount = 0;
+    for (int index = 0; index < 1000; ++index)
+        pipelineCount += flowItem->linePaths().size();
+    const qint64 pipelineNs = timer.nsecsElapsed();
+
     DocumentController dragController;
     DiagramScene dragScene(&dragController);
     const EntityId dragStock = dragController.createVariable(ElementKind::Stock, QPointF());
@@ -232,6 +239,13 @@ int main(int argc, char **argv)
     const qint64 commentEditNs = timer.nsecsElapsed();
     if (dynamic_cast<ViewObjectItem *>(scene.item(commentId))->text() != QStringLiteral("Before"))
         return 10;
+    scene.clearSelection();
+    scene.item(commentId)->setSelected(true);
+    PropertyPanel propertyPanel(&controller, &scene);
+    timer.restart();
+    for (int index = 0; index < 1000; ++index)
+        propertyPanel.refresh();
+    const qint64 propertyPanelNs = timer.nsecsElapsed();
 
     QTemporaryDir directory;
     if (!directory.isValid())
@@ -271,14 +285,16 @@ int main(int argc, char **argv)
                         << "bezier_control_guide_updates,1000," << bezierGuideNs / 1e6 << "," << bezierGuideNs / 1000.0 / 1000 << "\n"
                         << "bezier_guide_single_selection,1000," << guideSelectionNs / 1e6 << "," << guideSelectionNs / 1000.0 / 1000 << "\n"
                         << "flow_valve_geometry,1000," << valveNs / 1e6 << "," << valveNs / 1000.0 / 1000 << "\n"
+                        << "flow_pipeline_geometry,1000," << pipelineNs / 1e6 << "," << pipelineNs / 1000.0 / 1000 << "\n"
                         << "shift_drag,1000," << modifierDragNs / 1e6 << "," << modifierDragNs / 1000.0 / 1000 << "\n"
                         << "blank_flow_create_undo_redo,1000," << blankFlowNs / 1e6 << "," << blankFlowNs / 1000.0 / 1000 << "\n"
                         << "comment_content_edit,1000," << commentEditNs / 1e6 << "," << commentEditNs / 1000.0 / 1000 << "\n"
+                        << "property_panel_refresh,1000," << propertyPanelNs / 1e6 << "," << propertyPanelNs / 1000.0 / 1000 << "\n"
                         << "xmile_save," << count << "," << saveNs / 1e6 << "," << saveNs / 1000.0 / count << "\n"
                         << "xmile_load," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
         && matches > 0 && guideCount == 2000 && singleSelectionGuideCount == 1000 && valveCount == 2000
-        && variableKindsMatch && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
+        && pipelineCount == 2000 && variableKindsMatch && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)
         QTextStream(stderr) << "validation failed: commands=" << commands << ", points=" << pointCount
                             << ", arrows=" << arrowCount << ", loaded=" << elementCount(loaded) << "\n";

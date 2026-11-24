@@ -65,13 +65,15 @@
 | move | 10000 | 502.221 | 50.2221 |
 | validate | 10000 | 9.5828 | 0.958280 |
 | remove | 10000 | 453.671 | 45.3671 |
-| editor_create | 1000 | 21.7770 | 21.7770 |
-| editor_connect | 667 | 124.502 | 186.660 |
-| route_edit | 667 | 213.825 | 320.577 |
-| editor_paste | 1000 | 39.4382 | 39.4382 |
-| blank_flow_create_undo_redo | 1000 | 18.2007 | 18.2007 |
-| comment_content_edit | 1000 | 424.478 | 424.478 |
-| xmile_save | 1000 | 12.8493 | 12.8493 |
-| xmile_load | 1000 | 25.9852 | 25.9852 |
+| editor_create | 1000 | 21.6095 | 21.6095 |
+| editor_connect | 667 | 123.211 | 184.724 |
+| route_edit | 667 | 210.212 | 315.160 |
+| editor_paste | 1000 | 40.9090 | 40.9090 |
+| flow_pipeline_geometry | 1000 | 2.0306 | 2.0306 |
+| blank_flow_create_undo_redo | 1000 | 17.2425 | 17.2425 |
+| comment_content_edit | 1000 | 417.708 | 417.708 |
+| property_panel_refresh | 1000 | 162.383 | 162.383 |
+| xmile_save | 1000 | 12.5602 | 12.5602 |
+| xmile_load | 1000 | 25.6342 | 25.6342 |
 
-`blank_flow_create_undo_redo` 每轮实际执行“创建两个 Cloud 和一个 Flow → undo 删除全部 → redo 恢复全部 → undo 回到空文档”，并断言 Scene 与 Document 同步。XMILE profile 逐变量断言往返后的 ElementKind 一致，覆盖 Auxiliary、Constant 和 Data。`comment_content_edit` 覆盖正文 ChangeSet、Scene 文本刷新和最终值校验；属性面板输入及 undo 同步由编辑器单元测试覆盖。结果只用于后续同环境回归比较，不与不同 Qt 链接方式或旧数据结构的结果直接比较。
+`blank_flow_create_undo_redo` 每轮实际执行“创建两个 Cloud 和一个 Flow → undo 删除全部 → redo 恢复全部 → undo 回到空文档”，并断言 Scene 与 Document 同步。XMILE profile 逐变量断言往返后的 ElementKind 一致，覆盖 Auxiliary、Constant 和 Data。`comment_content_edit` 覆盖正文 ChangeSet、Scene 文本刷新和最终值校验；`flow_pipeline_geometry` 验证每次返回两条 Flow 路径，`property_panel_refresh` 测量独立属性 Widget 的完整刷新。属性面板输入及 undo 同步由编辑器单元测试覆盖。结果只用于后续同环境回归比较，不与不同 Qt 链接方式或旧数据结构的结果直接比较。

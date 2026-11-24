@@ -78,18 +78,18 @@ void TestXmileFile::zipRoundTrip()
     const EntityId data = document.createVariable(ElementKind::Data, {300.0, 480.0});
     const EntityId cloud = document.createCloud({450.0, 80.25});
     document.createCloud({700.0, 500.0});
-    const EntityId note = document.createComment("注释", {100.0, 300.0});
-    const EntityId secondNote = document.createComment("注释", {500.0, 300.0});
-    QVERIFY(document.setCommentContent(note, "更新后的注释"));
+    const EntityId note = document.createComment("\u6CE8\u91CA", {100.0, 300.0});
+    const EntityId secondNote = document.createComment("\u6CE8\u91CA", {500.0, 300.0});
+    QVERIFY(document.setCommentContent(note, "\u66F4\u65B0\u540E\u7684\u6CE8\u91CA"));
     const EntityId flow = document.createFlow(stock, cloud);
-    QVERIFY(document.rename(stock, "库存 & Population"));
+    QVERIFY(document.rename(stock, "\u5E93\u5B58 & Population"));
     document.setEquation(stock, "100");
     document.setUnit(stock, "people");
     document.setComment(stock, "Population stock");
-    document.setEquation(flow, "辅助变量 * 0.5");
-    QVERIFY(document.rename(auxiliary, "辅助变量"));
-    QVERIFY(document.rename(constant, "常量"));
-    QVERIFY(document.rename(data, "外部数据"));
+    document.setEquation(flow, "\u8F85\u52A9\u53D8\u91CF * 0.5");
+    QVERIFY(document.rename(auxiliary, "\u8F85\u52A9\u53D8\u91CF"));
+    QVERIFY(document.rename(constant, "\u5E38\u91CF"));
+    QVERIFY(document.rename(data, "\u5916\u90E8\u6570\u636E"));
     document.createConnector(stock, auxiliary);
     document.createConnector(auxiliary, flow);
     document.createConnector(note, flow);
@@ -128,18 +128,18 @@ void TestXmileFile::zipRoundTrip()
     }
     QCOMPARE(modelCount, std::size_t(5));
     QCOMPARE(connectorCount, std::size_t(4));
-    const auto *loadedStock = dynamic_cast<const ModelElement *>(loaded.findByName("库存 & Population"));
+    const auto *loadedStock = dynamic_cast<const ModelElement *>(loaded.findByName("\u5E93\u5B58 & Population"));
     QVERIFY(loadedStock);
     QCOMPARE(loadedStock->equation, std::string("100"));
     QCOMPARE(loadedStock->unit, std::string("people"));
     QCOMPARE(loadedStock->comment, std::string("Population stock"));
     QCOMPARE(loaded.diagram().position(loadedStock->id()), Vec2({120.5, 80.25}));
-    QCOMPARE(loaded.findByName("常量")->kind(), ElementKind::Constant);
-    QCOMPARE(loaded.findByName("外部数据")->kind(), ElementKind::Data);
-    QCOMPARE(loaded.findByName("辅助变量")->kind(), ElementKind::Auxiliary);
+    QCOMPARE(loaded.findByName("\u5E38\u91CF")->kind(), ElementKind::Constant);
+    QCOMPARE(loaded.findByName("\u5916\u90E8\u6570\u636E")->kind(), ElementKind::Data);
+    QCOMPARE(loaded.findByName("\u8F85\u52A9\u53D8\u91CF")->kind(), ElementKind::Auxiliary);
     const auto *loadedFlow = dynamic_cast<const Flow *>(loaded.findByName("Flow1"));
     QVERIFY(loadedFlow);
-    QCOMPARE(loadedFlow->equation, std::string("辅助变量 * 0.5"));
+    QCOMPARE(loadedFlow->equation, std::string("\u8F85\u52A9\u53D8\u91CF * 0.5"));
     QCOMPARE(loadedFlow->endpoints.from, loadedStock->id());
     QVERIFY(loadedFlow->endpoints.to != 0);
     QCOMPARE(loaded.find(loadedFlow->endpoints.to)->kind(), ElementKind::Cloud);
@@ -162,7 +162,7 @@ void TestXmileFile::zipRoundTrip()
             ++commentCount;
             const bool first = loaded.diagram().position(element.id()) == Vec2({100.0, 300.0});
             QCOMPARE(static_cast<const Comment &>(element).content,
-                     first ? std::string("更新后的注释") : std::string("注释"));
+                     first ? std::string("\u66F4\u65B0\u540E\u7684\u6CE8\u91CA") : std::string("\u6CE8\u91CA"));
         } else if (element.kind() == ElementKind::Connector) {
             const auto &connector = static_cast<const Connector &>(element);
             const DocumentElement *from = loaded.find(connector.from);
@@ -173,7 +173,7 @@ void TestXmileFile::zipRoundTrip()
                 QCOMPARE(connector.to, loadedFlow->id());
             else {
                 QCOMPARE(loaded.diagram().position(from->id()), Vec2({500.0, 300.0}));
-                QCOMPARE(connector.to, loaded.findByName("辅助变量")->id());
+                QCOMPARE(connector.to, loaded.findByName("\u8F85\u52A9\u53D8\u91CF")->id());
             }
         }
     }

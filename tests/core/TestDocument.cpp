@@ -59,27 +59,27 @@ void TestDocument::namingNormalization()
     const EntityId cloud = document.createCloud();
     const EntityId flow = document.createFlow(stock, cloud);
     QVERIFY(!document.rename(stock, "flow1"));
-    QVERIFY(document.rename(flow, "流入 速率"));
-    QCOMPARE(document.model().findByName("流入_速率")->id(), flow);
-    QVERIFY(document.rename(stock, "库存"));
-    QVERIFY(document.rename(stock, "库存"));
-    QVERIFY(!document.rename(stock, "流入_速率"));
+    QVERIFY(document.rename(flow, "\u6D41\u5165 \u901F\u7387"));
+    QCOMPARE(document.model().findByName("\u6D41\u5165_\u901F\u7387")->id(), flow);
+    QVERIFY(document.rename(stock, "\u5E93\u5B58"));
+    QVERIFY(document.rename(stock, "\u5E93\u5B58"));
+    QVERIFY(!document.rename(stock, "\u6D41\u5165_\u901F\u7387"));
 
     const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
     const EntityId second = document.createVariable(ElementKind::Auxiliary);
     QVERIFY(document.rename(auxiliary, "birth rate"));
     QVERIFY(!document.rename(second, "birth_rate"));
-    QVERIFY(document.setEquation(auxiliary, "\"流入 速率\" * 2"));
-    QVERIFY(document.rename(flow, "流入_速率"));
+    QVERIFY(document.setEquation(auxiliary, "\"\u6D41\u5165 \u901F\u7387\" * 2"));
+    QVERIFY(document.rename(flow, "\u6D41\u5165_\u901F\u7387"));
     QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->equation,
-             std::string("流入_速率 * 2"));
+             std::string("\u6D41\u5165_\u901F\u7387 * 2"));
     QVERIFY(document.rename(auxiliary, "BIRTH RATE"));
     QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->displayName, std::string("BIRTH RATE"));
-    const EntityId comment = document.createComment("库存");
+    const EntityId comment = document.createComment("\u5E93\u5B58");
     QVERIFY(document.find(comment));
     QVERIFY(document.rename(stock, "Population"));
     QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->equation,
-             std::string("流入_速率 * 2"));
+             std::string("\u6D41\u5165_\u901F\u7387 * 2"));
 }
 
 void TestDocument::generatedNamesUseNameKeyIndex()
@@ -269,9 +269,9 @@ void TestDocument::validation()
     const EntityId stock = document.createVariable(ElementKind::Stock);
     const EntityId first = document.createVariable(ElementKind::Auxiliary);
     const EntityId second = document.createVariable(ElementKind::Auxiliary);
-    document.rename(stock, "库存");
+    document.rename(stock, "\u5E93\u5B58");
     document.setEquation(stock, "100");
-    document.rename(first, "辅助 变量");
+    document.rename(first, "\u8F85\u52A9 \u53D8\u91CF");
     document.setEquation(first, "Missing + 1");
     document.createConnector(first, second);
     document.createConnector(second, first);
@@ -288,7 +288,7 @@ void TestDocument::validation()
     QVERIFY(cycle);
     QVERIFY(unused);
 
-    document.setEquation(first, "库存 + ");
+    document.setEquation(first, "\u5E93\u5B58 + ");
     QVERIFY(!validateDocument(document).empty());
 }
 

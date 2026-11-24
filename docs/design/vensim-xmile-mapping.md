@@ -21,7 +21,7 @@
 | Flow | Rate；其图形中心为 Valve | model `<flow>` + view `<flow>` | 一个流量实体直接拥有路径和端点；阀门不是另一个变量；XMILE 可存在未连接 flow |
 | Auxiliary | Auxiliary | model/view `<aux>` | 保留；语义变量 |
 | Constant | Constant / Parameter | 通常使用 `<aux>`，没有独立 constant 标签 | 保留为变量分类，不冒充 XMILE 独立元素 |
-| Exogenous | Data；Glossary 中 Exogenous 指由数据给定的变量 | 通常使用 `<aux>` | 界面宜称“数据/外生变量（Data）”，作为变量分类 |
+| Data | Vensim Data；Glossary 中 Exogenous 指由数据给定的变量 | 通常使用 `<aux>` | 界面统一使用 Data，不翻译为“外生变量”；作为变量分类 |
 | Cloud | Rate 的 source/sink 云团 | XMILE 1.1 无标准 `<cloud>`；不是 model 变量 | 移出语义变量集合，成为只有 EntityId 的视图对象；布局与端点绑定保存在 workspace |
 | Annotation | Sketch Comment；可为 Arrow Junction | view `<text_box>` 等 | 移出语义变量集合，不拥有模型方程；只有 content，不需要唯一名称 |
 | “依赖线” / Information | Arrow；变量间可称因果箭头 | view `<connector>` | 更名“箭头”；不使用“依赖线”作为正式术语 |
@@ -51,7 +51,7 @@ Document
 └── DiagramDefinition      位置、路径、Cloud、Comment、Connector、视图状态
 ```
 
-- Constant 和 Data/Exogenous 可作为语义变量的分类属性，XMILE 读写仍映射为 aux。
+- Constant 和 Data 可作为语义变量的分类属性，XMILE 读写仍映射为 aux。
 - Cloud、Comment 和 Connector 使用统一 EntityId，但不进入 Model 的变量索引，也不需要 displayName/nameKey；Comment 保存 content。
 - Stock、Flow、Auxiliary、Constant、Data 需要唯一 displayName，并由 Document 集中维护 `nameKey → EntityId` 索引供重名判断和公式解析。
 - XMILE uid 仅用于文件内显示对象引用，加载时映射为新 EntityId，不作为内部永久身份。Cloud 在 XMILE 1.1 中没有标准标签，其布局与端点引用只能进入 workspace。

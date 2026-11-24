@@ -87,7 +87,7 @@ qds::core::EntityId DiagramScene::createElementAt(ElementKind kind, const QPoint
     if (kind == ElementKind::Cloud)
         id = m_controller->createCloud(snapped);
     else if (kind == ElementKind::Comment)
-        id = m_controller->createComment(tr("注释"), snapped);
+        id = m_controller->createComment(tr("Comment"), snapped);
     else
         id = m_controller->createVariable(kind, snapped);
     clearSelection();
@@ -430,7 +430,7 @@ void DiagramScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
     clearSelection();
     routed->setSelected(true);
     QMenu menu;
-    QMenu *routeMenu = menu.addMenu(QIcon(QStringLiteral(":/icons/route-orthogonal.svg")), tr("布线类型"));
+    QMenu *routeMenu = menu.addMenu(QIcon(QStringLiteral(":/icons/route-orthogonal.svg")), tr("Route type"));
     auto *modes = new QActionGroup(&menu);
     modes->setExclusive(true);
     const Route current = m_controller->document().diagram().route(routed->id());
@@ -439,9 +439,9 @@ void DiagramScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
         RouteMode mode;
         const char *iconName;
     } definitions[] = {
-        {tr("直线"), RouteMode::Straight, "straight"},
-        {tr("直角线"), RouteMode::Orthogonal, "orthogonal"},
-        {tr("贝塞尔曲线"), RouteMode::Bezier, "bezier"}};
+        {tr("Straight"), RouteMode::Straight, "straight"},
+        {tr("Orthogonal"), RouteMode::Orthogonal, "orthogonal"},
+        {tr("Bezier"), RouteMode::Bezier, "bezier"}};
     for (const auto &definition : definitions) {
         if (routed->type() == FlowItem::Type && definition.mode == RouteMode::Orthogonal)
             continue;
@@ -455,9 +455,9 @@ void DiagramScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
         });
     }
 
-    QAction *reset = menu.addAction(QIcon(QStringLiteral(":/icons/route-reset.svg")), tr("重置自动路径"));
+    QAction *reset = menu.addAction(QIcon(QStringLiteral(":/icons/route-reset.svg")), tr("Reset automatic route"));
     connect(reset, &QAction::triggered, this, &DiagramScene::resetSelectedRoute);
-    QAction *locked = menu.addAction(QIcon(QStringLiteral(":/icons/route-lock.svg")), tr("锁定路径"));
+    QAction *locked = menu.addAction(QIcon(QStringLiteral(":/icons/route-lock.svg")), tr("Lock route"));
     locked->setCheckable(true);
     locked->setChecked(current.locked);
     connect(locked, &QAction::toggled, this, [this, id = routed->id()](bool checked) {
@@ -466,7 +466,7 @@ void DiagramScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
         m_controller->setRoute(id, route);
     });
     menu.addSeparator();
-    QAction *remove = menu.addAction(QIcon(QStringLiteral(":/icons/delete.svg")), tr("删除"));
+    QAction *remove = menu.addAction(QIcon(QStringLiteral(":/icons/delete.svg")), tr("Delete"));
     connect(remove, &QAction::triggered, this, &DiagramScene::removeSelected);
     menu.exec(event->screenPos());
     event->accept();

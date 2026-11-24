@@ -22,5 +22,8 @@
 - 原生保存升级为 XMILE 1.1；workspace 第 2 版通过文件内 uid 保存 Cloud 和 Comment 端点引用，支持相同内容 Comment 的无混淆往返。
 - workspace 增加可选变量分类记录，Constant/Data 经原生 XMILE 往返后不再被读成 Auxiliary；无扩展记录的普通 aux 语义不变。
 - 注释正文可在属性面板编辑，修改、撤销/重做会同步画布和属性输入框，并通过 XMILE text_box 持久化。
+- Data 在界面和资源命名中不再称为外生变量；Flow 改为双实线管线与沙漏形阀门，Arrow 保持单实线，相关 SVG 箭头同步加长。
+- 属性面板抽取为可独立实例化和测试的 PropertyPanel；顶层主菜单仅显示文字，图标保留在菜单项和工具按钮。
+- 源代码与测试源码中的直接中文字符串已清除，中文兼容性测试改用 Unicode 转义。
 - Flow 默认直线且仅支持直线/贝塞尔，阀门始终垂直于路径切线；不再提供独立物料流连接类型。
 - 新增 Shift 限轴拖动、Ctrl 拖动复制及 Ctrl+Shift 组合；支持将 XMILE 文件拖入主窗口或画布打开。

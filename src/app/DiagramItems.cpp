@@ -20,6 +20,24 @@ QString viewObjectText(const qds::core::ViewElement &object)
     return {};
 }
 
+QPolygonF offsetPolygon(const QPolygonF &points, double offset)
+{
+    QPolygonF result;
+    if (points.size() < 2)
+        return result;
+    result.reserve(points.size());
+    for (int index = 0; index < points.size(); ++index) {
+        const QPointF before = index == 0 ? points[0] : points[index - 1];
+        const QPointF after = index == points.size() - 1 ? points[index] : points[index + 1];
+        const QLineF tangent(before, after);
+        if (tangent.length() < 1e-9)
+            return {};
+        const QPointF normal(-tangent.dy() / tangent.length(), tangent.dx() / tangent.length());
+        result.append(points[index] + normal * offset);
+    }
+    return result;
+}
+
 } // namespace
 
 QPointF DiagramItem::boundaryPointToward(const QPointF &target) const
@@ -231,7 +249,8 @@ void RoutedItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWid
     }
     const QColor color = isSelected() ? QColor(35, 120, 210) : QColor(45, 100, 160);
     painter->setPen(QPen(color, isSelected() ? 3.4 : 2.4));
-    painter->drawPath(geometryPath());
+    for (const QPainterPath &path : linePaths())
+        painter->drawPath(path);
     painter->setBrush(color);
     const QPolygonF arrow = arrowHead();
     if (!arrow.isEmpty())
@@ -241,6 +260,11 @@ void RoutedItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWid
 bool RoutedItem::connects(qds::core::EntityId id) const
 {
     return (m_from && m_from->id() == id) || (m_to && m_to->id() == id);
+}
+
+QVector<QPainterPath> RoutedItem::linePaths() const
+{
+    return {geometryPath()};
 }
 
 QPainterPath RoutedItem::geometryPath() const
@@ -412,6 +436,27 @@ FlowItem::FlowItem(
 int FlowItem::type() const
 {
     return Type;
+}
+
+QVector<QPainterPath> FlowItem::linePaths() const
+{
+    const QList<QPolygonF> polygons = geometryPath().toSubpathPolygons();
+    QVector<QPainterPath> result;
+    if (polygons.isEmpty())
+        return result;
+    for (double offset : {-3.0, 3.0}) {
+        QPainterPath path;
+        for (const QPolygonF &polygon : polygons) {
+            const QPolygonF shifted = offsetPolygon(polygon, offset);
+            if (shifted.size() < 2)
+                continue;
+            path.moveTo(shifted.front());
+            for (int index = 1; index < shifted.size(); ++index)
+                path.lineTo(shifted[index]);
+        }
+        result.append(path);
+    }
+    return result;
 }
 
 void FlowItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)

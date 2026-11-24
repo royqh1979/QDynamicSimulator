@@ -38,7 +38,7 @@ Document
 │   ├── Flow                     Vensim Rate / XMILE flow
 │   ├── Auxiliary                XMILE aux
 │   ├── Constant                 变量分类，XMILE 使用 aux
-│   └── Data（Exogenous）        变量分类，XMILE 使用 aux
+│   └── Data（数据）             变量分类，XMILE 使用 aux
 └── DiagramDefinition           当前视图的图形对象与布局
     ├── Connector                Vensim Arrow / XMILE connector
     ├── Cloud                    流量源/汇 / XMILE view cloud
@@ -225,7 +225,7 @@ QGraphicsObject
 - 向编辑器提交交互请求。
 - 根据文档变化刷新显示缓存。
 
-子类只实现真正不同的外形、端口和交互。Constant、Exogenous 与 Auxiliary 如果行为一致，可共用 VariableItem，并通过绘制策略区分外观。
+子类只实现真正不同的外形、端口和交互。Constant、Data 与 Auxiliary 如果行为一致，可共用 VariableItem，并通过绘制策略区分外观。
 
 不采用“DiagramItem 包含一个 QGraphicsItem 属性”的适配方式，因为这仍需转发场景坐标、选择、事件、绘制、所有权和变换，没有实际收益。
 
@@ -241,6 +241,7 @@ DiagramItem
 ArrowItem 与 FlowItem 都保存 EntityId 并复用 RoutedItem 的路径能力。FlowItem 直接对应流量实体，不生成物料 Connector。RoutedItem 负责：
 
 - 根据端点和 Route 生成 QPainterPath。
+- 通过虚函数 `linePaths()` 提供实线路径：ArrowItem 使用基类的一条路径，FlowItem 返回两条平行偏移路径；绘制、命中和箭头仍由基类统一负责。
 - 绘制线、箭头、选中状态和标签。
 - 实现比实际线更宽的 shape()，方便鼠标命中。
 - 响应端点移动和路径变化。
@@ -607,6 +608,7 @@ ControlPointHandle
 
 控制器与算法：
   DocumentController
+  PropertyPanel（独立属性 Widget，不依赖 MainWindow）
   DiagramController
   ArrowEditor
   SnapService

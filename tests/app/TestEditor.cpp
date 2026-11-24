@@ -6,6 +6,7 @@
 #include "EquationEditor.h"
 #include "MainWindow.h"
 #include "MiniMapView.h"
+#include "PropertyPanel.h"
 #include "RecentFiles.h"
 #include "Routing.h"
 #include <qds/io/XmileFile.h>
@@ -17,6 +18,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMenuBar>
 #include <QMimeData>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -43,6 +45,7 @@ private slots:
     void createUndoRedo();
     void renameAndEquationUndo();
     void commentContentEditing();
+    void propertyPanelWidget();
     void moveUndoRedo();
     void flowAndCascadeRestore();
     void routeUndoRedo();
@@ -127,24 +130,48 @@ void TestEditor::commentContentEditing()
     controller.undoStack()->redo();
     QCOMPARE(static_cast<const Comment *>(controller.document().find(id))->content, std::string("After"));
 
-    MainWindow window;
-    auto *windowController = window.findChild<DocumentController *>();
-    auto *windowScene = window.findChild<DiagramScene *>();
-    const EntityId windowComment = windowController->createComment(QStringLiteral("初始注释"), QPointF());
-    windowScene->item(windowComment)->setSelected(true);
-    auto *edit = window.findChild<QLineEdit *>(QStringLiteral("commentEdit"));
-    auto *label = window.findChild<QLabel *>(QStringLiteral("commentLabel"));
+    PropertyPanel panel(&controller, &scene);
+    const EntityId panelComment = controller.createComment(QStringLiteral("\u521D\u59CB\u6CE8\u91CA"), QPointF());
+    scene.item(panelComment)->setSelected(true);
+    auto *edit = panel.findChild<QLineEdit *>(QStringLiteral("commentEdit"));
+    auto *label = panel.findChild<QLabel *>(QStringLiteral("commentLabel"));
     QVERIFY(edit && label);
-    QCOMPARE(label->text(), QStringLiteral("正文"));
+    QCOMPARE(label->text(), QStringLiteral("Content"));
     QVERIFY(edit->isEnabled());
-    edit->setText(QStringLiteral("修改后的注释"));
+    edit->setText(QStringLiteral("\u4FEE\u6539\u540E\u7684\u6CE8\u91CA"));
     QTest::keyClick(edit, Qt::Key_Return);
-    QCOMPARE(static_cast<const Comment *>(windowController->document().find(windowComment))->content,
-             std::string("修改后的注释"));
-    QCOMPARE(dynamic_cast<ViewObjectItem *>(windowScene->item(windowComment))->text(), QStringLiteral("修改后的注释"));
-    windowController->undoStack()->undo();
-    QCOMPARE(edit->text(), QStringLiteral("初始注释"));
-    QCOMPARE(dynamic_cast<ViewObjectItem *>(windowScene->item(windowComment))->text(), QStringLiteral("初始注释"));
+    QCOMPARE(static_cast<const Comment *>(controller.document().find(panelComment))->content,
+             std::string("\u4FEE\u6539\u540E\u7684\u6CE8\u91CA"));
+    QCOMPARE(dynamic_cast<ViewObjectItem *>(scene.item(panelComment))->text(), QStringLiteral("\u4FEE\u6539\u540E\u7684\u6CE8\u91CA"));
+    controller.undoStack()->undo();
+    QCOMPARE(edit->text(), QStringLiteral("\u521D\u59CB\u6CE8\u91CA"));
+    QCOMPARE(dynamic_cast<ViewObjectItem *>(scene.item(panelComment))->text(), QStringLiteral("\u521D\u59CB\u6CE8\u91CA"));
+}
+
+void TestEditor::propertyPanelWidget()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    PropertyPanel panel(&controller, &scene);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    scene.item(stock)->setSelected(true);
+    auto *name = panel.findChild<QLineEdit *>(QStringLiteral("nameEdit"));
+    auto *equation = panel.findChild<EquationEditor *>(QStringLiteral("equationEdit"));
+    auto *unit = panel.findChild<QLineEdit *>(QStringLiteral("unitEdit"));
+    auto *comment = panel.findChild<QLineEdit *>(QStringLiteral("commentEdit"));
+    QVERIFY(name && equation && unit && comment);
+    name->setText(QStringLiteral("Population"));
+    equation->setText(QStringLiteral("100"));
+    unit->setText(QStringLiteral("people"));
+    comment->setText(QStringLiteral("Population stock"));
+    QVERIFY(panel.commit());
+    const auto *model = static_cast<const ModelElement *>(controller.document().find(stock));
+    QCOMPARE(model->displayName, std::string("Population"));
+    QCOMPARE(model->equation, std::string("100"));
+    QCOMPARE(model->unit, std::string("people"));
+    QCOMPARE(model->comment, std::string("Population stock"));
+    scene.clearSelection();
+    QVERIFY(!name->isEnabled() && !equation->isEnabled() && !unit->isEnabled() && !comment->isEnabled());
 }
 
 void TestEditor::moveUndoRedo()
@@ -260,7 +287,9 @@ void TestEditor::connectorValidation()
     const EntityId information = controller.createConnector(stock, auxiliary);
     QVERIFY(information != 0);
     QCOMPARE(controller.createConnector(stock, auxiliary), EntityId(0));
-    QVERIFY(dynamic_cast<ArrowItem *>(scene.item(information)));
+    auto *arrow = dynamic_cast<ArrowItem *>(scene.item(information));
+    QVERIFY(arrow);
+    QCOMPARE(arrow->linePaths().size(), 1);
 }
 
 void TestEditor::connectionDeleteUndo()
@@ -365,6 +394,7 @@ void TestEditor::flowRoutesAndValveGeometry()
         const EntityId cloud = controller.createCloud(targetPosition);
         const EntityId id = controller.createFlow(stock, cloud);
         auto *flow = dynamic_cast<FlowItem *>(scene.item(id));
+        QCOMPARE(flow->linePaths().size(), 2);
         if (bezier) {
             flow->setSelected(true);
             scene.setSelectedRouteMode(RouteMode::Bezier);
@@ -657,6 +687,7 @@ void TestEditor::paletteDrop()
 {
     TestEntityPalette palette;
     QCOMPARE(palette.count(), 9);
+    QCOMPARE(palette.item(3)->text(), QStringLiteral("Data"));
     for (int index = 0; index < palette.count(); ++index) {
         if (index != 6)
             QVERIFY(!palette.item(index)->icon().isNull());
@@ -775,7 +806,7 @@ void TestEditor::connectionContextMenu()
         const QList<QMenu *> menus = menu->findChildren<QMenu *>();
         QMenu *routeMenu = nullptr;
         for (QMenu *child : menus) {
-            if (child->title() == QStringLiteral("布线类型"))
+            if (child->title() == QStringLiteral("Route type"))
                 routeMenu = child;
         }
         if (!routeMenu)
@@ -786,9 +817,9 @@ void TestEditor::connectionContextMenu()
         state->valid = state->valid && group && group->isExclusive();
         for (QAction *action : actions) {
             state->valid = state->valid && action->isCheckable() && !action->icon().isNull();
-            if (action->text() == QStringLiteral("直角线"))
+            if (action->text() == QStringLiteral("Orthogonal"))
                 state->valid = state->valid && action->isChecked();
-            if (action->text() == QStringLiteral("贝塞尔曲线")) {
+            if (action->text() == QStringLiteral("Bezier")) {
                 action->trigger();
                 menu->close();
             }
@@ -839,6 +870,11 @@ void TestEditor::orthogonalArrowDirections()
 void TestEditor::actionIcons()
 {
     MainWindow window;
+    for (QAction *action : window.menuBar()->actions()) {
+        QVERIFY(!action->text().isEmpty());
+        QVERIFY(action->icon().isNull());
+    }
+    QVERIFY(window.findChild<PropertyPanel *>());
     const QList<QToolBar *> toolBars = window.findChildren<QToolBar *>();
     QCOMPARE(toolBars.size(), 2);
     for (QToolBar *toolBar : toolBars) {
@@ -933,10 +969,10 @@ void TestEditor::fileDropOpen()
 {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
-    const QString path = directory.filePath(QStringLiteral("拖放模型.xmile"));
+    const QString path = directory.filePath(QStringLiteral("\u62D6\u653E\u6A21\u578B.xmile"));
     Document document;
     const EntityId stock = document.createVariable(ElementKind::Stock, {10.0, 20.0});
-    document.rename(stock, "中文库存");
+    document.rename(stock, "\u4E2D\u6587\u5E93\u5B58");
     QString error;
     QVERIFY2(qds::io::saveXmile(path, document, &error), qPrintable(error));
 
@@ -952,10 +988,10 @@ void TestEditor::fileDropOpen()
     QDropEvent drop(QPoint(20, 20), Qt::CopyAction, &data, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view->viewport(), &drop);
     QVERIFY(drop.isAccepted());
-    QVERIFY(window.windowTitle().contains(QStringLiteral("拖放模型.xmile")));
+    QVERIFY(window.windowTitle().contains(QStringLiteral("\u62D6\u653E\u6A21\u578B.xmile")));
     QVERIFY(scene->item(1));
     QCOMPARE(scene->selectedModelElement(), nullptr);
-    QCOMPARE(scene->findElements(QStringLiteral("中文库存")).size(), std::size_t(1));
+    QCOMPARE(scene->findElements(QStringLiteral("\u4E2D\u6587\u5E93\u5B58")).size(), std::size_t(1));
 
     QMimeData invalid;
     invalid.setUrls({QUrl::fromLocalFile(directory.filePath(QStringLiteral("not-model.txt")))});
