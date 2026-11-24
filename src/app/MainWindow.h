@@ -7,13 +7,12 @@
 
 class QAction;
 class QCloseEvent;
-class QLineEdit;
 class QListWidget;
 class QMenu;
 class QTimer;
 class DiagramView;
 class DocumentController;
-class EquationEditor;
+class PropertyPanel;
 
 class MainWindow : public QMainWindow
 {
@@ -26,6 +25,8 @@ public:
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
 
 private:
     void createActions();
@@ -39,7 +40,6 @@ private:
     void setCurrentFile(const QString &fileName);
     void setDirty(bool dirty);
     void setTool(DiagramScene::Tool tool);
-    void updatePropertyEditor();
     void refreshValidation();
     void updateRecentFiles();
     void autoSave();
@@ -48,10 +48,7 @@ private:
     DocumentController *m_controller;
     DiagramScene *m_scene;
     DiagramView *m_view;
-    QLineEdit *m_nameEdit = nullptr;
-    EquationEditor *m_equationEdit = nullptr;
-    QLineEdit *m_unitEdit = nullptr;
-    QLineEdit *m_commentEdit = nullptr;
+    PropertyPanel *m_propertyPanel = nullptr;
     QListWidget *m_issueList = nullptr;
     QMenu *m_recentMenu = nullptr;
     QAction *m_selectAction = nullptr;

@@ -7,14 +7,13 @@
 #include <QPointF>
 #include <QUndoStack>
 
-#include <functional>
+#include <optional>
 #include <vector>
 
 struct ClipboardData {
-    std::vector<std::pair<qds::core::Variable, qds::core::Vec2>> variables;
-    std::vector<std::pair<qds::core::Connection, qds::core::Route>> connections;
+    std::vector<qds::core::ElementData> elements;
 
-    bool empty() const { return variables.empty(); }
+    bool empty() const { return elements.empty(); }
 };
 
 class DocumentController : public QObject
@@ -22,40 +21,42 @@ class DocumentController : public QObject
     Q_OBJECT
 
 public:
-    using Callback = std::function<void()>;
-
     explicit DocumentController(QObject *parent = nullptr);
 
     const qds::core::Document &document() const;
     QUndoStack *undoStack();
 
-    qds::core::EntityId createVariable(qds::core::VariableType type, const QPointF &position);
-    void removeVariables(const std::vector<qds::core::EntityId> &ids);
-    bool renameVariable(qds::core::EntityId id, const QString &name);
+    qds::core::EntityId createVariable(qds::core::ElementKind kind, const QPointF &position);
+    qds::core::EntityId createFlow(qds::core::EntityId from, qds::core::EntityId to);
+    qds::core::EntityId createFlow(
+        qds::core::EntityId from,
+        qds::core::EntityId to,
+        std::optional<QPointF> fromPosition,
+        std::optional<QPointF> toPosition);
+    qds::core::EntityId createConnector(qds::core::EntityId from, qds::core::EntityId to);
+    qds::core::EntityId createCloud(const QPointF &position);
+    qds::core::EntityId createComment(const QString &text, const QPointF &position);
+    void removeElements(const std::vector<qds::core::EntityId> &ids);
+    bool renameElement(qds::core::EntityId id, const QString &name);
     void setEquation(qds::core::EntityId id, const QString &equation);
     void setUnit(qds::core::EntityId id, const QString &unit);
     void setComment(qds::core::EntityId id, const QString &comment);
-    void moveVariables(const std::vector<std::pair<qds::core::EntityId, QPointF>> &positions);
-    qds::core::ConnectionId createConnection(
-        qds::core::EntityId from,
-        qds::core::EntityId to,
-        qds::core::ConnectionType type = qds::core::ConnectionType::Information);
-    void removeConnections(const std::vector<qds::core::ConnectionId> &ids);
-    bool reconnectConnection(
-        qds::core::ConnectionId id,
-        qds::core::EntityId from,
-        qds::core::EntityId to);
-    void setRoute(qds::core::ConnectionId id, const qds::core::Route &route);
+    void setCommentContent(qds::core::EntityId id, const QString &content);
+    void moveElements(const std::vector<std::pair<qds::core::EntityId, QPointF>> &positions);
+    bool reconnectFlow(qds::core::EntityId id, qds::core::EntityId from, qds::core::EntityId to);
+    bool reconnectConnector(qds::core::EntityId id, qds::core::EntityId from, qds::core::EntityId to);
+    void setRoute(qds::core::EntityId id, const qds::core::Route &route);
     void replaceDocument(qds::core::Document document);
-    ClipboardData copyVariables(const std::vector<qds::core::EntityId> &ids) const;
+    ClipboardData copyElements(const std::vector<qds::core::EntityId> &ids) const;
     std::vector<qds::core::EntityId> pasteClipboard(const ClipboardData &clipboard, const QPointF &offset);
 
 signals:
-    void documentChanged(const qds::core::ChangeSet &changeSet);
+    void documentChanged(const qds::core::ChangeNotification &notification);
 
 private:
-    void pushCommand(const QString &text, const Callback &undo, const Callback &redo);
-    void notify(const qds::core::ChangeSet &changeSet);
+    void pushChanges(const qds::core::ChangeSet &changes, bool alreadyApplied = false);
+    void applyChanges(const qds::core::ChangeSet &changes, bool after);
+    void notify(const qds::core::ChangeNotification &notification);
 
     qds::core::Document m_document;
     QUndoStack m_undoStack;

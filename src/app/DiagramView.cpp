@@ -4,13 +4,27 @@
 #include "EntityPalette.h"
 
 #include <QDragEnterEvent>
+#include <QFileInfo>
 #include <QGraphicsItem>
 #include <QMimeData>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QScrollBar>
 #include <QWheelEvent>
+#include <QUrl>
 #include <QtMath>
+
+namespace {
+
+bool isXmileFileDrop(const QMimeData *mime)
+{
+    if (!mime->hasUrls() || mime->urls().size() != 1)
+        return false;
+    const QUrl url = mime->urls().front();
+    return url.isLocalFile() && QFileInfo(url.toLocalFile()).suffix().compare(QStringLiteral("xmile"), Qt::CaseInsensitive) == 0;
+}
+
+}
 
 DiagramView::DiagramView(QGraphicsScene *scene, QWidget *parent)
     : QGraphicsView(scene, parent)
@@ -121,28 +135,34 @@ void DiagramView::keyReleaseEvent(QKeyEvent *event)
 
 void DiagramView::dragEnterEvent(QDragEnterEvent *event)
 {
-    if (event->mimeData()->hasFormat(EntityPalette::mimeType()))
+    if (event->mimeData()->hasFormat(EntityPalette::mimeType()) || isXmileFileDrop(event->mimeData()))
         event->acceptProposedAction();
 }
 
 void DiagramView::dragMoveEvent(QDragMoveEvent *event)
 {
-    if (event->mimeData()->hasFormat(EntityPalette::mimeType()))
+    if (event->mimeData()->hasFormat(EntityPalette::mimeType()) || isXmileFileDrop(event->mimeData()))
         event->acceptProposedAction();
 }
 
 void DiagramView::dropEvent(QDropEvent *event)
 {
+    if (isXmileFileDrop(event->mimeData())) {
+        emit fileOpenRequested(event->mimeData()->urls().front().toLocalFile());
+        event->acceptProposedAction();
+        return;
+    }
     if (!event->mimeData()->hasFormat(EntityPalette::mimeType()))
         return;
     bool ok = false;
     const int value = event->mimeData()->data(EntityPalette::mimeType()).toInt(&ok);
-    if (!ok || value < static_cast<int>(qds::core::VariableType::Stock)
-        || value > static_cast<int>(qds::core::VariableType::Annotation))
+    const auto kind = static_cast<qds::core::ElementKind>(value);
+    if (!ok || kind == qds::core::ElementKind::Flow || value < static_cast<int>(qds::core::ElementKind::Stock)
+        || value > static_cast<int>(qds::core::ElementKind::Comment))
         return;
     DiagramScene *diagram = qobject_cast<DiagramScene *>(scene());
     if (diagram)
-        diagram->createVariableAt(static_cast<qds::core::VariableType>(value), mapToScene(event->pos()));
+        diagram->createElementAt(kind, mapToScene(event->pos()));
     event->acceptProposedAction();
 }
 

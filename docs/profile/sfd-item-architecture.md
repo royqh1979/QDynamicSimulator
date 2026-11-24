@@ -45,3 +45,36 @@
 箭头修复后，572 条路径的几何与箭头联合重建耗时 0.4197 ms；四方向、斜向和边界端点均纳入单元测试。
 
 贝塞尔控制辅助线覆盖单选、多选、框选、取消选择、控制点端点和真实视图残影测试；1000 次控制点预览及辅助线几何更新耗时 1.3478 ms，1000 次单选/多选可见性切换耗时 2.1714 ms。
+
+## 统一 DocumentElement 与 Flow 重构结果
+
+本轮使用统一 Document 所有权、ChangeSet 命令、单一 Connector 和独立 FlowItem。1000 个六类非 Flow 对象、667 条合法 Arrow 的结果：创建 78.0574 ms，连接 132.537 ms，路径编辑 226.327 ms，路径几何 0.5123 ms，粘贴 208.25 ms，XMILE 保存 14.3013 ms、加载 281.25 ms。1000 次 Flow 阀门几何计算 9.0869 ms，1000 次 Shift 拖动 7.4203 ms。10000 个 Stock 的创建、连接、10 轮 ID 查找、移动、校验和删除分别为 5630.97 ms、1434.44 ms、1.2469 ms、1911.04 ms、51.3532 ms 和 1991.14 ms。
+
+这些结果属于新模型结构的新基线，不与旧七类变量模型直接比较。当前未引入 Stock 流入/流出派生索引；后续优化须先依据 profile。
+
+## nameKey、Cloud 与空白 Flow 重构结果
+
+本轮使用 XMILE 1.1、workspace 第 2 版、集中式 nameKey 索引及空白端 Cloud 原子创建。工具与上述静态 Release 环境相同。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| create | 10000 | 3.0439 | 0.304390 |
+| connect | 9999 | 351.859 | 35.1894 |
+| lookup | 100000 | 0.4349 | 0.004349 |
+| name_lookup | 100000 | 8.7816 | 0.087816 |
+| move | 10000 | 502.221 | 50.2221 |
+| validate | 10000 | 9.5828 | 0.958280 |
+| remove | 10000 | 453.671 | 45.3671 |
+| editor_create | 1000 | 21.6095 | 21.6095 |
+| editor_connect | 667 | 123.211 | 184.724 |
+| route_edit | 667 | 210.212 | 315.160 |
+| editor_paste | 1000 | 40.9090 | 40.9090 |
+| flow_pipeline_geometry | 1000 | 1.4258 | 1.4258 |
+| flow_arrow_geometry | 1000 | 0.4226 | 0.4226 |
+| blank_flow_create_undo_redo | 1000 | 17.2425 | 17.2425 |
+| comment_content_edit | 1000 | 417.708 | 417.708 |
+| property_panel_refresh | 1000 | 162.383 | 162.383 |
+| xmile_save | 1000 | 12.5602 | 12.5602 |
+| xmile_load | 1000 | 25.6342 | 25.6342 |
+
+`blank_flow_create_undo_redo` 每轮实际执行“创建两个 Cloud 和一个 Flow → undo 删除全部 → redo 恢复全部 → undo 回到空文档”，并断言 Scene 与 Document 同步。XMILE profile 逐变量断言往返后的 ElementKind 一致，覆盖 Auxiliary、Constant 和 Data。`comment_content_edit` 覆盖正文 ChangeSet、Scene 文本刷新和最终值校验；`flow_pipeline_geometry` 验证每次返回两条 Flow 路径，`property_panel_refresh` 测量独立属性 Widget 的完整刷新。属性面板输入及 undo 同步由编辑器单元测试覆盖。结果只用于后续同环境回归比较，不与不同 Qt 链接方式或旧数据结构的结果直接比较。

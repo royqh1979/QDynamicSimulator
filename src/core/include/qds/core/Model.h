@@ -2,82 +2,148 @@
 
 #include <cstdint>
 #include <string>
-#include <unordered_map>
-#include <vector>
 
 namespace qds::core {
 
 using EntityId = std::uint64_t;
-using ConnectionId = std::uint64_t;
+using PortId = std::uint32_t;
 
-enum class VariableType {
+enum class ElementKind {
     Stock,
     Flow,
     Auxiliary,
     Constant,
-    Exogenous,
+    Data,
+    Connector,
     Cloud,
-    Annotation
+    Comment
 };
 
-enum class ConnectionType {
-    MaterialFlow,
-    Information,
-    Annotation
+class DocumentElement
+{
+public:
+    virtual ~DocumentElement() = default;
+    EntityId id() const { return m_id; }
+    ElementKind kind() const { return m_kind; }
+
+protected:
+    DocumentElement(EntityId id, ElementKind kind)
+        : m_id(id)
+        , m_kind(kind)
+    {
+    }
+
+private:
+    EntityId m_id;
+    ElementKind m_kind;
 };
 
-struct Variable {
-    EntityId id = 0;
-    std::string name;
-    VariableType type = VariableType::Stock;
+class ModelElement : public DocumentElement
+{
+public:
+    std::string displayName;
+    std::string nameKey;
     std::string equation;
     std::string unit;
     std::string comment;
+
+protected:
+    ModelElement(EntityId id, ElementKind kind)
+        : DocumentElement(id, kind)
+    {
+    }
 };
 
-struct Connection {
-    ConnectionId id = 0;
+class Variable final : public ModelElement
+{
+public:
+    Variable(EntityId id, ElementKind kind)
+        : ModelElement(id, kind)
+    {
+    }
+};
+
+struct FlowEndpoints {
     EntityId from = 0;
     EntityId to = 0;
-    ConnectionType type = ConnectionType::Information;
+
+    bool operator==(const FlowEndpoints &other) const { return from == other.from && to == other.to; }
+    bool operator!=(const FlowEndpoints &other) const { return !(*this == other); }
 };
+
+class Flow final : public ModelElement
+{
+public:
+    explicit Flow(EntityId id)
+        : ModelElement(id, ElementKind::Flow)
+    {
+    }
+
+    FlowEndpoints endpoints;
+};
+
+class ViewElement : public DocumentElement
+{
+protected:
+    ViewElement(EntityId id, ElementKind kind)
+        : DocumentElement(id, kind)
+    {
+    }
+};
+
+class Connector final : public ViewElement
+{
+public:
+    explicit Connector(EntityId id)
+        : ViewElement(id, ElementKind::Connector)
+    {
+    }
+
+    EntityId from = 0;
+    EntityId to = 0;
+};
+
+class Cloud final : public ViewElement
+{
+public:
+    explicit Cloud(EntityId id)
+        : ViewElement(id, ElementKind::Cloud)
+    {
+    }
+};
+
+class Comment final : public ViewElement
+{
+public:
+    explicit Comment(EntityId id)
+        : ViewElement(id, ElementKind::Comment)
+    {
+    }
+
+    std::string content;
+};
+
+class Document;
+template <typename T>
+class ElementRange;
+using ModelRange = ElementRange<ModelElement>;
 
 class Model
 {
 public:
-    EntityId createVariable(VariableType type);
-    EntityId addVariable(Variable variable);
-    bool removeVariable(EntityId id);
-    bool renameVariable(EntityId id, const std::string &newName);
-    bool setEquation(EntityId id, const std::string &equation);
-    bool setUnit(EntityId id, const std::string &unit);
-    bool setComment(EntityId id, const std::string &comment);
+    explicit Model(const Document &document)
+        : m_document(document)
+    {
+    }
 
-    ConnectionId addConnection(Connection connection);
-    bool canConnect(EntityId from, EntityId to, ConnectionType type) const;
-    ConnectionId createConnection(EntityId from, EntityId to, ConnectionType type = ConnectionType::Information);
-    bool removeConnection(ConnectionId id);
-    bool reconnectConnection(ConnectionId id, EntityId from, EntityId to);
-
-    const Variable *variable(EntityId id) const;
-    const Variable *variableByName(const std::string &name) const;
-    const Connection *connection(ConnectionId id) const;
-    const std::vector<Variable> &variables() const;
-    const std::vector<Connection> &connections() const;
-    void clear();
+    ModelRange elements() const;
+    const ModelElement *findByName(const std::string &name) const;
 
 private:
-    std::string uniqueName(const std::string &base) const;
-    bool contains(EntityId id) const;
-    bool nameExists(const std::string &name) const;
-
-    std::vector<Variable> m_variables;
-    std::vector<Connection> m_connections;
-    std::unordered_map<EntityId, std::size_t> m_variableIndex;
-    std::unordered_map<ConnectionId, std::size_t> m_connectionIndex;
-    std::unordered_map<std::string, EntityId> m_nameIndex;
-    EntityId m_nextEntityId = 1;
-    ConnectionId m_nextConnectionId = 1;
+    const Document &m_document;
 };
+
+std::string normalizeIdentifier(const std::string &name);
+std::string trimDisplayName(const std::string &name);
 
 } // namespace qds::core

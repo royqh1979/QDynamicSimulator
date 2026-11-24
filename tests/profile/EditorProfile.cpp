@@ -1,12 +1,14 @@
 #include "DiagramItems.h"
 #include "DiagramScene.h"
 #include "DocumentController.h"
+#include "PropertyPanel.h"
 #include <qds/io/XmileFile.h>
 
 #include <QActionGroup>
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QGraphicsLineItem>
+#include <QGraphicsSceneMouseEvent>
 #include <QMenu>
 #include <QTemporaryDir>
 #include <QTextStream>
@@ -14,6 +16,16 @@
 #include <vector>
 
 using namespace qds::core;
+
+std::size_t elementCount(const Document &document)
+{
+    std::size_t count = 0;
+    for (const DocumentElement &element : document.elements()) {
+        Q_UNUSED(element)
+        ++count;
+    }
+    return count;
+}
 
 int main(int argc, char **argv)
 {
@@ -28,20 +40,26 @@ int main(int argc, char **argv)
     ids.reserve(static_cast<std::size_t>(count));
     QElapsedTimer timer;
     timer.start();
-    const VariableType types[] = {
-        VariableType::Stock, VariableType::Flow, VariableType::Auxiliary, VariableType::Constant,
-        VariableType::Exogenous, VariableType::Cloud, VariableType::Annotation};
+    const ElementKind types[] = {
+        ElementKind::Stock, ElementKind::Auxiliary, ElementKind::Constant,
+        ElementKind::Data, ElementKind::Cloud, ElementKind::Comment};
     for (int index = 0; index < count; ++index) {
-        ids.push_back(controller.createVariable(types[index % 7], QPointF((index % 40) * 180.0, (index / 40) * 120.0)));
+        const ElementKind kind = types[index % 6];
+        const QPointF position((index % 40) * 180.0, (index / 40) * 120.0);
+        if (kind == ElementKind::Cloud)
+            ids.push_back(controller.createCloud(position));
+        else if (kind == ElementKind::Comment)
+            ids.push_back(controller.createComment(QStringLiteral("Note"), position));
+        else
+            ids.push_back(controller.createVariable(kind, position));
     }
     const qint64 createNs = timer.nsecsElapsed();
 
     timer.restart();
     int connectionCount = 0;
-    std::vector<ConnectionId> connectionIds;
+    std::vector<EntityId> connectionIds;
     for (int index = 1; index < count; ++index) {
-        const ConnectionId id = controller.createConnection(
-            ids[static_cast<std::size_t>(index - 1)], ids[static_cast<std::size_t>(index)]);
+        const EntityId id = controller.createConnector(ids[static_cast<std::size_t>(index - 1)], ids[static_cast<std::size_t>(index)]);
         if (id != 0) {
             ++connectionCount;
             connectionIds.push_back(id);
@@ -50,7 +68,7 @@ int main(int argc, char **argv)
     const qint64 connectNs = timer.nsecsElapsed();
 
     timer.restart();
-    for (ConnectionId id : connectionIds) {
+    for (EntityId id : connectionIds) {
         Route route = controller.document().diagram().route(id);
         route.manual = true;
         route.controlPoints = {{50.0, 60.0}};
@@ -61,15 +79,15 @@ int main(int argc, char **argv)
     timer.restart();
     int pointCount = 0;
     int arrowCount = 0;
-    for (ConnectionId id : connectionIds) {
-        ConnectionItem *item = scene.connectionItem(id);
+    for (EntityId id : connectionIds) {
+        auto *item = dynamic_cast<ArrowItem *>(scene.item(id));
         pointCount += item->geometryPath().elementCount();
         arrowCount += item->arrowHead().isEmpty() ? 0 : 1;
     }
     const qint64 routeGeometryNs = timer.nsecsElapsed();
 
     timer.restart();
-    controller.moveVariables({{ids.front(), QPointF(20.0, 20.0)}, {ids.back(), QPointF(30.0, 30.0)}});
+    controller.moveElements({{ids.front(), QPointF(20.0, 20.0)}, {ids.back(), QPointF(30.0, 30.0)}});
     const qint64 moveNs = timer.nsecsElapsed();
 
     timer.restart();
@@ -83,7 +101,7 @@ int main(int argc, char **argv)
     const qint64 alignNs = timer.nsecsElapsed();
     controller.undoStack()->undo();
 
-    const ClipboardData clipboard = controller.copyVariables(ids);
+    const ClipboardData clipboard = controller.copyElements(ids);
     timer.restart();
     const auto pasted = controller.pasteClipboard(clipboard, QPointF(20.0, 20.0));
     const qint64 pasteNs = timer.nsecsElapsed();
@@ -92,12 +110,12 @@ int main(int argc, char **argv)
     timer.restart();
     std::size_t matches = 0;
     for (int repeat = 0; repeat < 100; ++repeat)
-        matches += scene.findVariables(QStringLiteral("Stock")).size();
+        matches += scene.findElements(QStringLiteral("Stock")).size();
     const qint64 searchNs = timer.nsecsElapsed();
 
     timer.restart();
     for (int index = 0; index < 1000; ++index) {
-        QGraphicsLineItem *preview = new QGraphicsLineItem(QLineF(0.0, 0.0, 10.0, 10.0));
+        auto *preview = new QGraphicsLineItem(QLineF(0.0, 0.0, 10.0, 10.0));
         scene.addItem(preview);
         preview->setLine(QLineF(0.0, 0.0, index * 1.0, index * 0.5));
         scene.removeItem(preview);
@@ -120,12 +138,12 @@ int main(int argc, char **argv)
 
     DocumentController guideController;
     DiagramScene guideScene(&guideController);
-    const EntityId guideFrom = guideController.createVariable(VariableType::Stock, QPointF(0.0, 0.0));
-    const EntityId guideTo = guideController.createVariable(VariableType::Auxiliary, QPointF(200.0, 0.0));
-    const ConnectionId guideConnection = guideController.createConnection(guideFrom, guideTo);
-    guideScene.connectionItem(guideConnection)->setSelected(true);
+    const EntityId guideFrom = guideController.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    const EntityId guideTo = guideController.createVariable(ElementKind::Auxiliary, QPointF(200.0, 0.0));
+    const EntityId guideConnection = guideController.createConnector(guideFrom, guideTo);
+    auto *guideItem = dynamic_cast<ArrowItem *>(guideScene.item(guideConnection));
+    guideItem->setSelected(true);
     guideScene.setSelectedRouteMode(RouteMode::Bezier);
-    ConnectionItem *guideItem = guideScene.connectionItem(guideConnection);
     Route guideRoute = guideController.document().diagram().route(guideConnection);
     timer.restart();
     int guideCount = 0;
@@ -141,11 +159,99 @@ int main(int argc, char **argv)
     timer.restart();
     int singleSelectionGuideCount = 0;
     for (int index = 0; index < 1000; ++index) {
-        guideScene.variableItem(guideFrom)->setSelected(index % 2 == 0);
+        guideScene.item(guideFrom)->setSelected(index % 2 == 0);
         singleSelectionGuideCount += guideItem->controlGuides().size();
     }
-    guideScene.variableItem(guideFrom)->setSelected(false);
+    guideScene.item(guideFrom)->setSelected(false);
     const qint64 guideSelectionNs = timer.nsecsElapsed();
+
+    const EntityId valveCloud = guideController.createCloud(QPointF(400.0, 200.0));
+    const EntityId valveFlow = guideController.createFlow(guideFrom, valveCloud);
+    auto *flowItem = dynamic_cast<FlowItem *>(guideScene.item(valveFlow));
+    flowItem->setSelected(true);
+    guideScene.setSelectedRouteMode(RouteMode::Bezier);
+    timer.restart();
+    int valveCount = 0;
+    for (int index = 0; index < 1000; ++index)
+        valveCount += flowItem->valvePolygons().size();
+    const qint64 valveNs = timer.nsecsElapsed();
+
+    timer.restart();
+    int pipelineCount = 0;
+    for (int index = 0; index < 1000; ++index)
+        pipelineCount += flowItem->linePaths().size();
+    const qint64 pipelineNs = timer.nsecsElapsed();
+
+    timer.restart();
+    int flowArrowPointCount = 0;
+    for (int index = 0; index < 1000; ++index)
+        flowArrowPointCount += flowItem->arrowHead().size();
+    const qint64 flowArrowNs = timer.nsecsElapsed();
+
+    DocumentController dragController;
+    DiagramScene dragScene(&dragController);
+    const EntityId dragStock = dragController.createVariable(ElementKind::Stock, QPointF());
+    timer.restart();
+    for (int index = 0; index < 1000; ++index) {
+        const Vec2 current = dragController.document().diagram().position(dragStock);
+        const QPointF start(current.x, current.y);
+        QGraphicsSceneMouseEvent press(QEvent::GraphicsSceneMousePress);
+        press.setButton(Qt::LeftButton);
+        press.setButtons(Qt::LeftButton);
+        press.setModifiers(Qt::ShiftModifier);
+        press.setScenePos(start);
+        QApplication::sendEvent(&dragScene, &press);
+        QGraphicsSceneMouseEvent move(QEvent::GraphicsSceneMouseMove);
+        move.setButtons(Qt::LeftButton);
+        move.setModifiers(Qt::ShiftModifier);
+        move.setLastScenePos(start);
+        move.setScenePos(start + QPointF(100.0, 80.0));
+        QApplication::sendEvent(&dragScene, &move);
+        QGraphicsSceneMouseEvent release(QEvent::GraphicsSceneMouseRelease);
+        release.setButton(Qt::LeftButton);
+        release.setModifiers(Qt::ShiftModifier);
+        release.setScenePos(start + QPointF(100.0, 80.0));
+        QApplication::sendEvent(&dragScene, &release);
+    }
+    const qint64 modifierDragNs = timer.nsecsElapsed();
+    if (dragController.document().diagram().position(dragStock).y != 0.0)
+        return 6;
+
+    DocumentController blankController;
+    DiagramScene blankScene(&blankController);
+    timer.restart();
+    for (int index = 0; index < 1000; ++index) {
+        const QPointF from(index * 4.0, index * 2.0);
+        const EntityId id = blankController.createFlow(0, 0, from, from + QPointF(160.0, 0.0));
+        if (id == 0)
+            return 7;
+        const FlowEndpoints endpoints = static_cast<const Flow *>(blankController.document().find(id))->endpoints;
+        blankController.undoStack()->undo();
+        if (blankController.document().find(id) || blankController.document().find(endpoints.from)
+            || blankController.document().find(endpoints.to))
+            return 8;
+        blankController.undoStack()->redo();
+        if (!blankScene.item(id))
+            return 9;
+        blankController.undoStack()->undo();
+    }
+    const qint64 blankFlowNs = timer.nsecsElapsed();
+
+    const EntityId commentId = ids[5];
+    timer.restart();
+    for (int index = 0; index < 1000; ++index) {
+        controller.setCommentContent(commentId, index % 2 == 0 ? QStringLiteral("After") : QStringLiteral("Before"));
+    }
+    const qint64 commentEditNs = timer.nsecsElapsed();
+    if (dynamic_cast<ViewObjectItem *>(scene.item(commentId))->text() != QStringLiteral("Before"))
+        return 10;
+    scene.clearSelection();
+    scene.item(commentId)->setSelected(true);
+    PropertyPanel propertyPanel(&controller, &scene);
+    timer.restart();
+    for (int index = 0; index < 1000; ++index)
+        propertyPanel.refresh();
+    const qint64 propertyPanelNs = timer.nsecsElapsed();
 
     QTemporaryDir directory;
     if (!directory.isValid())
@@ -163,6 +269,12 @@ int main(int argc, char **argv)
         return 5;
     const qint64 loadNs = timer.nsecsElapsed();
 
+    bool variableKindsMatch = true;
+    for (const ModelElement &element : controller.document().model().elements()) {
+        const ModelElement *loadedElement = loaded.findByName(element.displayName);
+        variableKindsMatch = variableKindsMatch && loadedElement && loadedElement->kind() == element.kind();
+    }
+
     const qint64 commands = controller.undoStack()->count();
     QTextStream(stdout) << "operation,count,total_ms,per_operation_us\n"
                         << "editor_create," << count << "," << createNs / 1e6 << "," << createNs / 1000.0 / count << "\n"
@@ -178,13 +290,20 @@ int main(int argc, char **argv)
                         << "connection_context_menu,1000," << contextMenuNs / 1e6 << "," << contextMenuNs / 1000.0 / 1000 << "\n"
                         << "bezier_control_guide_updates,1000," << bezierGuideNs / 1e6 << "," << bezierGuideNs / 1000.0 / 1000 << "\n"
                         << "bezier_guide_single_selection,1000," << guideSelectionNs / 1e6 << "," << guideSelectionNs / 1000.0 / 1000 << "\n"
+                        << "flow_valve_geometry,1000," << valveNs / 1e6 << "," << valveNs / 1000.0 / 1000 << "\n"
+                        << "flow_pipeline_geometry,1000," << pipelineNs / 1e6 << "," << pipelineNs / 1000.0 / 1000 << "\n"
+                        << "flow_arrow_geometry,1000," << flowArrowNs / 1e6 << "," << flowArrowNs / 1000.0 / 1000 << "\n"
+                        << "shift_drag,1000," << modifierDragNs / 1e6 << "," << modifierDragNs / 1000.0 / 1000 << "\n"
+                        << "blank_flow_create_undo_redo,1000," << blankFlowNs / 1e6 << "," << blankFlowNs / 1000.0 / 1000 << "\n"
+                        << "comment_content_edit,1000," << commentEditNs / 1e6 << "," << commentEditNs / 1000.0 / 1000 << "\n"
+                        << "property_panel_refresh,1000," << propertyPanelNs / 1e6 << "," << propertyPanelNs / 1000.0 / 1000 << "\n"
                         << "xmile_save," << count << "," << saveNs / 1e6 << "," << saveNs / 1000.0 / count << "\n"
                         << "xmile_load," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
-        && matches > 0 && guideCount == 2000 && singleSelectionGuideCount == 1000
-        && loaded.model().variables().size() == static_cast<std::size_t>(count);
+        && matches > 0 && guideCount == 2000 && singleSelectionGuideCount == 1000 && valveCount == 2000
+        && pipelineCount == 2000 && flowArrowPointCount == 3000 && variableKindsMatch && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)
         QTextStream(stderr) << "validation failed: commands=" << commands << ", points=" << pointCount
-                            << ", arrows=" << arrowCount << ", loaded=" << loaded.model().variables().size() << "\n";
+                            << ", arrows=" << arrowCount << ", loaded=" << elementCount(loaded) << "\n";
     return valid ? 0 : 1;
 }

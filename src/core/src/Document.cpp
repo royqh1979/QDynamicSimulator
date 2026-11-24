@@ -1,22 +1,178 @@
 #include <qds/core/Document.h>
 
 #include <algorithm>
+#include <unordered_set>
 
 namespace qds::core {
+namespace {
 
-bool Vec2::operator==(const Vec2 &other) const
+std::string defaultName(ElementKind kind)
 {
-    return x == other.x && y == other.y;
+    switch (kind) {
+    case ElementKind::Stock:
+        return "Stock";
+    case ElementKind::Flow:
+        return "Flow";
+    case ElementKind::Auxiliary:
+        return "Auxiliary";
+    case ElementKind::Constant:
+        return "Constant";
+    case ElementKind::Data:
+        return "Data";
+    default:
+        return {};
+    }
 }
 
-bool Vec2::operator!=(const Vec2 &other) const
+bool identifierStart(unsigned char c)
 {
-    return !(*this == other);
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_' || c >= 128;
 }
 
-bool Route::operator==(const Route &other) const
+bool identifierPart(unsigned char c)
 {
-    return mode == other.mode && controlPoints == other.controlPoints && manual == other.manual && locked == other.locked;
+    return identifierStart(c) || (c >= '0' && c <= '9') || c == '$';
+}
+
+std::string quotedIdentifier(const std::string &name)
+{
+    bool plain = !name.empty() && identifierStart(static_cast<unsigned char>(name.front()));
+    for (unsigned char c : name)
+        plain = plain && identifierPart(c);
+    if (plain)
+        return name;
+    std::string quoted = "\"";
+    for (char c : name) {
+        if (c == '\\' || c == '"')
+            quoted.push_back('\\');
+        if (c == '\n')
+            quoted += "\\n";
+        else
+            quoted.push_back(c);
+    }
+    quoted.push_back('"');
+    return quoted;
+}
+
+std::string unescapeIdentifier(const std::string &name)
+{
+    std::string result;
+    for (std::size_t index = 0; index < name.size(); ++index) {
+        if (name[index] == '\\' && index + 1 < name.size()) {
+            const char escaped = name[++index];
+            result.push_back(escaped == 'n' ? '\n' : escaped);
+        } else {
+            result.push_back(name[index]);
+        }
+    }
+    return result;
+}
+
+std::string replaceReference(const std::string &equation, const std::string &oldName, const std::string &newName)
+{
+    std::string result;
+    for (std::size_t index = 0; index < equation.size();) {
+        if (equation[index] == '"') {
+            const std::size_t start = index++;
+            std::string value;
+            bool closed = false;
+            while (index < equation.size()) {
+                if (equation[index] == '\\' && index + 1 < equation.size()) {
+                    value.push_back(equation[index++]);
+                    value.push_back(equation[index++]);
+                } else if (equation[index] == '"') {
+                    ++index;
+                    closed = true;
+                    break;
+                } else {
+                    value.push_back(equation[index++]);
+                }
+            }
+            if (closed && normalizeIdentifier(unescapeIdentifier(value)) == normalizeIdentifier(oldName))
+                result += quotedIdentifier(newName);
+            else
+                result += equation.substr(start, index - start);
+            continue;
+        }
+        const unsigned char c = static_cast<unsigned char>(equation[index]);
+        if (!identifierStart(c)) {
+            result.push_back(equation[index++]);
+            continue;
+        }
+        const std::size_t start = index++;
+        while (index < equation.size() && identifierPart(static_cast<unsigned char>(equation[index])))
+            ++index;
+        const std::string token = equation.substr(start, index - start);
+        result += normalizeIdentifier(token) == normalizeIdentifier(oldName) ? quotedIdentifier(newName) : token;
+    }
+    return result;
+}
+
+int removalRank(ElementKind kind)
+{
+    if (kind == ElementKind::Connector)
+        return 0;
+    if (kind == ElementKind::Flow)
+        return 1;
+    return 2;
+}
+
+} // namespace
+
+Document::Document()
+    : m_model(*this)
+    , m_diagram(*this)
+{
+}
+
+Document::Document(Document &&other) noexcept
+    : m_elements(std::move(other.m_elements))
+    , m_nameIndex(std::move(other.m_nameIndex))
+    , m_nextNameSuffix(std::move(other.m_nextNameSuffix))
+    , m_nextId(other.m_nextId)
+    , m_model(*this)
+    , m_diagram(*this)
+{
+    m_diagram.m_positions = std::move(other.m_diagram.m_positions);
+    m_diagram.m_routes = std::move(other.m_diagram.m_routes);
+}
+
+Document &Document::operator=(Document &&other) noexcept
+{
+    if (this == &other)
+        return *this;
+    m_elements = std::move(other.m_elements);
+    m_nameIndex = std::move(other.m_nameIndex);
+    m_nextNameSuffix = std::move(other.m_nextNameSuffix);
+    m_nextId = other.m_nextId;
+    m_diagram.m_positions = std::move(other.m_diagram.m_positions);
+    m_diagram.m_routes = std::move(other.m_diagram.m_routes);
+    return *this;
+}
+
+DocumentElement *Document::find(EntityId id)
+{
+    const auto it = m_elements.find(id);
+    return it == m_elements.end() ? nullptr : it->second.get();
+}
+
+const DocumentElement *Document::find(EntityId id) const
+{
+    const auto it = m_elements.find(id);
+    return it == m_elements.end() ? nullptr : it->second.get();
+}
+
+const ModelElement *Document::findByName(const std::string &name) const
+{
+    const auto it = m_nameIndex.find(normalizeIdentifier(name));
+    if (it == m_nameIndex.end())
+        return nullptr;
+    return dynamic_cast<const ModelElement *>(find(it->second));
+}
+
+ViewRange DiagramDefinition::elements() const
+{
+    return ViewRange(m_document.m_elements);
 }
 
 Vec2 DiagramDefinition::position(EntityId id) const
@@ -25,146 +181,417 @@ Vec2 DiagramDefinition::position(EntityId id) const
     return it == m_positions.end() ? Vec2 {} : it->second;
 }
 
-Route DiagramDefinition::route(ConnectionId id) const
+Route DiagramDefinition::route(EntityId id) const
 {
+    Route result;
+    const DocumentElement *element = m_document.find(id);
+    if (element && element->kind() == ElementKind::Flow)
+        result.mode = RouteMode::Straight;
     const auto it = m_routes.find(id);
-    return it == m_routes.end() ? Route {} : it->second;
+    return it == m_routes.end() ? result : it->second;
 }
 
-const std::unordered_map<EntityId, Vec2> &DiagramDefinition::positions() const
+template <typename T>
+EntityId Document::insert(std::unique_ptr<T> element, Vec2 position)
 {
-    return m_positions;
-}
-
-const std::unordered_map<ConnectionId, Route> &DiagramDefinition::routes() const
-{
-    return m_routes;
-}
-
-EntityId Document::createVariable(VariableType type, Vec2 position)
-{
-    const EntityId id = m_model.createVariable(type);
-    if (id != 0)
-        m_diagram.m_positions[id] = position;
-    return id;
-}
-
-EntityId Document::addVariable(const Variable &variable, Vec2 position)
-{
-    const EntityId id = m_model.addVariable(variable);
-    if (id != 0)
-        m_diagram.m_positions[id] = position;
-    return id;
-}
-
-bool Document::removeVariable(EntityId id)
-{
-    if (!m_model.variable(id))
-        return false;
-
-    std::vector<ConnectionId> removedConnections;
-    for (const Connection &connection : m_model.connections()) {
-        if (connection.from == id || connection.to == id)
-            removedConnections.push_back(connection.id);
+    const EntityId id = element->id();
+    const ElementKind kind = element->kind();
+    if (id == 0 || m_elements.count(id))
+        return 0;
+    if (auto *model = dynamic_cast<ModelElement *>(element.get())) {
+        if (model->nameKey.empty() || m_nameIndex.count(model->nameKey))
+            return 0;
+        m_nameIndex[model->nameKey] = id;
     }
-    if (!m_model.removeVariable(id))
+    m_elements.emplace(id, std::move(element));
+    m_diagram.m_positions[id] = position;
+    if (kind == ElementKind::Flow || kind == ElementKind::Connector) {
+        Route route;
+        if (kind == ElementKind::Flow)
+            route.mode = RouteMode::Straight;
+        m_diagram.m_routes[id] = route;
+    }
+    return id;
+}
+
+EntityId Document::createVariable(ElementKind kind, Vec2 position)
+{
+    if (kind != ElementKind::Stock && kind != ElementKind::Auxiliary && kind != ElementKind::Constant
+        && kind != ElementKind::Data)
+        return 0;
+    auto variable = std::make_unique<Variable>(m_nextId++, kind);
+    variable->displayName = uniqueName(kind);
+    variable->nameKey = normalizeIdentifier(variable->displayName);
+    return insert(std::move(variable), position);
+}
+
+EntityId Document::createFlow(EntityId from, EntityId to)
+{
+    if (from == to || !validFlowEndpoint(from) || !validFlowEndpoint(to))
+        return 0;
+    for (const DocumentElement &element : elements()) {
+        if (element.kind() == ElementKind::Flow) {
+            const Flow &flow = static_cast<const Flow &>(element);
+            if (flow.endpoints.from == from && flow.endpoints.to == to)
+                return 0;
+        }
+    }
+    auto flow = std::make_unique<Flow>(m_nextId++);
+    flow->displayName = uniqueName(ElementKind::Flow);
+    flow->nameKey = normalizeIdentifier(flow->displayName);
+    flow->endpoints = {from, to};
+    const Vec2 source = diagram().position(from);
+    const Vec2 target = diagram().position(to);
+    return insert(std::move(flow), {(source.x + target.x) / 2.0, (source.y + target.y) / 2.0});
+}
+
+EntityId Document::createConnector(EntityId from, EntityId to)
+{
+    if (from == to || !validConnectorEndpoint(from) || !validConnectorEndpoint(to))
+        return 0;
+    for (const DocumentElement &element : elements()) {
+        if (element.kind() == ElementKind::Connector) {
+            const Connector &connector = static_cast<const Connector &>(element);
+            if (connector.from == from && connector.to == to)
+                return 0;
+        }
+    }
+    auto connector = std::make_unique<Connector>(m_nextId++);
+    connector->from = from;
+    connector->to = to;
+    return insert(std::move(connector), {});
+}
+
+EntityId Document::createCloud(Vec2 position)
+{
+    return insert(std::make_unique<Cloud>(m_nextId++), position);
+}
+
+EntityId Document::createComment(const std::string &text, Vec2 position)
+{
+    auto comment = std::make_unique<Comment>(m_nextId++);
+    comment->content = text;
+    return insert(std::move(comment), position);
+}
+
+std::vector<EntityId> Document::cascade(EntityId id) const
+{
+    if (!find(id))
+        return {};
+    std::unordered_set<EntityId> included;
+    std::vector<EntityId> pending {id};
+    for (std::size_t index = 0; index < pending.size(); ++index) {
+        const EntityId current = pending[index];
+        if (!included.insert(current).second)
+            continue;
+        for (const DocumentElement &element : elements()) {
+            if (element.kind() == ElementKind::Flow) {
+                const Flow &flow = static_cast<const Flow &>(element);
+                if (flow.endpoints.from == current || flow.endpoints.to == current)
+                    pending.push_back(element.id());
+            } else if (element.kind() == ElementKind::Connector) {
+                const Connector &connector = static_cast<const Connector &>(element);
+                if (connector.from == current || connector.to == current)
+                    pending.push_back(element.id());
+            }
+        }
+    }
+    std::vector<EntityId> removed(included.begin(), included.end());
+    std::sort(removed.begin(), removed.end(), [this](EntityId left, EntityId right) {
+        const int leftRank = removalRank(find(left)->kind());
+        const int rightRank = removalRank(find(right)->kind());
+        return leftRank != rightRank ? leftRank < rightRank : left < right;
+    });
+    return removed;
+}
+
+std::vector<EntityId> Document::remove(EntityId id)
+{
+    const std::vector<EntityId> removed = cascade(id);
+    for (EntityId removedId : removed) {
+        if (auto *model = dynamic_cast<ModelElement *>(find(removedId)))
+            m_nameIndex.erase(model->nameKey);
+        m_elements.erase(removedId);
+        m_diagram.m_positions.erase(removedId);
+        m_diagram.m_routes.erase(removedId);
+    }
+    return removed;
+}
+
+std::optional<ElementData> Document::capture(EntityId id) const
+{
+    const DocumentElement *element = find(id);
+    if (!element)
+        return std::nullopt;
+    ElementData data;
+    data.id = id;
+    data.kind = element->kind();
+    data.position = diagram().position(id);
+    data.route = diagram().route(id);
+    if (auto *model = dynamic_cast<const ModelElement *>(element)) {
+        data.displayName = model->displayName;
+        data.equation = model->equation;
+        data.unit = model->unit;
+        data.comment = model->comment;
+    }
+    if (auto *comment = dynamic_cast<const Comment *>(element))
+        data.content = comment->content;
+    if (auto *flow = dynamic_cast<const Flow *>(element))
+        data.flowEndpoints = flow->endpoints;
+    if (auto *connector = dynamic_cast<const Connector *>(element)) {
+        data.from = connector->from;
+        data.to = connector->to;
+    }
+    return data;
+}
+
+bool Document::restore(const ElementData &data)
+{
+    const EntityId id = data.id == 0 ? m_nextId++ : data.id;
+    if (find(id))
         return false;
-    for (ConnectionId connectionId : removedConnections)
-        m_diagram.m_routes.erase(connectionId);
-    m_diagram.m_positions.erase(id);
+    const std::string normalized = normalizeIdentifier(data.displayName);
+    if (data.kind <= ElementKind::Data && (normalized.empty() || m_nameIndex.count(normalized)))
+        return false;
+    std::unique_ptr<DocumentElement> element;
+    if (data.kind == ElementKind::Flow) {
+        if (!validFlowEndpoint(data.flowEndpoints.from) || !validFlowEndpoint(data.flowEndpoints.to)
+            || data.flowEndpoints.from == data.flowEndpoints.to)
+            return false;
+        auto flow = std::make_unique<Flow>(id);
+        flow->endpoints = data.flowEndpoints;
+        element = std::move(flow);
+    } else if (data.kind == ElementKind::Connector) {
+        if (!validConnectorEndpoint(data.from) || !validConnectorEndpoint(data.to) || data.from == data.to)
+            return false;
+        auto connector = std::make_unique<Connector>(id);
+        connector->from = data.from;
+        connector->to = data.to;
+        element = std::move(connector);
+    } else if (data.kind == ElementKind::Cloud) {
+        element = std::make_unique<Cloud>(id);
+    } else if (data.kind == ElementKind::Comment) {
+        element = std::make_unique<Comment>(id);
+    } else if (data.kind <= ElementKind::Data) {
+        element = std::make_unique<Variable>(id, data.kind);
+    } else {
+        return false;
+    }
+    if (auto *model = dynamic_cast<ModelElement *>(element.get())) {
+        model->displayName = trimDisplayName(data.displayName);
+        model->nameKey = normalizeIdentifier(model->displayName);
+        model->equation = data.equation;
+        model->unit = data.unit;
+        model->comment = data.comment;
+    }
+    if (auto *comment = dynamic_cast<Comment *>(element.get()))
+        comment->content = data.content;
+    Route route = data.route;
+    if (data.kind == ElementKind::Flow && route.mode == RouteMode::Orthogonal)
+        return false;
+    if (insert(std::move(element), data.position) == 0)
+        return false;
+    if (data.kind == ElementKind::Flow || data.kind == ElementKind::Connector)
+        m_diagram.m_routes[id] = route;
     return true;
 }
 
-bool Document::renameVariable(EntityId id, const std::string &newName)
+bool Document::apply(const ElementData &data)
 {
-    return m_model.renameVariable(id, newName);
+    DocumentElement *element = find(data.id);
+    if (!element)
+        return restore(data);
+    if (element->kind() != data.kind)
+        return false;
+    if (auto *model = dynamic_cast<ModelElement *>(element)) {
+        if (!rename(data.id, data.displayName))
+            return false;
+        model->equation = data.equation;
+        model->unit = data.unit;
+        model->comment = data.comment;
+    }
+    if (auto *comment = dynamic_cast<Comment *>(element))
+        comment->content = data.content;
+    if (auto *flow = dynamic_cast<Flow *>(element)) {
+        if (flow->endpoints != data.flowEndpoints
+            && !reconnectFlow(data.id, data.flowEndpoints.from, data.flowEndpoints.to))
+            return false;
+    }
+    if (auto *connector = dynamic_cast<Connector *>(element)) {
+        if ((connector->from != data.from || connector->to != data.to)
+            && !reconnectConnector(data.id, data.from, data.to))
+            return false;
+    }
+    setPosition(data.id, data.position);
+    if (data.kind == ElementKind::Flow || data.kind == ElementKind::Connector)
+        return setRoute(data.id, data.route);
+    return true;
+}
+
+bool Document::rename(EntityId id, const std::string &displayName)
+{
+    auto *model = dynamic_cast<ModelElement *>(find(id));
+    if (!model)
+        return false;
+    const std::string trimmed = trimDisplayName(displayName);
+    const std::string normalized = normalizeIdentifier(trimmed);
+    if (normalized.empty())
+        return false;
+    const auto existing = m_nameIndex.find(normalized);
+    if (existing != m_nameIndex.end() && existing->second != id)
+        return false;
+    if (model->displayName == trimmed)
+        return true;
+    const std::string oldName = model->displayName;
+    updateReferences(id, oldName, trimmed);
+    m_nameIndex.erase(model->nameKey);
+    model->displayName = trimmed;
+    model->nameKey = normalized;
+    m_nameIndex[normalized] = id;
+    return true;
 }
 
 bool Document::setEquation(EntityId id, const std::string &equation)
 {
-    return m_model.setEquation(id, equation);
+    auto *model = dynamic_cast<ModelElement *>(find(id));
+    if (!model)
+        return false;
+    model->equation = equation;
+    return true;
 }
 
 bool Document::setUnit(EntityId id, const std::string &unit)
 {
-    return m_model.setUnit(id, unit);
+    auto *model = dynamic_cast<ModelElement *>(find(id));
+    if (!model)
+        return false;
+    model->unit = unit;
+    return true;
 }
 
 bool Document::setComment(EntityId id, const std::string &comment)
 {
-    return m_model.setComment(id, comment);
+    auto *model = dynamic_cast<ModelElement *>(find(id));
+    if (!model)
+        return false;
+    model->comment = comment;
+    return true;
+}
+
+bool Document::setCommentContent(EntityId id, const std::string &content)
+{
+    auto *comment = dynamic_cast<Comment *>(find(id));
+    if (!comment)
+        return false;
+    comment->content = content;
+    return true;
 }
 
 bool Document::setPosition(EntityId id, Vec2 position)
 {
-    if (!m_model.variable(id))
+    if (!find(id))
         return false;
     m_diagram.m_positions[id] = position;
+    for (const DocumentElement &element : elements()) {
+        if (element.kind() != ElementKind::Flow)
+            continue;
+        const Flow &flow = static_cast<const Flow &>(element);
+        if (flow.endpoints.from != id && flow.endpoints.to != id)
+            continue;
+        const Vec2 source = diagram().position(flow.endpoints.from);
+        const Vec2 target = diagram().position(flow.endpoints.to);
+        m_diagram.m_positions[element.id()] = {(source.x + target.x) / 2.0, (source.y + target.y) / 2.0};
+    }
     return true;
 }
 
-ConnectionId Document::createConnection(EntityId from, EntityId to, ConnectionType type)
+bool Document::reconnectFlow(EntityId id, EntityId from, EntityId to)
 {
-    const ConnectionId id = m_model.createConnection(from, to, type);
-    if (id != 0)
-        m_diagram.m_routes[id] = Route {};
-    return id;
-}
-
-ConnectionId Document::addConnection(const Connection &connection)
-{
-    const ConnectionId id = m_model.addConnection(connection);
-    if (id != 0)
-        m_diagram.m_routes[id] = Route {};
-    return id;
-}
-
-bool Document::removeConnection(ConnectionId id)
-{
-    if (!m_model.removeConnection(id))
+    auto *flow = dynamic_cast<Flow *>(find(id));
+    if (!flow || from == to || !validFlowEndpoint(from) || !validFlowEndpoint(to))
         return false;
-    m_diagram.m_routes.erase(id);
+    for (const DocumentElement &element : elements()) {
+        if (element.id() == id || element.kind() != ElementKind::Flow)
+            continue;
+        const Flow &other = static_cast<const Flow &>(element);
+        if (other.endpoints.from == from && other.endpoints.to == to)
+            return false;
+    }
+    flow->endpoints = {from, to};
+    const Vec2 source = diagram().position(from);
+    const Vec2 target = diagram().position(to);
+    m_diagram.m_positions[id] = {(source.x + target.x) / 2.0, (source.y + target.y) / 2.0};
     return true;
 }
 
-bool Document::reconnectConnection(ConnectionId id, EntityId from, EntityId to)
+bool Document::reconnectConnector(EntityId id, EntityId from, EntityId to)
 {
-    return m_model.reconnectConnection(id, from, to);
+    auto *connector = dynamic_cast<Connector *>(find(id));
+    if (!connector || from == to || !validConnectorEndpoint(from) || !validConnectorEndpoint(to))
+        return false;
+    for (const DocumentElement &element : elements()) {
+        if (element.id() == id || element.kind() != ElementKind::Connector)
+            continue;
+        const Connector &other = static_cast<const Connector &>(element);
+        if (other.from == from && other.to == to)
+            return false;
+    }
+    connector->from = from;
+    connector->to = to;
+    return true;
 }
 
-bool Document::setRoute(ConnectionId id, const Route &route)
+bool Document::setRoute(EntityId id, const Route &route)
 {
-    if (!m_model.connection(id))
+    const DocumentElement *element = find(id);
+    if (!element || (element->kind() != ElementKind::Flow && element->kind() != ElementKind::Connector)
+        || (element->kind() == ElementKind::Flow && route.mode == RouteMode::Orthogonal))
         return false;
     m_diagram.m_routes[id] = route;
     return true;
 }
 
-const Model &Document::model() const
-{
-    return m_model;
-}
-
-const DiagramDefinition &Document::diagram() const
-{
-    return m_diagram;
-}
-
-const Variable *Document::variable(EntityId id) const
-{
-    return m_model.variable(id);
-}
-
-const Connection *Document::connection(ConnectionId id) const
-{
-    return m_model.connection(id);
-}
-
 void Document::clear()
 {
-    m_model.clear();
+    m_elements.clear();
+    m_nameIndex.clear();
+    m_nextNameSuffix.clear();
     m_diagram.m_positions.clear();
     m_diagram.m_routes.clear();
+    m_nextId = 1;
+}
+
+bool Document::validFlowEndpoint(EntityId id) const
+{
+    const DocumentElement *element = find(id);
+    return element && (element->kind() == ElementKind::Stock || element->kind() == ElementKind::Cloud);
+}
+
+bool Document::validConnectorEndpoint(EntityId id) const
+{
+    const DocumentElement *element = find(id);
+    return element && element->kind() != ElementKind::Cloud && element->kind() != ElementKind::Connector;
+}
+
+std::string Document::uniqueName(ElementKind kind)
+{
+    const std::string base = defaultName(kind);
+    std::uint64_t &suffix = m_nextNameSuffix[kind];
+    if (suffix == 0)
+        suffix = 1;
+    for (;;) {
+        const std::string candidate = base + std::to_string(suffix++);
+        if (!m_nameIndex.count(normalizeIdentifier(candidate)))
+            return candidate;
+    }
+}
+
+void Document::updateReferences(EntityId, const std::string &oldName, const std::string &newName)
+{
+    for (auto &entry : m_elements) {
+        if (auto *model = dynamic_cast<ModelElement *>(entry.second.get()))
+            model->equation = replaceReference(model->equation, oldName, newName);
+    }
 }
 
 } // namespace qds::core

@@ -2,81 +2,146 @@
 
 #include <qds/core/Document.h>
 
-#include <QGraphicsItem>
 #include <QGraphicsObject>
 
-class VariableItem : public QGraphicsObject
+class DiagramItem : public QGraphicsObject
 {
     Q_OBJECT
 
 public:
-    enum { Type = UserType + 1 };
+    explicit DiagramItem(QGraphicsItem *parent = nullptr)
+        : QGraphicsObject(parent)
+    {
+    }
 
-    VariableItem(const qds::core::Variable &variable, const QPointF &position, QGraphicsItem *parent = nullptr);
-
-    int type() const override;
-    QRectF boundingRect() const override;
-    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
-
-    qds::core::EntityId id() const;
-    QString name() const;
-    qds::core::VariableType variableType() const;
-    QPointF boundaryPointToward(const QPointF &target) const;
-    void refresh(const qds::core::Variable &variable, const QPointF &position);
+    virtual qds::core::EntityId id() const = 0;
+    virtual QPointF boundaryPointToward(const QPointF &target) const;
 
 signals:
     void positionChanged(qds::core::EntityId id, const QPointF &position);
-    void moveFinished(qds::core::EntityId id, const QPointF &position);
+    void moveFinished(qds::core::EntityId id, const QPointF &position, Qt::KeyboardModifiers modifiers);
 
 protected:
     QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
+};
+
+class VariableItem : public DiagramItem
+{
+public:
+    enum { Type = UserType + 1 };
+
+    VariableItem(const qds::core::ModelElement &variable, const QPointF &position, QGraphicsItem *parent = nullptr);
+
+    int type() const override;
+    QRectF boundingRect() const override;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
+
+    qds::core::EntityId id() const override { return m_id; }
+    QString name() const { return m_name; }
+    qds::core::ElementKind elementKind() const { return m_kind; }
+    QPointF boundaryPointToward(const QPointF &target) const override;
+    void refresh(const qds::core::ModelElement &variable, const QPointF &position);
 
 private:
     qds::core::EntityId m_id;
     QString m_name;
-    qds::core::VariableType m_variableType;
+    qds::core::ElementKind m_kind;
 };
 
-class ConnectionItem : public QGraphicsItem
+class ViewObjectItem : public DiagramItem
 {
 public:
-    enum { Type = UserType + 2 };
+    enum { Type = UserType + 5 };
 
-    ConnectionItem(
-        qds::core::ConnectionId id,
-        qds::core::ConnectionType connectionType,
-        VariableItem *from,
-        VariableItem *to,
-        const qds::core::Route &route,
-        QGraphicsItem *parent = nullptr);
+    ViewObjectItem(const qds::core::ViewElement &object, const QPointF &position, QGraphicsItem *parent = nullptr);
 
     int type() const override;
+    QRectF boundingRect() const override;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
+    qds::core::EntityId id() const override { return m_id; }
+    QString text() const { return m_text; }
+    QPointF boundaryPointToward(const QPointF &target) const override;
+    void refresh(const qds::core::ViewElement &object, const QPointF &position);
+
+private:
+    qds::core::EntityId m_id;
+    QString m_text;
+    qds::core::ElementKind m_kind;
+};
+
+class RoutedItem : public DiagramItem
+{
+public:
+    RoutedItem(DiagramItem *from, DiagramItem *to, const qds::core::Route &route, QGraphicsItem *parent = nullptr);
+
     QRectF boundingRect() const override;
     QPainterPath shape() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
-    qds::core::ConnectionId id() const;
     bool connects(qds::core::EntityId id) const;
-    VariableItem *from() const;
-    VariableItem *to() const;
+    DiagramItem *from() const { return m_from; }
+    DiagramItem *to() const { return m_to; }
+    const qds::core::Route &route() const { return m_route; }
     QPainterPath geometryPath() const;
     QPolygonF arrowHead() const;
+    virtual qreal arrowSize() const;
+    virtual QVector<QPainterPath> linePaths() const;
     QVector<QLineF> controlGuides() const;
     void setControlGuidesVisible(bool visible);
     void setRoute(const qds::core::Route &route);
-    void rebind(VariableItem *from, VariableItem *to);
+    void rebind(DiagramItem *from, DiagramItem *to);
     void updatePosition();
 
-private:
+protected:
     QVector<QPointF> points() const;
 
-    qds::core::ConnectionId m_id;
-    qds::core::ConnectionType m_connectionType;
-    VariableItem *m_from;
-    VariableItem *m_to;
+    DiagramItem *m_from;
+    DiagramItem *m_to;
     qds::core::Route m_route;
+    QPointF m_fallbackPosition;
     bool m_controlGuidesVisible = false;
+};
+
+class ArrowItem : public RoutedItem
+{
+public:
+    enum { Type = UserType + 2 };
+
+    ArrowItem(qds::core::EntityId id, DiagramItem *from, DiagramItem *to, const qds::core::Route &route, QGraphicsItem *parent = nullptr);
+
+    int type() const override;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
+    qds::core::EntityId id() const override { return m_id; }
+
+private:
+    qds::core::EntityId m_id;
+};
+
+class FlowItem : public RoutedItem
+{
+public:
+    enum { Type = UserType + 4 };
+
+    FlowItem(
+        const qds::core::Flow &flow,
+        DiagramItem *from,
+        DiagramItem *to,
+        const qds::core::Route &route,
+        const QPointF &fallbackPosition,
+        QGraphicsItem *parent = nullptr);
+
+    int type() const override;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
+    qds::core::EntityId id() const override { return m_id; }
+    qreal arrowSize() const override { return 16.0; }
+    QVector<QPainterPath> linePaths() const override;
+    QVector<QPolygonF> valvePolygons() const;
+    void refresh(const qds::core::Flow &flow, DiagramItem *from, DiagramItem *to, const QPointF &fallbackPosition);
+
+private:
+    qds::core::EntityId m_id;
+    QString m_name;
 };
 
 class ControlPointHandle : public QGraphicsObject
@@ -91,20 +156,20 @@ public:
     };
     enum { Type = UserType + 3 };
 
-    ControlPointHandle(qds::core::ConnectionId id, int index, Role role, const QPointF &position);
+    ControlPointHandle(qds::core::EntityId id, int index, Role role, const QPointF &position);
 
     int type() const override;
     QRectF boundingRect() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
-    qds::core::ConnectionId connectionId() const;
-    int index() const;
-    Role role() const;
-    void assign(qds::core::ConnectionId id, int index, Role role, const QPointF &position);
+    qds::core::EntityId routeId() const { return m_routeId; }
+    int index() const { return m_index; }
+    Role role() const { return m_role; }
+    void assign(qds::core::EntityId id, int index, Role role, const QPointF &position);
 
 signals:
-    void moved(qds::core::ConnectionId id, int index, const QPointF &position);
-    void finished(qds::core::ConnectionId id, int index, const QPointF &position);
-    void removeRequested(qds::core::ConnectionId id, int index);
+    void moved(qds::core::EntityId id, int index, const QPointF &position);
+    void finished(qds::core::EntityId id, int index, const QPointF &position);
+    void removeRequested(qds::core::EntityId id, int index);
 
 protected:
     QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
@@ -112,7 +177,7 @@ protected:
     void mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event) override;
 
 private:
-    qds::core::ConnectionId m_connectionId;
+    qds::core::EntityId m_routeId;
     int m_index;
     Role m_role;
 };

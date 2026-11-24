@@ -10,7 +10,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt5 5.12 REQUIRED COMPONENTS Widgets)
+find_package(Qt5 5.12 REQUIRED COMPONENTS Widgets Svg)
 
 add_subdirectory(src/core)
 add_subdirectory(src/io)

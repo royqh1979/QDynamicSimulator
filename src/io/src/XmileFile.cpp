@@ -9,6 +9,8 @@
 #include <zlib.h>
 
 #include <algorithm>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -19,6 +21,9 @@ constexpr quint32 localHeaderSignature = 0x04034b50;
 constexpr quint32 centralHeaderSignature = 0x02014b50;
 constexpr quint32 endSignature = 0x06054b50;
 constexpr int maximumEntrySize = 64 * 1024 * 1024;
+
+using UidMap = std::unordered_map<quint64, core::EntityId>;
+using VariableKindMap = std::unordered_map<std::string, core::ElementKind>;
 
 QString translate(const char *text)
 {
@@ -309,24 +314,39 @@ bool readZip(const QByteArray &archive, QByteArray &xml, QByteArray &workspace, 
     return !foundWorkspace || extractEntry(archive, workspaceEntry, workspace, errorMessage);
 }
 
-QString variableTag(core::VariableType type)
+QString variableTag(core::ElementKind kind)
 {
-    switch (type) {
-    case core::VariableType::Stock:
+    switch (kind) {
+    case core::ElementKind::Stock:
         return QStringLiteral("stock");
-    case core::VariableType::Flow:
+    case core::ElementKind::Flow:
         return QStringLiteral("flow");
-    case core::VariableType::Auxiliary:
+    case core::ElementKind::Auxiliary:
+    case core::ElementKind::Constant:
+    case core::ElementKind::Data:
         return QStringLiteral("aux");
-    case core::VariableType::Constant:
-    case core::VariableType::Exogenous:
-        return QStringLiteral("aux");
-    case core::VariableType::Cloud:
+    case core::ElementKind::Cloud:
         return QStringLiteral("cloud");
-    case core::VariableType::Annotation:
+    case core::ElementKind::Comment:
         return QStringLiteral("text_box");
+    case core::ElementKind::Connector:
+        return QStringLiteral("connector");
     }
     return {};
+}
+
+QString elementName(const core::DocumentElement &element)
+{
+    if (const auto *model = dynamic_cast<const core::ModelElement *>(&element))
+        return QString::fromStdString(model->displayName);
+    if (const auto *comment = dynamic_cast<const core::Comment *>(&element))
+        return QString::fromStdString(comment->content);
+    return {};
+}
+
+const core::ModelElement *findElementByName(const core::Document &document, const std::string &name)
+{
+    return document.model().findByName(name);
 }
 
 QByteArray writeXml(const core::Document &document)
@@ -338,7 +358,7 @@ QByteArray writeXml(const core::Document &document)
     writer.writeStartDocument();
     writer.writeStartElement(QStringLiteral("xmile"));
     writer.writeDefaultNamespace(QStringLiteral("http://docs.oasis-open.org/xmile/ns/XMILE/v1.0"));
-    writer.writeAttribute(QStringLiteral("version"), QStringLiteral("1.0"));
+    writer.writeAttribute(QStringLiteral("version"), QStringLiteral("1.1"));
 
     writer.writeStartElement(QStringLiteral("header"));
     writer.writeStartElement(QStringLiteral("smile"));
@@ -357,11 +377,9 @@ QByteArray writeXml(const core::Document &document)
 
     writer.writeStartElement(QStringLiteral("model"));
     writer.writeStartElement(QStringLiteral("variables"));
-    for (const core::Variable &variable : model.variables()) {
-        if (variable.type == core::VariableType::Cloud || variable.type == core::VariableType::Annotation)
-            continue;
-        const QString name = QString::fromStdString(variable.name);
-        writer.writeStartElement(variableTag(variable.type));
+    for (const core::ModelElement &variable : model.elements()) {
+        const QString name = QString::fromStdString(variable.displayName);
+        writer.writeStartElement(variableTag(variable.kind()));
         writer.writeAttribute(QStringLiteral("name"), name);
         writer.writeTextElement(
             QStringLiteral("eqn"),
@@ -370,16 +388,15 @@ QByteArray writeXml(const core::Document &document)
             writer.writeTextElement(QStringLiteral("units"), QString::fromStdString(variable.unit));
         if (!variable.comment.empty())
             writer.writeTextElement(QStringLiteral("doc"), QString::fromStdString(variable.comment));
-        if (variable.type == core::VariableType::Stock) {
-            for (const core::Connection &connection : model.connections()) {
-                if (connection.type != core::ConnectionType::MaterialFlow)
+        if (variable.kind() == core::ElementKind::Stock) {
+            for (const core::ModelElement &candidate : model.elements()) {
+                if (candidate.kind() != core::ElementKind::Flow)
                     continue;
-                const core::Variable *from = model.variable(connection.from);
-                const core::Variable *to = model.variable(connection.to);
-                if (from && to && from->type == core::VariableType::Flow && connection.to == variable.id)
-                    writer.writeTextElement(QStringLiteral("inflow"), QString::fromStdString(from->name));
-                if (from && to && to->type == core::VariableType::Flow && connection.from == variable.id)
-                    writer.writeTextElement(QStringLiteral("outflow"), QString::fromStdString(to->name));
+                const auto &flow = static_cast<const core::Flow &>(candidate);
+                if (flow.endpoints.to == variable.id())
+                    writer.writeTextElement(QStringLiteral("inflow"), QString::fromStdString(flow.displayName));
+                if (flow.endpoints.from == variable.id())
+                    writer.writeTextElement(QStringLiteral("outflow"), QString::fromStdString(flow.displayName));
             }
         }
         writer.writeEndElement();
@@ -389,23 +406,51 @@ QByteArray writeXml(const core::Document &document)
     writer.writeStartElement(QStringLiteral("views"));
     writer.writeStartElement(QStringLiteral("view"));
     writer.writeAttribute(QStringLiteral("type"), QStringLiteral("stock_flow"));
-    for (const core::Variable &variable : model.variables()) {
-        writer.writeStartElement(variableTag(variable.type));
-        const core::Vec2 position = document.diagram().position(variable.id);
-        writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(variable.name));
+    for (const core::DocumentElement &element : document.elements()) {
+        if (element.kind() == core::ElementKind::Connector || element.kind() == core::ElementKind::Cloud)
+            continue;
+        writer.writeStartElement(variableTag(element.kind()));
+        const core::Vec2 position = document.diagram().position(element.id());
+        if (element.kind() != core::ElementKind::Comment)
+            writer.writeAttribute(QStringLiteral("name"), elementName(element));
+        else
+            writer.writeAttribute(QStringLiteral("uid"), QString::number(element.id()));
         writer.writeAttribute(QStringLiteral("x"), QString::number(position.x, 'g', 15));
         writer.writeAttribute(QStringLiteral("y"), QString::number(position.y, 'g', 15));
+        if (element.kind() == core::ElementKind::Flow) {
+            const auto &flow = static_cast<const core::Flow &>(element);
+            const core::Route &route = document.diagram().route(element.id());
+            writer.writeStartElement(QStringLiteral("pts"));
+            const auto writePoint = [&writer](const core::Vec2 &point) {
+                writer.writeStartElement(QStringLiteral("pt"));
+                writer.writeAttribute(QStringLiteral("x"), QString::number(point.x, 'g', 15));
+                writer.writeAttribute(QStringLiteral("y"), QString::number(point.y, 'g', 15));
+                writer.writeEndElement();
+            };
+            writePoint(document.diagram().position(flow.endpoints.from));
+            for (const core::Vec2 &point : route.controlPoints)
+                writePoint(point);
+            writePoint(document.diagram().position(flow.endpoints.to));
+            writer.writeEndElement();
+        }
+        if (element.kind() == core::ElementKind::Comment)
+            writer.writeCharacters(elementName(element));
         writer.writeEndElement();
     }
-    for (const core::Connection &connection : model.connections()) {
-        const core::Variable *from = model.variable(connection.from);
-        const core::Variable *to = model.variable(connection.to);
-        if (!from || !to)
+    for (const core::ViewElement &element : document.diagram().elements()) {
+        if (element.kind() != core::ElementKind::Connector)
+            continue;
+        const auto &connection = static_cast<const core::Connector &>(element);
+        const core::DocumentElement *from = document.find(connection.from);
+        const core::DocumentElement *to = document.find(connection.to);
+        if (!from || !to || !dynamic_cast<const core::ModelElement *>(from)
+            || !dynamic_cast<const core::ModelElement *>(to))
             continue;
         writer.writeStartElement(QStringLiteral("connector"));
-        writer.writeTextElement(QStringLiteral("from"), QString::fromStdString(from->name));
-        writer.writeTextElement(QStringLiteral("to"), QString::fromStdString(to->name));
-        const core::Route &route = document.diagram().route(connection.id);
+        writer.writeAttribute(QStringLiteral("uid"), QString::number(connection.id()));
+        writer.writeTextElement(QStringLiteral("from"), elementName(*from));
+        writer.writeTextElement(QStringLiteral("to"), elementName(*to));
+        const core::Route &route = document.diagram().route(connection.id());
         if (!route.controlPoints.empty()) {
             writer.writeStartElement(QStringLiteral("pts"));
             for (const core::Vec2 &point : route.controlPoints) {
@@ -429,14 +474,30 @@ QByteArray writeXml(const core::Document &document)
 struct PendingConnection {
     std::string from;
     std::string to;
-    core::ConnectionType type = core::ConnectionType::Information;
+    quint64 fromUid = 0;
+    quint64 toUid = 0;
     core::Route route;
+};
+
+struct PendingFlowEndpoint {
+    std::string flow;
+    std::string stock;
+    bool inflow = false;
+};
+
+struct PendingFlowRoute {
+    std::string flow;
+    core::Route route;
+    core::Vec2 position;
+    bool hasPosition = false;
 };
 
 bool parseVariable(
     QXmlStreamReader &reader,
     core::Document &model,
-    std::vector<PendingConnection> &pendingConnections,
+    const VariableKindMap &variableKinds,
+    std::vector<core::ElementData> &pendingFlows,
+    std::vector<PendingFlowEndpoint> &pendingFlowEndpoints,
     QString *errorMessage)
 {
     const QString tag = reader.name().toString();
@@ -446,14 +507,19 @@ bool parseVariable(
         return false;
     }
 
-    core::Variable variable;
-    variable.name = name.toStdString();
+    core::ElementData variable;
+    variable.displayName = name.toStdString();
     if (tag == QStringLiteral("stock"))
-        variable.type = core::VariableType::Stock;
-    else if (tag == QStringLiteral("flow"))
-        variable.type = core::VariableType::Flow;
-    else
-        variable.type = core::VariableType::Auxiliary;
+        variable.kind = core::ElementKind::Stock;
+    else if (tag == QStringLiteral("flow")) {
+        variable.kind = core::ElementKind::Flow;
+        variable.route.mode = core::RouteMode::Straight;
+    } else {
+        variable.kind = core::ElementKind::Auxiliary;
+        const auto kind = variableKinds.find(variable.displayName);
+        if (kind != variableKinds.end())
+            variable.kind = kind->second;
+    }
 
     QStringList inflows;
     QStringList outflows;
@@ -477,21 +543,25 @@ bool parseVariable(
             reader.skipCurrentElement();
     }
 
-    if (model.addVariable(variable) == 0) {
+    if (variable.kind == core::ElementKind::Flow) {
+        pendingFlows.push_back(std::move(variable));
+    } else if (!model.restore(variable)) {
         setError(errorMessage, translate("The model contains a duplicate variable name: %1").arg(name));
         return false;
     }
     for (const QString &flow : inflows)
-        pendingConnections.push_back({flow.toStdString(), variable.name, core::ConnectionType::MaterialFlow});
+        pendingFlowEndpoints.push_back({flow.toStdString(), variable.displayName, true});
     for (const QString &flow : outflows)
-        pendingConnections.push_back({variable.name, flow.toStdString(), core::ConnectionType::MaterialFlow});
+        pendingFlowEndpoints.push_back({flow.toStdString(), variable.displayName, false});
     return true;
 }
 
 bool parseVariables(
     QXmlStreamReader &reader,
     core::Document &model,
-    std::vector<PendingConnection> &pendingConnections,
+    const VariableKindMap &variableKinds,
+    std::vector<core::ElementData> &pendingFlows,
+    std::vector<PendingFlowEndpoint> &pendingFlowEndpoints,
     QString *errorMessage)
 {
     while (reader.readNext() != QXmlStreamReader::Invalid) {
@@ -501,13 +571,41 @@ bool parseVariables(
             continue;
         const QString tag = reader.name().toString();
         if (tag == QStringLiteral("stock") || tag == QStringLiteral("flow") || tag == QStringLiteral("aux")) {
-            if (!parseVariable(reader, model, pendingConnections, errorMessage))
+            if (!parseVariable(reader, model, variableKinds, pendingFlows, pendingFlowEndpoints, errorMessage))
                 return false;
         } else {
             reader.skipCurrentElement();
         }
     }
     return true;
+}
+
+void parseConnectorEndpoint(QXmlStreamReader &reader, PendingConnection &pending, bool from)
+{
+    QString name;
+    quint64 uid = 0;
+    const QString tag = reader.name().toString();
+    while (reader.readNext() != QXmlStreamReader::Invalid) {
+        if (reader.isEndElement() && reader.name().toString() == tag)
+            break;
+        if (reader.isCharacters())
+            name += reader.text().toString();
+        if (!reader.isStartElement())
+            continue;
+        const QXmlStreamAttributes attributes = reader.attributes();
+        if (attributes.hasAttribute(QStringLiteral("uid")))
+            uid = attributes.value(QStringLiteral("uid")).toULongLong();
+        if (attributes.hasAttribute(QStringLiteral("name")))
+            name = attributes.value(QStringLiteral("name")).toString();
+        name += reader.readElementText(QXmlStreamReader::IncludeChildElements);
+    }
+    if (from) {
+        pending.from = name.trimmed().toStdString();
+        pending.fromUid = uid;
+    } else {
+        pending.to = name.trimmed().toStdString();
+        pending.toUid = uid;
+    }
 }
 
 void parseConnector(QXmlStreamReader &reader, std::vector<PendingConnection> &pendingConnections)
@@ -521,9 +619,9 @@ void parseConnector(QXmlStreamReader &reader, std::vector<PendingConnection> &pe
         if (!reader.isStartElement())
             continue;
         if (reader.name() == QStringLiteral("from"))
-            pending.from = reader.readElementText().trimmed().toStdString();
+            parseConnectorEndpoint(reader, pending, true);
         else if (reader.name() == QStringLiteral("to"))
-            pending.to = reader.readElementText().trimmed().toStdString();
+            parseConnectorEndpoint(reader, pending, false);
         else if (reader.name() == QStringLiteral("pts")) {
             while (reader.readNext() != QXmlStreamReader::Invalid) {
                 if (reader.isEndElement() && reader.name() == QStringLiteral("pts"))
@@ -541,13 +639,19 @@ void parseConnector(QXmlStreamReader &reader, std::vector<PendingConnection> &pe
             reader.skipCurrentElement();
         }
     }
-    if (!pending.from.empty() && !pending.to.empty()) {
+    if ((!pending.from.empty() || pending.fromUid != 0) && (!pending.to.empty() || pending.toUid != 0)) {
         pending.route.manual = !pending.route.controlPoints.empty();
         pendingConnections.push_back(std::move(pending));
     }
 }
 
-void parseView(QXmlStreamReader &reader, core::Document &model, std::vector<PendingConnection> &pendingConnections)
+void parseView(
+    QXmlStreamReader &reader,
+    core::Document &model,
+    std::vector<PendingConnection> &pendingConnections,
+    std::vector<PendingFlowRoute> &pendingFlowRoutes,
+    std::unordered_set<core::EntityId> &positioned,
+    UidMap &uids)
 {
     while (reader.readNext() != QXmlStreamReader::Invalid) {
         if (reader.isEndElement() && reader.name() == QStringLiteral("view"))
@@ -560,31 +664,203 @@ void parseView(QXmlStreamReader &reader, core::Document &model, std::vector<Pend
             || tag == QStringLiteral("cloud") || tag == QStringLiteral("text_box")) {
             const QXmlStreamAttributes attributes = reader.attributes();
             const std::string name = attributes.value(QStringLiteral("name")).toString().toStdString();
-            const core::Variable *variable = model.model().variableByName(name);
+            const core::DocumentElement *variable = findElementByName(model, name);
             if (!variable && (tag == QStringLiteral("cloud") || tag == QStringLiteral("text_box"))) {
-                core::Variable created;
-                created.name = name;
-                created.type = tag == QStringLiteral("cloud") ? core::VariableType::Cloud : core::VariableType::Annotation;
-                const core::EntityId id = model.addVariable(created);
-                variable = model.variable(id);
+                core::EntityId created = 0;
+                if (tag == QStringLiteral("text_box")) {
+                    QString content = reader.readElementText(QXmlStreamReader::IncludeChildElements);
+                    if (content.isEmpty())
+                        content = attributes.value(QStringLiteral("name")).toString();
+                    created = model.createComment(content.toStdString());
+                } else {
+                    created = model.createCloud();
+                }
+                variable = model.find(created);
+                const quint64 uid = attributes.value(QStringLiteral("uid")).toULongLong();
+                if (created != 0 && uid != 0)
+                    uids[uid] = created;
             }
             bool xOk = false;
             bool yOk = false;
             const double x = attributes.value(QStringLiteral("x")).toDouble(&xOk);
             const double y = attributes.value(QStringLiteral("y")).toDouble(&yOk);
-            if (variable && xOk && yOk)
-                model.setPosition(variable->id, {x, y});
+            if (variable && xOk && yOk) {
+                model.setPosition(variable->id(), {x, y});
+                if (tag == QStringLiteral("stock") || tag == QStringLiteral("aux"))
+                    positioned.insert(variable->id());
+            }
+            if (tag == QStringLiteral("flow")) {
+                PendingFlowRoute pending;
+                pending.flow = name;
+                pending.route.mode = core::RouteMode::Straight;
+                pending.position = {x, y};
+                pending.hasPosition = xOk && yOk;
+                while (reader.readNext() != QXmlStreamReader::Invalid) {
+                    if (reader.isEndElement() && reader.name() == QStringLiteral("flow"))
+                        break;
+                    if (!reader.isStartElement() || reader.name() != QStringLiteral("pts"))
+                        continue;
+                    while (reader.readNext() != QXmlStreamReader::Invalid) {
+                        if (reader.isEndElement() && reader.name() == QStringLiteral("pts"))
+                            break;
+                        if (!reader.isStartElement() || reader.name() != QStringLiteral("pt"))
+                            continue;
+                        bool pointXOk = false;
+                        bool pointYOk = false;
+                        const double pointX = reader.attributes().value(QStringLiteral("x")).toDouble(&pointXOk);
+                        const double pointY = reader.attributes().value(QStringLiteral("y")).toDouble(&pointYOk);
+                        if (pointXOk && pointYOk)
+                            pending.route.controlPoints.push_back({pointX, pointY});
+                    }
+                }
+                pending.route.manual = pending.route.controlPoints.size() > 2;
+                pendingFlowRoutes.push_back(std::move(pending));
+            }
         } else if (tag == QStringLiteral("connector")) {
             parseConnector(reader, pendingConnections);
         }
     }
 }
 
-bool parseXml(const QByteArray &xml, core::Document &model, QString *errorMessage)
+void layoutMissingVariables(core::Document &document, const std::unordered_set<core::EntityId> &positioned)
+{
+    std::vector<const core::ModelElement *> missing;
+    for (const core::ModelElement &element : document.model().elements()) {
+        if (element.kind() != core::ElementKind::Flow && !positioned.count(element.id()))
+            missing.push_back(&element);
+    }
+    std::sort(missing.begin(), missing.end(), [](const core::ModelElement *left, const core::ModelElement *right) {
+        return left->id() < right->id();
+    });
+    for (std::size_t index = 0; index < missing.size(); ++index) {
+        document.setPosition(
+            missing[index]->id(),
+            {100.0 + static_cast<int>(index % 5) * 180.0,
+             100.0 + static_cast<int>(index / 5) * 140.0});
+    }
+}
+
+const PendingFlowRoute *findFlowRoute(const std::vector<PendingFlowRoute> &routes, const std::string &name)
+{
+    const auto found = std::find_if(routes.begin(), routes.end(), [&name](const PendingFlowRoute &route) {
+        return route.flow == name;
+    });
+    return found == routes.end() ? nullptr : &*found;
+}
+
+bool createImportedFlows(
+    core::Document &document,
+    const std::vector<core::ElementData> &flows,
+    const std::vector<PendingFlowEndpoint> &endpoints,
+    const std::vector<PendingFlowRoute> &routes,
+    QString *errorMessage)
+{
+    for (const PendingFlowEndpoint &endpoint : endpoints) {
+        const auto found = std::find_if(flows.begin(), flows.end(), [&endpoint](const core::ElementData &flow) {
+            return flow.displayName == endpoint.flow;
+        });
+        if (found == flows.end() || !document.model().findByName(endpoint.stock)) {
+            setError(errorMessage, translate("A stock references an undefined flow or stock."));
+            return false;
+        }
+    }
+
+    std::size_t flowIndex = 0;
+    for (const core::ElementData &source : flows) {
+        core::EntityId fromStock = 0;
+        core::EntityId toStock = 0;
+        for (const PendingFlowEndpoint &endpoint : endpoints) {
+            if (endpoint.flow != source.displayName)
+                continue;
+            const core::ModelElement *stock = document.model().findByName(endpoint.stock);
+            if (!stock || stock->kind() != core::ElementKind::Stock) {
+                setError(errorMessage, translate("A flow endpoint is not a stock: %1")
+                    .arg(QString::fromStdString(endpoint.stock)));
+                return false;
+            }
+            core::EntityId &slot = endpoint.inflow ? toStock : fromStock;
+            if (slot != 0 && slot != stock->id()) {
+                setError(errorMessage, translate("A flow has multiple source or target stocks: %1")
+                    .arg(QString::fromStdString(source.displayName)));
+                return false;
+            }
+            slot = stock->id();
+        }
+
+        const PendingFlowRoute *view = findFlowRoute(routes, source.displayName);
+        const std::vector<core::Vec2> points = view ? view->route.controlPoints : std::vector<core::Vec2> {};
+        const bool hasPath = points.size() >= 2;
+        core::Vec2 fromPosition;
+        core::Vec2 toPosition;
+        if (fromStock != 0) {
+            fromPosition = document.diagram().position(fromStock);
+        } else if (hasPath) {
+            fromPosition = points.front();
+        } else if (toStock != 0) {
+            fromPosition = document.diagram().position(toStock) + core::Vec2 {-160.0, 0.0};
+        } else if (view && view->hasPosition) {
+            fromPosition = view->position + core::Vec2 {-80.0, 0.0};
+        } else {
+            fromPosition = {100.0 + static_cast<int>(flowIndex % 5) * 220.0,
+                            100.0 + static_cast<int>(flowIndex / 5) * 180.0};
+        }
+        if (toStock != 0) {
+            toPosition = document.diagram().position(toStock);
+        } else if (hasPath) {
+            toPosition = points.back();
+        } else if (fromStock != 0) {
+            toPosition = fromPosition + core::Vec2 {160.0, 0.0};
+        } else if (view && view->hasPosition) {
+            toPosition = view->position + core::Vec2 {80.0, 0.0};
+        } else {
+            toPosition = fromPosition + core::Vec2 {160.0, 0.0};
+        }
+
+        const core::EntityId from = fromStock != 0 ? fromStock : document.createCloud(fromPosition);
+        const core::EntityId to = toStock != 0 ? toStock : document.createCloud(toPosition);
+        const core::EntityId id = document.createFlow(from, to);
+        if (id == 0) {
+            setError(errorMessage, translate("Could not create flow endpoints for: %1")
+                .arg(QString::fromStdString(source.displayName)));
+            return false;
+        }
+        core::ElementData target = source;
+        target.id = id;
+        target.flowEndpoints = {from, to};
+        target.position = view && view->hasPosition
+            ? view->position
+            : core::Vec2 {(fromPosition.x + toPosition.x) / 2.0, (fromPosition.y + toPosition.y) / 2.0};
+        if (view) {
+            target.route = view->route;
+            target.route.controlPoints.clear();
+            if (hasPath)
+                target.route.controlPoints.assign(points.begin() + 1, points.end() - 1);
+            target.route.manual = !target.route.controlPoints.empty();
+        }
+        if (!document.apply(target)) {
+            setError(errorMessage, translate("The model contains a duplicate or invalid flow: %1")
+                .arg(QString::fromStdString(source.displayName)));
+            return false;
+        }
+        ++flowIndex;
+    }
+    return true;
+}
+
+bool parseXml(
+    const QByteArray &xml,
+    core::Document &model,
+    const VariableKindMap &variableKinds,
+    UidMap &uids,
+    QString *errorMessage)
 {
     QXmlStreamReader reader(xml);
     core::Document parsed;
     std::vector<PendingConnection> pendingConnections;
+    std::vector<core::ElementData> pendingFlows;
+    std::vector<PendingFlowEndpoint> pendingFlowEndpoints;
+    std::vector<PendingFlowRoute> pendingFlowRoutes;
+    std::unordered_set<core::EntityId> positioned;
     bool foundRoot = false;
     bool foundView = false;
 
@@ -596,11 +872,11 @@ bool parseXml(const QByteArray &xml, core::Document &model, QString *errorMessag
         if (tag == QStringLiteral("xmile"))
             foundRoot = true;
         else if (tag == QStringLiteral("variables")) {
-            if (!parseVariables(reader, parsed, pendingConnections, errorMessage))
+            if (!parseVariables(reader, parsed, variableKinds, pendingFlows, pendingFlowEndpoints, errorMessage))
                 return false;
         } else if (tag == QStringLiteral("view") && !foundView) {
             foundView = true;
-            parseView(reader, parsed, pendingConnections);
+            parseView(reader, parsed, pendingConnections, pendingFlowRoutes, positioned, uids);
         }
     }
 
@@ -615,24 +891,27 @@ bool parseXml(const QByteArray &xml, core::Document &model, QString *errorMessag
         return false;
     }
 
+    layoutMissingVariables(parsed, positioned);
+    if (!createImportedFlows(parsed, pendingFlows, pendingFlowEndpoints, pendingFlowRoutes, errorMessage))
+        return false;
+
     for (const PendingConnection &connection : pendingConnections) {
-        const core::Variable *from = parsed.model().variableByName(connection.from);
-        const core::Variable *to = parsed.model().variableByName(connection.to);
+        const core::DocumentElement *from = connection.fromUid != 0
+            ? parsed.find(uids[connection.fromUid])
+            : findElementByName(parsed, connection.from);
+        const core::DocumentElement *to = connection.toUid != 0
+            ? parsed.find(uids[connection.toUid])
+            : findElementByName(parsed, connection.to);
         if (!from || !to)
             continue;
-        core::ConnectionType type = connection.type;
-        if (from->type == core::VariableType::Annotation || to->type == core::VariableType::Annotation)
-            type = core::ConnectionType::Annotation;
-        else if (type == core::ConnectionType::Information
-            && (from->type == core::VariableType::Flow || to->type == core::VariableType::Flow)
-            && (from->type == core::VariableType::Stock || from->type == core::VariableType::Cloud
-                || to->type == core::VariableType::Stock || to->type == core::VariableType::Cloud))
-            type = core::ConnectionType::MaterialFlow;
-        core::ConnectionId id = parsed.createConnection(from->id, to->id, type);
+        core::EntityId id = parsed.createConnector(from->id(), to->id());
         if (id == 0) {
-            for (const core::Connection &existing : parsed.model().connections()) {
-                if (existing.from == from->id && existing.to == to->id && existing.type == type) {
-                    id = existing.id;
+            for (const core::ViewElement &element : parsed.diagram().elements()) {
+                if (element.kind() != core::ElementKind::Connector)
+                    continue;
+                const auto &existing = static_cast<const core::Connector &>(element);
+                if (existing.from == from->id() && existing.to == to->id()) {
+                    id = existing.id();
                     break;
                 }
             }
@@ -641,18 +920,23 @@ bool parseXml(const QByteArray &xml, core::Document &model, QString *errorMessag
             parsed.setRoute(id, connection.route);
     }
 
-    if (!foundView) {
-        const auto &variables = parsed.model().variables();
-        for (std::size_t index = 0; index < variables.size(); ++index) {
-            parsed.setPosition(
-                variables[index].id,
-                {100.0 + static_cast<int>(index % 5) * 180.0,
-                 100.0 + static_cast<int>(index / 5) * 140.0});
-        }
-    }
-
     model = std::move(parsed);
     return true;
+}
+
+void writeWorkspaceEndpoint(
+    QXmlStreamWriter &writer,
+    const core::Document &document,
+    const QString &attribute,
+    core::EntityId id)
+{
+    const core::DocumentElement *element = document.find(id);
+    if (!element)
+        return;
+    if (dynamic_cast<const core::ModelElement *>(element))
+        writer.writeAttribute(attribute, elementName(*element));
+    else
+        writer.writeAttribute(attribute + QStringLiteral("-uid"), QString::number(id));
 }
 
 QByteArray writeWorkspace(const core::Document &document)
@@ -662,19 +946,62 @@ QByteArray writeWorkspace(const core::Document &document)
     writer.setAutoFormatting(true);
     writer.writeStartDocument();
     writer.writeStartElement(QStringLiteral("qds-workspace"));
-    writer.writeAttribute(QStringLiteral("version"), QStringLiteral("1"));
-    for (const core::Connection &connection : document.model().connections()) {
-        const core::Variable *from = document.variable(connection.from);
-        const core::Variable *to = document.variable(connection.to);
+    writer.writeAttribute(QStringLiteral("version"), QStringLiteral("2"));
+    for (const core::ViewElement &element : document.diagram().elements()) {
+        if (element.kind() != core::ElementKind::Cloud)
+            continue;
+        const core::Vec2 position = document.diagram().position(element.id());
+        writer.writeStartElement(QStringLiteral("cloud"));
+        writer.writeAttribute(QStringLiteral("uid"), QString::number(element.id()));
+        writer.writeAttribute(QStringLiteral("x"), QString::number(position.x, 'g', 15));
+        writer.writeAttribute(QStringLiteral("y"), QString::number(position.y, 'g', 15));
+        writer.writeEndElement();
+    }
+    for (const core::ModelElement &element : document.model().elements()) {
+        if (element.kind() != core::ElementKind::Constant && element.kind() != core::ElementKind::Data)
+            continue;
+        writer.writeStartElement(QStringLiteral("variable-kind"));
+        writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(element.displayName));
+        writer.writeAttribute(
+            QStringLiteral("kind"),
+            element.kind() == core::ElementKind::Constant ? QStringLiteral("constant") : QStringLiteral("data"));
+        writer.writeEndElement();
+    }
+    for (const core::ViewElement &element : document.diagram().elements()) {
+        if (element.kind() != core::ElementKind::Connector)
+            continue;
+        const auto &connection = static_cast<const core::Connector &>(element);
+        const core::DocumentElement *from = document.find(connection.from);
+        const core::DocumentElement *to = document.find(connection.to);
         if (!from || !to)
             continue;
-        const core::Route route = document.diagram().route(connection.id);
+        const core::Route route = document.diagram().route(connection.id());
         writer.writeStartElement(QStringLiteral("route"));
-        writer.writeAttribute(QStringLiteral("from"), QString::fromStdString(from->name));
-        writer.writeAttribute(QStringLiteral("to"), QString::fromStdString(to->name));
+        writeWorkspaceEndpoint(writer, document, QStringLiteral("from"), connection.from);
+        writeWorkspaceEndpoint(writer, document, QStringLiteral("to"), connection.to);
         const QString mode = route.mode == core::RouteMode::Straight ? QStringLiteral("straight")
             : route.mode == core::RouteMode::Bezier ? QStringLiteral("bezier") : QStringLiteral("orthogonal");
         writer.writeAttribute(QStringLiteral("mode"), mode);
+        writer.writeAttribute(QStringLiteral("manual"), QString::number(route.manual ? 1 : 0));
+        writer.writeAttribute(QStringLiteral("locked"), QString::number(route.locked ? 1 : 0));
+        for (const core::Vec2 &point : route.controlPoints) {
+            writer.writeStartElement(QStringLiteral("pt"));
+            writer.writeAttribute(QStringLiteral("x"), QString::number(point.x, 'g', 15));
+            writer.writeAttribute(QStringLiteral("y"), QString::number(point.y, 'g', 15));
+            writer.writeEndElement();
+        }
+        writer.writeEndElement();
+    }
+    for (const core::ModelElement &element : document.model().elements()) {
+        if (element.kind() != core::ElementKind::Flow)
+            continue;
+        const auto &flow = static_cast<const core::Flow &>(element);
+        const core::Route route = document.diagram().route(flow.id());
+        writer.writeStartElement(QStringLiteral("flow-route"));
+        writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(flow.displayName));
+        writeWorkspaceEndpoint(writer, document, QStringLiteral("from"), flow.endpoints.from);
+        writeWorkspaceEndpoint(writer, document, QStringLiteral("to"), flow.endpoints.to);
+        writer.writeAttribute(QStringLiteral("mode"), route.mode == core::RouteMode::Bezier ? QStringLiteral("bezier") : QStringLiteral("straight"));
         writer.writeAttribute(QStringLiteral("manual"), QString::number(route.manual ? 1 : 0));
         writer.writeAttribute(QStringLiteral("locked"), QString::number(route.locked ? 1 : 0));
         for (const core::Vec2 &point : route.controlPoints) {
@@ -690,23 +1017,94 @@ QByteArray writeWorkspace(const core::Document &document)
     return output;
 }
 
-void applyWorkspace(core::Document &document, const QByteArray &xml)
+core::EntityId workspaceEndpoint(
+    const core::Document &document,
+    const QXmlStreamAttributes &attributes,
+    const QString &name,
+    UidMap &uids,
+    core::EntityId current = 0)
 {
+    if (attributes.hasAttribute(name)) {
+        const core::ModelElement *element = document.model().findByName(attributes.value(name).toString().toStdString());
+        return element ? element->id() : 0;
+    }
+    const QString uidName = name + QStringLiteral("-uid");
+    const quint64 uid = attributes.value(uidName).toULongLong();
+    if (uid == 0)
+        return 0;
+    const auto found = uids.find(uid);
+    if (found != uids.end())
+        return found->second;
+    const core::DocumentElement *element = document.find(current);
+    if (element && element->kind() == core::ElementKind::Cloud) {
+        uids[uid] = current;
+        return current;
+    }
+    return 0;
+}
+
+VariableKindMap readWorkspaceVariableKinds(const QByteArray &xml)
+{
+    VariableKindMap kinds;
     QXmlStreamReader reader(xml);
     while (!reader.atEnd()) {
         reader.readNext();
-        if (!reader.isStartElement() || reader.name() != QStringLiteral("route"))
+        if (!reader.isStartElement() || reader.name() != QStringLiteral("variable-kind"))
             continue;
         const QXmlStreamAttributes attributes = reader.attributes();
-        const std::string fromName = attributes.value(QStringLiteral("from")).toString().toStdString();
-        const std::string toName = attributes.value(QStringLiteral("to")).toString().toStdString();
-        const core::Variable *from = document.model().variableByName(fromName);
-        const core::Variable *to = document.model().variableByName(toName);
-        if (!from || !to) {
+        const QString kind = attributes.value(QStringLiteral("kind")).toString();
+        if (kind != QStringLiteral("constant") && kind != QStringLiteral("data")) {
             reader.skipCurrentElement();
             continue;
         }
-        core::Route route;
+        kinds[attributes.value(QStringLiteral("name")).toString().toStdString()] =
+            kind == QStringLiteral("constant") ? core::ElementKind::Constant : core::ElementKind::Data;
+        reader.skipCurrentElement();
+    }
+    return kinds;
+}
+
+void applyWorkspace(core::Document &document, const QByteArray &xml, UidMap &uids)
+{
+    struct CloudRecord {
+        quint64 uid = 0;
+        core::Vec2 position;
+    };
+    std::vector<CloudRecord> clouds;
+    QXmlStreamReader reader(xml);
+    while (!reader.atEnd()) {
+        reader.readNext();
+        if (!reader.isStartElement())
+            continue;
+        if (reader.name() == QStringLiteral("cloud")) {
+            const QXmlStreamAttributes attributes = reader.attributes();
+            clouds.push_back({attributes.value(QStringLiteral("uid")).toULongLong(),
+                              {attributes.value(QStringLiteral("x")).toDouble(),
+                               attributes.value(QStringLiteral("y")).toDouble()}});
+            reader.skipCurrentElement();
+            continue;
+        }
+        if (reader.name() != QStringLiteral("route") && reader.name() != QStringLiteral("flow-route"))
+            continue;
+        const bool flowRoute = reader.name() == QStringLiteral("flow-route");
+        const QXmlStreamAttributes attributes = reader.attributes();
+        const std::string flowName = attributes.value(QStringLiteral("name")).toString().toStdString();
+        const core::ModelElement *flow = document.model().findByName(flowName);
+        if (flowRoute && !flow) {
+            reader.skipCurrentElement();
+            continue;
+        }
+        const core::FlowEndpoints current = flowRoute
+            ? static_cast<const core::Flow *>(flow)->endpoints
+            : core::FlowEndpoints {};
+        const core::EntityId from = workspaceEndpoint(document, attributes, QStringLiteral("from"), uids, current.from);
+        const core::EntityId to = workspaceEndpoint(document, attributes, QStringLiteral("to"), uids, current.to);
+        if (from == 0 || to == 0) {
+            reader.skipCurrentElement();
+            continue;
+        }
+        core::Route route = flowRoute ? document.diagram().route(flow->id()) : core::Route();
+        route.controlPoints.clear();
         const QString mode = attributes.value(QStringLiteral("mode")).toString();
         if (mode == QStringLiteral("straight"))
             route.mode = core::RouteMode::Straight;
@@ -715,7 +1113,8 @@ void applyWorkspace(core::Document &document, const QByteArray &xml)
         route.manual = attributes.value(QStringLiteral("manual")).toInt() != 0;
         route.locked = attributes.value(QStringLiteral("locked")).toInt() != 0;
         while (reader.readNext() != QXmlStreamReader::Invalid) {
-            if (reader.isEndElement() && reader.name() == QStringLiteral("route"))
+            if (reader.isEndElement()
+                && (reader.name() == QStringLiteral("route") || reader.name() == QStringLiteral("flow-route")))
                 break;
             if (!reader.isStartElement() || reader.name() != QStringLiteral("pt"))
                 continue;
@@ -726,11 +1125,36 @@ void applyWorkspace(core::Document &document, const QByteArray &xml)
             if (xOk && yOk)
                 route.controlPoints.push_back({x, y});
         }
-        for (const core::Connection &connection : document.model().connections()) {
-            if (connection.from == from->id && connection.to == to->id) {
-                document.setRoute(connection.id, route);
+        if (flowRoute) {
+            document.reconnectFlow(flow->id(), from, to);
+            document.setRoute(flow->id(), route);
+            continue;
+        }
+        core::EntityId id = 0;
+        for (const core::ViewElement &element : document.diagram().elements()) {
+            if (element.kind() != core::ElementKind::Connector)
+                continue;
+            const auto &connection = static_cast<const core::Connector &>(element);
+            if (connection.from == from && connection.to == to) {
+                id = connection.id();
                 break;
             }
+        }
+        if (id == 0)
+            id = document.createConnector(from, to);
+        if (id != 0)
+            document.setRoute(id, route);
+    }
+    for (const CloudRecord &cloud : clouds) {
+        if (cloud.uid == 0)
+            continue;
+        const auto found = uids.find(cloud.uid);
+        if (found != uids.end() && document.find(found->second)) {
+            document.setPosition(found->second, cloud.position);
+        } else {
+            const core::EntityId id = document.createCloud(cloud.position);
+            if (id != 0)
+                uids[cloud.uid] = id;
         }
     }
 }
@@ -779,10 +1203,12 @@ bool loadXmile(const QString &fileName, core::Document &model, QString *errorMes
     } else {
         xml = contents;
     }
-    if (!parseXml(xml, model, errorMessage))
+    const VariableKindMap variableKinds = workspace.isEmpty() ? VariableKindMap {} : readWorkspaceVariableKinds(workspace);
+    UidMap uids;
+    if (!parseXml(xml, model, variableKinds, uids, errorMessage))
         return false;
     if (!workspace.isEmpty())
-        applyWorkspace(model, workspace);
+        applyWorkspace(model, workspace, uids);
     return true;
 }
 

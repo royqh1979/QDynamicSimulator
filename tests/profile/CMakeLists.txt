@@ -9,3 +9,10 @@ add_executable(profile-editor
 )
 target_link_libraries(profile-editor PRIVATE QDS::Editor Qt5::Widgets)
 add_dependencies(all-profile-targets profile-editor)
+
+add_executable(profile-icons
+    IconProfile.cpp
+    ../../src/app/resources/icons.qrc
+)
+target_link_libraries(profile-icons PRIVATE Qt5::Widgets Qt5::Svg)
+add_dependencies(all-profile-targets profile-icons)

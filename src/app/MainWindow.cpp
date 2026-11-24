@@ -4,8 +4,8 @@
 #include "DiagramView.h"
 #include "DocumentController.h"
 #include "EntityPalette.h"
-#include "EquationEditor.h"
 #include "MiniMapView.h"
+#include "PropertyPanel.h"
 #include <qds/io/XmileFile.h>
 #include <qds/core/Validation.h>
 
@@ -14,25 +14,42 @@
 #include <QCloseEvent>
 #include <QDir>
 #include <QDockWidget>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QFormLayout>
+#include <QIcon>
 #include <QKeySequence>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
+#include <QUrl>
 
 namespace {
 
 ClipboardData clipboard;
+
+QIcon actionIcon(const char *name)
+{
+    return QIcon(QStringLiteral(":/icons/") + QLatin1String(name) + QStringLiteral(".svg"));
+}
+
+bool isXmileFileDrop(const QMimeData *mime)
+{
+    if (!mime->hasUrls() || mime->urls().size() != 1)
+        return false;
+    const QUrl url = mime->urls().front();
+    return url.isLocalFile() && QFileInfo(url.toLocalFile()).suffix().compare(QStringLiteral("xmile"), Qt::CaseInsensitive) == 0;
+}
 
 }
 
@@ -42,14 +59,19 @@ MainWindow::MainWindow(QWidget *parent)
     , m_scene(new DiagramScene(m_controller, this))
     , m_view(new DiagramView(m_scene, this))
 {
+    Q_INIT_RESOURCE(icons);
+    setAcceptDrops(true);
     setCentralWidget(m_view);
+    connect(m_view, &DiagramView::fileOpenRequested, this, [this](const QString &fileName) {
+        if (maybeSave())
+            openFile(fileName);
+    });
     createActions();
     createPropertyPanel();
 
     connect(m_controller->undoStack(), &QUndoStack::cleanChanged, this, [this](bool clean) {
         setDirty(!clean);
     });
-    connect(m_scene, &QGraphicsScene::selectionChanged, this, &MainWindow::updatePropertyEditor);
     connect(m_controller, &DocumentController::documentChanged, this, &MainWindow::refreshValidation);
     connect(m_scene, &DiagramScene::editingFinished, this, [this]() {
         setTool(DiagramScene::Tool::Select);
@@ -66,7 +88,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_autoSaveTimer->start(10000);
 
     setCurrentFile(QString());
-    statusBar()->showMessage(tr("选择工具可拖动元素；滚轮缩放画布"), 5000);
+    statusBar()->showMessage(tr("Drag elements with Select; zoom with the mouse wheel"), 5000);
     resize(1200, 800);
 }
 
@@ -75,7 +97,7 @@ bool MainWindow::openFile(const QString &fileName)
     qds::core::Document document;
     QString error;
     if (!qds::io::loadXmile(fileName, document, &error)) {
-        QMessageBox::warning(this, tr("打开失败"), error);
+        QMessageBox::warning(this, tr("Open failed"), error);
         return false;
     }
 
@@ -87,7 +109,7 @@ bool MainWindow::openFile(const QString &fileName)
     QFile::remove(recoveryFileName());
     if (!m_scene->items().isEmpty())
         m_view->centerOn(m_scene->itemsBoundingRect().center());
-    updatePropertyEditor();
+    m_propertyPanel->refresh();
     return true;
 }
 
@@ -102,25 +124,40 @@ void MainWindow::closeEvent(QCloseEvent *event)
     }
 }
 
+void MainWindow::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (isXmileFileDrop(event->mimeData()))
+        event->acceptProposedAction();
+}
+
+void MainWindow::dropEvent(QDropEvent *event)
+{
+    if (!isXmileFileDrop(event->mimeData()))
+        return;
+    if (maybeSave())
+        openFile(event->mimeData()->urls().front().toLocalFile());
+    event->acceptProposedAction();
+}
+
 void MainWindow::createActions()
 {
-    QMenu *fileMenu = menuBar()->addMenu(tr("文件(&F)"));
-    QToolBar *fileToolBar = addToolBar(tr("文件"));
+    QMenu *fileMenu = menuBar()->addMenu(tr("&File"));
+    QToolBar *fileToolBar = addToolBar(tr("File"));
 
-    QAction *newAction = new QAction(tr("新建(&N)"), this);
+    QAction *newAction = new QAction(actionIcon("new"), tr("&New"), this);
     newAction->setShortcut(QKeySequence::New);
     connect(newAction, &QAction::triggered, this, &MainWindow::newFile);
     fileMenu->addAction(newAction);
     fileToolBar->addAction(newAction);
 
-    QAction *openAction = new QAction(tr("打开(&O)..."), this);
+    QAction *openAction = new QAction(actionIcon("open"), tr("&Open..."), this);
     openAction->setShortcut(QKeySequence::Open);
     connect(openAction, &QAction::triggered, this, &MainWindow::open);
     fileMenu->addAction(openAction);
     fileToolBar->addAction(openAction);
-    m_recentMenu = fileMenu->addMenu(tr("最近文件"));
+    m_recentMenu = fileMenu->addMenu(actionIcon("open"), tr("Recent files"));
 
-    QAction *saveAction = new QAction(tr("保存(&S)"), this);
+    QAction *saveAction = new QAction(actionIcon("save"), tr("&Save"), this);
     saveAction->setShortcut(QKeySequence::Save);
     connect(saveAction, &QAction::triggered, this, [this]() {
         save();
@@ -128,7 +165,7 @@ void MainWindow::createActions()
     fileMenu->addAction(saveAction);
     fileToolBar->addAction(saveAction);
 
-    QAction *saveAsAction = new QAction(tr("另存为(&A)..."), this);
+    QAction *saveAsAction = new QAction(actionIcon("save-as"), tr("Save &As..."), this);
     saveAsAction->setShortcut(QKeySequence::SaveAs);
     connect(saveAsAction, &QAction::triggered, this, [this]() {
         saveAs();
@@ -136,16 +173,18 @@ void MainWindow::createActions()
     fileMenu->addAction(saveAsAction);
 
     fileMenu->addSeparator();
-    QAction *exitAction = new QAction(tr("退出(&X)"), this);
+    QAction *exitAction = new QAction(actionIcon("exit"), tr("E&xit"), this);
     exitAction->setShortcut(QKeySequence::Quit);
     connect(exitAction, &QAction::triggered, this, &QWidget::close);
     fileMenu->addAction(exitAction);
 
-    QMenu *editMenu = menuBar()->addMenu(tr("编辑(&E)"));
-    QToolBar *editToolBar = addToolBar(tr("编辑"));
-    QAction *undoAction = m_controller->undoStack()->createUndoAction(this, tr("撤销(&U)"));
+    QMenu *editMenu = menuBar()->addMenu(tr("&Edit"));
+    QToolBar *editToolBar = addToolBar(tr("Edit"));
+    QAction *undoAction = m_controller->undoStack()->createUndoAction(this, tr("&Undo"));
+    undoAction->setIcon(actionIcon("undo"));
     undoAction->setShortcut(QKeySequence::Undo);
-    QAction *redoAction = m_controller->undoStack()->createRedoAction(this, tr("重做(&R)"));
+    QAction *redoAction = m_controller->undoStack()->createRedoAction(this, tr("&Redo"));
+    redoAction->setIcon(actionIcon("redo"));
     redoAction->setShortcut(QKeySequence::Redo);
     editMenu->addAction(undoAction);
     editMenu->addAction(redoAction);
@@ -155,8 +194,9 @@ void MainWindow::createActions()
     editToolBar->addSeparator();
     QActionGroup *toolGroup = new QActionGroup(this);
 
-    auto addToolAction = [this, toolGroup, editMenu, editToolBar](const QString &text, DiagramScene::Tool tool) {
-        QAction *action = new QAction(text, this);
+    auto addToolAction = [this, toolGroup, editMenu, editToolBar](
+                             const QString &text, DiagramScene::Tool tool, const char *iconName) {
+        QAction *action = new QAction(actionIcon(iconName), text, this);
         action->setCheckable(true);
         toolGroup->addAction(action);
         editMenu->addAction(action);
@@ -167,69 +207,66 @@ void MainWindow::createActions()
         return action;
     };
 
-    m_selectAction = addToolAction(tr("选择"), DiagramScene::Tool::Select);
+    m_selectAction = addToolAction(tr("Select"), DiagramScene::Tool::Select, "select");
     m_selectAction->setChecked(true);
     m_selectAction->setShortcut(QKeySequence(Qt::Key_Escape));
-    QAction *stockAction = addToolAction(tr("存量"), DiagramScene::Tool::AddStock);
+    QAction *stockAction = addToolAction(tr("Stock"), DiagramScene::Tool::AddStock, "stock");
     stockAction->setShortcut(QKeySequence(Qt::Key_1));
-    QAction *flowAction = addToolAction(tr("流量"), DiagramScene::Tool::AddFlow);
+    QAction *flowAction = addToolAction(tr("Flow"), DiagramScene::Tool::AddFlow, "flow");
     flowAction->setShortcut(QKeySequence(Qt::Key_2));
-    QAction *auxiliaryAction = addToolAction(tr("辅助变量"), DiagramScene::Tool::AddAuxiliary);
+    QAction *auxiliaryAction = addToolAction(tr("Auxiliary"), DiagramScene::Tool::AddAuxiliary, "auxiliary");
     auxiliaryAction->setShortcut(QKeySequence(Qt::Key_3));
-    QAction *constantAction = addToolAction(tr("常量"), DiagramScene::Tool::AddConstant);
+    QAction *constantAction = addToolAction(tr("Constant"), DiagramScene::Tool::AddConstant, "constant");
     constantAction->setShortcut(QKeySequence(Qt::Key_5));
-    QAction *exogenousAction = addToolAction(tr("外生变量"), DiagramScene::Tool::AddExogenous);
-    exogenousAction->setShortcut(QKeySequence(Qt::Key_6));
-    QAction *cloudAction = addToolAction(tr("云团"), DiagramScene::Tool::AddCloud);
+    QAction *dataAction = addToolAction(tr("Data"), DiagramScene::Tool::AddData, "data");
+    dataAction->setShortcut(QKeySequence(Qt::Key_6));
+    QAction *cloudAction = addToolAction(tr("Cloud"), DiagramScene::Tool::AddCloud, "cloud");
     cloudAction->setShortcut(QKeySequence(Qt::Key_7));
-    QAction *annotationAction = addToolAction(tr("注释"), DiagramScene::Tool::AddAnnotation);
+    QAction *annotationAction = addToolAction(tr("Comment"), DiagramScene::Tool::AddComment, "annotation");
     annotationAction->setShortcut(QKeySequence(Qt::Key_8));
-    QAction *connectAction = addToolAction(tr("依赖线"), DiagramScene::Tool::Connect);
+    QAction *connectAction = addToolAction(tr("Arrow"), DiagramScene::Tool::Connect, "connect");
     connectAction->setShortcut(QKeySequence(Qt::Key_4));
-    QAction *materialAction = addToolAction(tr("物料流"), DiagramScene::Tool::ConnectMaterial);
-    materialAction->setShortcut(QKeySequence(Qt::Key_9));
-    addToolAction(tr("注释箭头"), DiagramScene::Tool::ConnectAnnotation);
 
     editToolBar->addSeparator();
-    QAction *deleteAction = new QAction(tr("删除"), this);
+    QAction *deleteAction = new QAction(actionIcon("delete"), tr("Delete"), this);
     deleteAction->setShortcut(QKeySequence(Qt::Key_Delete));
     connect(deleteAction, &QAction::triggered, m_scene, &DiagramScene::removeSelected);
     editMenu->addSeparator();
     editMenu->addAction(deleteAction);
     editToolBar->addAction(deleteAction);
 
-    QAction *selectAllAction = new QAction(tr("全选"), this);
+    QAction *selectAllAction = new QAction(actionIcon("select-all"), tr("Select all"), this);
     selectAllAction->setShortcut(QKeySequence::SelectAll);
     connect(selectAllAction, &QAction::triggered, m_scene, &DiagramScene::selectAllItems);
     editMenu->addAction(selectAllAction);
 
     auto copySelection = [this]() {
-        clipboard = m_controller->copyVariables(m_scene->selectedVariableIds());
+        clipboard = m_controller->copyElements(m_scene->selectedElementIds());
     };
     auto pasteSelection = [this]() {
         const auto ids = m_controller->pasteClipboard(clipboard, QPointF(20.0, 20.0));
         m_scene->clearSelection();
         for (qds::core::EntityId id : ids) {
-            if (VariableItem *item = m_scene->variableItem(id))
+            if (DiagramItem *item = m_scene->item(id))
                 item->setSelected(true);
         }
     };
-    QAction *copyAction = new QAction(tr("复制"), this);
+    QAction *copyAction = new QAction(actionIcon("copy"), tr("Copy"), this);
     copyAction->setShortcut(QKeySequence::Copy);
     connect(copyAction, &QAction::triggered, this, copySelection);
     editMenu->addAction(copyAction);
-    QAction *cutAction = new QAction(tr("剪切"), this);
+    QAction *cutAction = new QAction(actionIcon("cut"), tr("Cut"), this);
     cutAction->setShortcut(QKeySequence::Cut);
     connect(cutAction, &QAction::triggered, this, [this, copySelection]() {
         copySelection();
         m_scene->removeSelected();
     });
     editMenu->addAction(cutAction);
-    QAction *pasteAction = new QAction(tr("粘贴"), this);
+    QAction *pasteAction = new QAction(actionIcon("paste"), tr("Paste"), this);
     pasteAction->setShortcut(QKeySequence::Paste);
     connect(pasteAction, &QAction::triggered, this, pasteSelection);
     editMenu->addAction(pasteAction);
-    QAction *duplicateAction = new QAction(tr("重复创建"), this);
+    QAction *duplicateAction = new QAction(actionIcon("duplicate"), tr("Duplicate"), this);
     duplicateAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_D));
     connect(duplicateAction, &QAction::triggered, this, [this, copySelection, pasteSelection]() {
         copySelection();
@@ -237,137 +274,112 @@ void MainWindow::createActions()
     });
     editMenu->addAction(duplicateAction);
 
-    auto addAlignAction = [this, editMenu](const QString &text, Qt::Alignment alignment) {
-        QAction *action = new QAction(text, this);
+    auto addAlignAction = [this, editMenu](const QString &text, Qt::Alignment alignment, const char *iconName) {
+        QAction *action = new QAction(actionIcon(iconName), text, this);
         connect(action, &QAction::triggered, this, [this, alignment]() {
             m_scene->alignSelected(alignment);
         });
         editMenu->addAction(action);
     };
-    addAlignAction(tr("左对齐"), Qt::AlignLeft);
-    addAlignAction(tr("水平居中"), Qt::AlignHCenter);
-    addAlignAction(tr("右对齐"), Qt::AlignRight);
-    addAlignAction(tr("顶端对齐"), Qt::AlignTop);
-    addAlignAction(tr("垂直居中"), Qt::AlignVCenter);
-    addAlignAction(tr("底端对齐"), Qt::AlignBottom);
+    addAlignAction(tr("Align left"), Qt::AlignLeft, "align-left");
+    addAlignAction(tr("Align horizontal centers"), Qt::AlignHCenter, "align-hcenter");
+    addAlignAction(tr("Align right"), Qt::AlignRight, "align-right");
+    addAlignAction(tr("Align top"), Qt::AlignTop, "align-top");
+    addAlignAction(tr("Align vertical centers"), Qt::AlignVCenter, "align-vcenter");
+    addAlignAction(tr("Align bottom"), Qt::AlignBottom, "align-bottom");
 
-    QAction *distributeHorizontal = new QAction(tr("水平等距分布"), this);
+    QAction *distributeHorizontal = new QAction(actionIcon("distribute-horizontal"), tr("Distribute horizontally"), this);
     connect(distributeHorizontal, &QAction::triggered, this, [this]() {
         m_scene->distributeSelected(true);
     });
     editMenu->addAction(distributeHorizontal);
-    QAction *distributeVertical = new QAction(tr("垂直等距分布"), this);
+    QAction *distributeVertical = new QAction(actionIcon("distribute-vertical"), tr("Distribute vertically"), this);
     connect(distributeVertical, &QAction::triggered, this, [this]() {
         m_scene->distributeSelected(false);
     });
     editMenu->addAction(distributeVertical);
 
-    QMenu *viewMenu = menuBar()->addMenu(tr("视图(&V)"));
-    auto addViewAction = [this, viewMenu](const QString &text, const QKeySequence &shortcut, void (DiagramView::*method)()) {
-        QAction *action = new QAction(text, this);
+    QMenu *viewMenu = menuBar()->addMenu(tr("&View"));
+    auto addViewAction = [this, viewMenu](const QString &text, const QKeySequence &shortcut,
+                                          void (DiagramView::*method)(), const char *iconName) {
+        QAction *action = new QAction(actionIcon(iconName), text, this);
         action->setShortcut(shortcut);
         connect(action, &QAction::triggered, m_view, method);
         viewMenu->addAction(action);
     };
-    addViewAction(tr("放大"), QKeySequence::ZoomIn, &DiagramView::zoomIn);
-    addViewAction(tr("缩小"), QKeySequence::ZoomOut, &DiagramView::zoomOut);
-    addViewAction(tr("实际大小"), QKeySequence(Qt::CTRL | Qt::Key_0), &DiagramView::resetZoom);
-    addViewAction(tr("适应全部"), QKeySequence(Qt::Key_F), &DiagramView::fitAll);
-    addViewAction(tr("适应选中"), QKeySequence(Qt::SHIFT | Qt::Key_F), &DiagramView::fitSelection);
+    addViewAction(tr("Zoom in"), QKeySequence::ZoomIn, &DiagramView::zoomIn, "zoom-in");
+    addViewAction(tr("Zoom out"), QKeySequence::ZoomOut, &DiagramView::zoomOut, "zoom-out");
+    addViewAction(tr("Actual size"), QKeySequence(Qt::CTRL | Qt::Key_0), &DiagramView::resetZoom, "zoom-actual");
+    addViewAction(tr("Fit all"), QKeySequence(Qt::Key_F), &DiagramView::fitAll, "fit-all");
+    addViewAction(tr("Fit selection"), QKeySequence(Qt::SHIFT | Qt::Key_F), &DiagramView::fitSelection, "fit-selection");
 
-    QAction *gridAction = new QAction(tr("显示网格"), this);
+    QAction *gridAction = new QAction(actionIcon("grid"), tr("Show grid"), this);
     gridAction->setCheckable(true);
     gridAction->setChecked(true);
     connect(gridAction, &QAction::toggled, m_scene, &DiagramScene::setGridVisible);
     viewMenu->addAction(gridAction);
-    QAction *snapAction = new QAction(tr("网格吸附"), this);
+    QAction *snapAction = new QAction(actionIcon("snap"), tr("Snap to grid"), this);
     snapAction->setCheckable(true);
     snapAction->setChecked(true);
     connect(snapAction, &QAction::toggled, m_scene, &DiagramScene::setSnapEnabled);
     viewMenu->addAction(snapAction);
 
-    QMenu *routeMenu = menuBar()->addMenu(tr("布线(&R)"));
-    auto addRouteMode = [this, routeMenu](const QString &text, qds::core::RouteMode mode) {
-        QAction *action = new QAction(text, this);
+    QMenu *routeMenu = menuBar()->addMenu(tr("&Routing"));
+    auto addRouteMode = [this, routeMenu](const QString &text, qds::core::RouteMode mode, const char *iconName) {
+        QAction *action = new QAction(actionIcon(iconName), text, this);
         connect(action, &QAction::triggered, this, [this, mode]() {
             m_scene->setSelectedRouteMode(mode);
         });
         routeMenu->addAction(action);
     };
-    addRouteMode(tr("直线"), qds::core::RouteMode::Straight);
-    addRouteMode(tr("直角线"), qds::core::RouteMode::Orthogonal);
-    addRouteMode(tr("贝塞尔曲线"), qds::core::RouteMode::Bezier);
-    QAction *resetRoute = new QAction(tr("重置自动路径"), this);
+    addRouteMode(tr("Straight"), qds::core::RouteMode::Straight, "route-straight");
+    addRouteMode(tr("Orthogonal"), qds::core::RouteMode::Orthogonal, "route-orthogonal");
+    addRouteMode(tr("Bezier"), qds::core::RouteMode::Bezier, "route-bezier");
+    QAction *resetRoute = new QAction(actionIcon("route-reset"), tr("Reset automatic route"), this);
     connect(resetRoute, &QAction::triggered, m_scene, &DiagramScene::resetSelectedRoute);
     routeMenu->addAction(resetRoute);
-    QAction *toggleLock = new QAction(tr("锁定/解锁路径"), this);
+    QAction *toggleLock = new QAction(actionIcon("route-lock"), tr("Lock/unlock route"), this);
     connect(toggleLock, &QAction::triggered, m_scene, &DiagramScene::toggleSelectedRouteLock);
     routeMenu->addAction(toggleLock);
-    QAction *rerouteAll = new QAction(tr("全图重新布线"), this);
+    QAction *rerouteAll = new QAction(actionIcon("route-reroute"), tr("Reroute all"), this);
     connect(rerouteAll, &QAction::triggered, m_scene, &DiagramScene::rerouteAll);
     routeMenu->addAction(rerouteAll);
 }
 
 void MainWindow::createPropertyPanel()
 {
-    QDockWidget *paletteDock = new QDockWidget(tr("绘图元素"), this);
+    QDockWidget *paletteDock = new QDockWidget(tr("Drawing elements"), this);
     EntityPalette *palette = new EntityPalette(paletteDock);
+    connect(palette, &EntityPalette::toolRequested, this, [this](DiagramScene::Tool tool) {
+        setTool(tool);
+    });
     paletteDock->setWidget(palette);
     addDockWidget(Qt::LeftDockWidgetArea, paletteDock);
 
-    QDockWidget *dock = new QDockWidget(tr("属性"), this);
+    QDockWidget *dock = new QDockWidget(tr("Properties"), this);
     dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    QWidget *panel = new QWidget(dock);
-    QFormLayout *layout = new QFormLayout(panel);
-    m_nameEdit = new QLineEdit(panel);
-    m_equationEdit = new EquationEditor(panel);
-    m_unitEdit = new QLineEdit(panel);
-    m_commentEdit = new QLineEdit(panel);
-    layout->addRow(tr("名称"), m_nameEdit);
-    layout->addRow(tr("方程"), m_equationEdit);
-    layout->addRow(tr("单位"), m_unitEdit);
-    layout->addRow(tr("说明"), m_commentEdit);
-    dock->setWidget(panel);
+    m_propertyPanel = new PropertyPanel(m_controller, m_scene, dock);
+    dock->setWidget(m_propertyPanel);
     addDockWidget(Qt::RightDockWidgetArea, dock);
 
-    connect(m_nameEdit, &QLineEdit::editingFinished, this, [this]() {
-        if (!m_scene->selectedVariable())
-            return;
-        if (!m_scene->renameSelected(m_nameEdit->text())) {
-            QMessageBox::warning(this, tr("无效名称"), tr("名称不能为空，也不能与其他变量重复。"));
-            updatePropertyEditor();
-        }
-    });
-    connect(m_equationEdit, &EquationEditor::editingFinished, this, [this]() {
-        m_scene->setSelectedEquation(m_equationEdit->text());
-    });
-    connect(m_unitEdit, &QLineEdit::editingFinished, this, [this]() {
-        if (m_scene->selectedVariable())
-            m_controller->setUnit(m_scene->selectedVariable()->id, m_unitEdit->text());
-    });
-    connect(m_commentEdit, &QLineEdit::editingFinished, this, [this]() {
-        if (m_scene->selectedVariable())
-            m_controller->setComment(m_scene->selectedVariable()->id, m_commentEdit->text());
-    });
-
-    QDockWidget *issuesDock = new QDockWidget(tr("模型检查"), this);
+    QDockWidget *issuesDock = new QDockWidget(tr("Model validation"), this);
     m_issueList = new QListWidget(issuesDock);
     issuesDock->setWidget(m_issueList);
     addDockWidget(Qt::BottomDockWidgetArea, issuesDock);
     connect(m_issueList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
         const qds::core::EntityId id = item->data(Qt::UserRole).toULongLong();
-        if (VariableItem *variable = m_scene->variableItem(id)) {
+        if (DiagramItem *variable = m_scene->item(id)) {
             m_scene->clearSelection();
             variable->setSelected(true);
             m_view->centerOn(variable);
         }
     });
 
-    QDockWidget *navigationDock = new QDockWidget(tr("导航"), this);
+    QDockWidget *navigationDock = new QDockWidget(tr("Navigation"), this);
     QWidget *navigation = new QWidget(navigationDock);
     QVBoxLayout *navigationLayout = new QVBoxLayout(navigation);
     QLineEdit *searchEdit = new QLineEdit(navigation);
-    searchEdit->setPlaceholderText(tr("搜索变量名称"));
+    searchEdit->setPlaceholderText(tr("Search variable names"));
     navigationLayout->addWidget(searchEdit);
     MiniMapView *miniMap = new MiniMapView(m_scene, navigation);
     navigationLayout->addWidget(miniMap);
@@ -375,10 +387,10 @@ void MainWindow::createPropertyPanel()
     addDockWidget(Qt::LeftDockWidgetArea, navigationDock);
     connect(searchEdit, &QLineEdit::textChanged, this, [this](const QString &text) {
         m_scene->clearSelection();
-        const auto matches = m_scene->findVariables(text);
+        const auto matches = m_scene->findElements(text);
         bool first = true;
         for (qds::core::EntityId id : matches) {
-            VariableItem *item = m_scene->variableItem(id);
+            DiagramItem *item = m_scene->item(id);
             if (!item)
                 continue;
             item->setSelected(true);
@@ -388,7 +400,7 @@ void MainWindow::createPropertyPanel()
             }
         }
     });
-    updatePropertyEditor();
+    m_propertyPanel->refresh();
     refreshValidation();
 }
 
@@ -399,7 +411,7 @@ void MainWindow::newFile()
     m_controller->replaceDocument(qds::core::Document());
     setCurrentFile(QString());
     setDirty(false);
-    updatePropertyEditor();
+    m_propertyPanel->refresh();
 }
 
 void MainWindow::open()
@@ -408,25 +420,17 @@ void MainWindow::open()
         return;
     const QString fileName = QFileDialog::getOpenFileName(
         this,
-        tr("打开 XMILE 模型"),
+        tr("Open XMILE model"),
         QString(),
-        tr("XMILE 模型 (*.xmile);;所有文件 (*)"));
+        tr("XMILE models (*.xmile);;All files (*)"));
     if (!fileName.isEmpty())
         openFile(fileName);
 }
 
 bool MainWindow::save()
 {
-    if (m_scene->selectedVariable()) {
-        if (!m_scene->renameSelected(m_nameEdit->text())) {
-            QMessageBox::warning(this, tr("无效名称"), tr("名称不能为空，也不能与其他变量重复。"));
-            updatePropertyEditor();
-            return false;
-        }
-        m_scene->setSelectedEquation(m_equationEdit->text());
-        m_controller->setUnit(m_scene->selectedVariable()->id, m_unitEdit->text());
-        m_controller->setComment(m_scene->selectedVariable()->id, m_commentEdit->text());
-    }
+    if (!m_propertyPanel->commit())
+        return false;
     return m_fileName.isEmpty() ? saveAs() : saveFile(m_fileName);
 }
 
@@ -434,9 +438,9 @@ bool MainWindow::saveAs()
 {
     QString fileName = QFileDialog::getSaveFileName(
         this,
-        tr("保存 XMILE 模型"),
+        tr("Save XMILE model"),
         m_fileName,
-        tr("XMILE 模型 (*.xmile);;所有文件 (*)"));
+        tr("XMILE models (*.xmile);;All files (*)"));
     if (fileName.isEmpty())
         return false;
     if (QFileInfo(fileName).suffix().isEmpty())
@@ -448,7 +452,7 @@ bool MainWindow::saveFile(const QString &fileName)
 {
     QString error;
     if (!qds::io::saveXmile(fileName, m_controller->document(), &error)) {
-        QMessageBox::warning(this, tr("保存失败"), error);
+        QMessageBox::warning(this, tr("Save failed"), error);
         return false;
     }
     setCurrentFile(fileName);
@@ -457,7 +461,7 @@ bool MainWindow::saveFile(const QString &fileName)
     m_recentFiles.add(fileName);
     updateRecentFiles();
     QFile::remove(recoveryFileName());
-    statusBar()->showMessage(tr("已保存 %1").arg(QFileInfo(fileName).fileName()), 5000);
+    statusBar()->showMessage(tr("Saved %1").arg(QFileInfo(fileName).fileName()), 5000);
     return true;
 }
 
@@ -467,8 +471,8 @@ bool MainWindow::maybeSave()
         return true;
     const QMessageBox::StandardButton choice = QMessageBox::warning(
         this,
-        tr("未保存的修改"),
-        tr("当前模型已修改，是否保存？"),
+        tr("Unsaved changes"),
+        tr("The current model has been modified. Save it?"),
         QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel,
         QMessageBox::Save);
     if (choice == QMessageBox::Save)
@@ -479,7 +483,7 @@ bool MainWindow::maybeSave()
 void MainWindow::setCurrentFile(const QString &fileName)
 {
     m_fileName = fileName;
-    const QString displayName = fileName.isEmpty() ? tr("未命名.xmile") : QFileInfo(fileName).fileName();
+    const QString displayName = fileName.isEmpty() ? tr("Untitled.xmile") : QFileInfo(fileName).fileName();
     setWindowTitle(tr("%1[*] - QDynamicSimulator").arg(displayName));
     setWindowModified(false);
 }
@@ -496,33 +500,31 @@ void MainWindow::setTool(DiagramScene::Tool tool)
     m_view->setDragMode(tool == DiagramScene::Tool::Select ? QGraphicsView::RubberBandDrag : QGraphicsView::NoDrag);
     switch (tool) {
     case DiagramScene::Tool::Select:
-        statusBar()->showMessage(tr("拖动移动元素，框选可多选，Delete 删除"));
+        statusBar()->showMessage(tr("Drag to move, rubber-band to select, Delete to remove"));
         break;
     case DiagramScene::Tool::AddStock:
-        statusBar()->showMessage(tr("在画布上单击以创建存量"));
+        statusBar()->showMessage(tr("Click on the canvas to create a stock"));
         break;
     case DiagramScene::Tool::AddFlow:
-        statusBar()->showMessage(tr("在画布上单击以创建流量"));
+        statusBar()->showMessage(tr("Drag from a stock, cloud, or blank point to create a flow"));
         break;
     case DiagramScene::Tool::AddAuxiliary:
-        statusBar()->showMessage(tr("在画布上单击以创建辅助变量"));
+        statusBar()->showMessage(tr("Click on the canvas to create an auxiliary"));
         break;
     case DiagramScene::Tool::AddConstant:
-        statusBar()->showMessage(tr("在画布上单击以创建常量"));
+        statusBar()->showMessage(tr("Click on the canvas to create a constant"));
         break;
-    case DiagramScene::Tool::AddExogenous:
-        statusBar()->showMessage(tr("在画布上单击以创建外生变量"));
+    case DiagramScene::Tool::AddData:
+        statusBar()->showMessage(tr("Click on the canvas to create data"));
         break;
     case DiagramScene::Tool::AddCloud:
-        statusBar()->showMessage(tr("在画布上单击以创建源/汇云团"));
+        statusBar()->showMessage(tr("Click on the canvas to create a source/sink cloud"));
         break;
-    case DiagramScene::Tool::AddAnnotation:
-        statusBar()->showMessage(tr("在画布上单击以创建注释"));
+    case DiagramScene::Tool::AddComment:
+        statusBar()->showMessage(tr("Click on the canvas to create a comment"));
         break;
     case DiagramScene::Tool::Connect:
-    case DiagramScene::Tool::ConnectMaterial:
-    case DiagramScene::Tool::ConnectAnnotation:
-        statusBar()->showMessage(tr("依次单击起点和终点；右键取消连线"));
+        statusBar()->showMessage(tr("Drag from source to target to create an arrow; right-click to cancel"));
         break;
     }
 }
@@ -533,7 +535,7 @@ void MainWindow::updateRecentFiles()
         return;
     m_recentMenu->clear();
     for (const QString &fileName : m_recentFiles.files()) {
-        QAction *action = new QAction(QFileInfo(fileName).fileName(), m_recentMenu);
+        QAction *action = new QAction(actionIcon("open"), QFileInfo(fileName).fileName(), m_recentMenu);
         action->setToolTip(fileName);
         connect(action, &QAction::triggered, this, [this, fileName]() {
             if (maybeSave())
@@ -560,7 +562,7 @@ void MainWindow::autoSave()
         return;
     QString error;
     if (!qds::io::saveXmile(path, m_controller->document(), &error))
-        statusBar()->showMessage(tr("自动保存失败：%1").arg(error), 5000);
+        statusBar()->showMessage(tr("Auto-save failed: %1").arg(error), 5000);
 }
 
 void MainWindow::offerRecovery()
@@ -569,13 +571,13 @@ void MainWindow::offerRecovery()
     if (!QFile::exists(path))
         return;
     const auto choice = QMessageBox::question(
-        this, tr("恢复模型"), tr("检测到上次会话的自动保存副本，是否恢复？"));
+        this, tr("Restore model"), tr("An auto-saved copy from the previous session was found. Restore it?"));
     if (choice != QMessageBox::Yes)
         return;
     qds::core::Document document;
     QString error;
     if (!qds::io::loadXmile(path, document, &error)) {
-        QMessageBox::warning(this, tr("恢复失败"), error);
+        QMessageBox::warning(this, tr("Restore failed"), error);
         return;
     }
     m_controller->replaceDocument(std::move(document));
@@ -583,22 +585,6 @@ void MainWindow::offerRecovery()
     setDirty(true);
 }
 
-void MainWindow::updatePropertyEditor()
-{
-    const qds::core::Variable *variable = m_scene->selectedVariable();
-    m_nameEdit->setEnabled(variable != nullptr);
-    m_equationEdit->setEnabled(variable != nullptr);
-    m_unitEdit->setEnabled(variable != nullptr);
-    m_commentEdit->setEnabled(variable != nullptr);
-    m_nameEdit->setText(variable ? QString::fromStdString(variable->name) : QString());
-    m_equationEdit->setText(variable ? QString::fromStdString(variable->equation) : QString());
-    QStringList completionWords;
-    for (const qds::core::Variable &entry : m_controller->document().model().variables())
-        completionWords.append(QString::fromStdString(entry.name));
-    m_equationEdit->setCompletionWords(completionWords);
-    m_unitEdit->setText(variable ? QString::fromStdString(variable->unit) : QString());
-    m_commentEdit->setText(variable ? QString::fromStdString(variable->comment) : QString());
-}
 
 void MainWindow::refreshValidation()
 {
@@ -607,9 +593,9 @@ void MainWindow::refreshValidation()
     m_issueList->clear();
     const auto issues = qds::core::validateDocument(m_controller->document());
     for (const auto &issue : issues) {
-        const qds::core::Variable *variable = m_controller->document().variable(issue.entityId);
-        const QString name = variable ? QString::fromStdString(variable->name) : tr("模型");
-        const QString severity = issue.severity == qds::core::IssueSeverity::Error ? tr("错误") : tr("警告");
+        const auto *variable = dynamic_cast<const qds::core::ModelElement *>(m_controller->document().find(issue.entityId));
+        const QString name = variable ? QString::fromStdString(variable->displayName) : tr("Model");
+        const QString severity = issue.severity == qds::core::IssueSeverity::Error ? tr("Error") : tr("Warning");
         QListWidgetItem *item = new QListWidgetItem(
             tr("%1 [%2]: %3").arg(name, severity, QString::fromStdString(issue.message)), m_issueList);
         item->setData(Qt::UserRole, static_cast<qulonglong>(issue.entityId));

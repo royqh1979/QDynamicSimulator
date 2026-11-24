@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DiagramItems.h"
 #include "Routing.h"
 
 #include <qds/core/ChangeSet.h>
@@ -10,9 +11,6 @@
 
 class DocumentController;
 class QGraphicsLineItem;
-class VariableItem;
-class ConnectionItem;
-class ControlPointHandle;
 
 class DiagramScene : public QGraphicsScene
 {
@@ -22,15 +20,13 @@ public:
     enum class Tool {
         Select,
         AddStock,
-        AddFlow,
         AddAuxiliary,
         AddConstant,
-        AddExogenous,
+        AddData,
         AddCloud,
-        AddAnnotation,
-        Connect,
-        ConnectMaterial,
-        ConnectAnnotation
+        AddComment,
+        AddFlow,
+        Connect
     };
 
     explicit DiagramScene(DocumentController *controller, QObject *parent = nullptr);
@@ -38,7 +34,7 @@ public:
 
     void setTool(Tool tool);
     Tool tool() const;
-    qds::core::EntityId createVariableAt(qds::core::VariableType type, const QPointF &position);
+    qds::core::EntityId createElementAt(qds::core::ElementKind kind, const QPointF &position);
 
 signals:
     void editingFinished();
@@ -47,9 +43,10 @@ public:
     void removeSelected();
     bool renameSelected(const QString &newName);
     bool setSelectedEquation(const QString &equation);
-    const qds::core::Variable *selectedVariable() const;
-    std::vector<qds::core::EntityId> selectedVariableIds() const;
-    std::vector<qds::core::EntityId> findVariables(const QString &text) const;
+    const qds::core::ModelElement *selectedModelElement() const;
+    const qds::core::Comment *selectedComment() const;
+    std::vector<qds::core::EntityId> selectedElementIds() const;
+    std::vector<qds::core::EntityId> findElements(const QString &text) const;
     void selectAllItems();
     void alignSelected(Qt::Alignment alignment);
     void distributeSelected(bool horizontal);
@@ -60,8 +57,7 @@ public:
     void rerouteAll();
     void toggleSelectedRouteLock();
     QPointF snapPoint(const QPointF &position) const;
-    VariableItem *variableItem(qds::core::EntityId id) const;
-    ConnectionItem *connectionItem(qds::core::ConnectionId id) const;
+    DiagramItem *item(qds::core::EntityId id) const;
 
 protected:
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
@@ -72,24 +68,25 @@ protected:
     void drawBackground(QPainter *painter, const QRectF &rect) override;
 
 private:
-    void applyChangeSet(const qds::core::ChangeSet &changeSet);
-    VariableItem *createVariableItem(qds::core::EntityId id);
-    ConnectionItem *createConnectionItem(qds::core::ConnectionId id);
-    void updateConnections(qds::core::EntityId id);
+    void applyChangeNotification(const qds::core::ChangeNotification &notification);
+    DiagramItem *createCanvasItem(qds::core::EntityId id);
+    void createCanvasItems(std::vector<qds::core::EntityId> ids);
+    RoutedItem *selectedRoutedItem() const;
+    void updateDependentRoutes(qds::core::EntityId id);
     void updateSceneRect();
-    void finishMove();
+    void finishMove(qds::core::EntityId id, const QPointF &position, Qt::KeyboardModifiers modifiers);
     void syncControlPoints();
-    void previewControlPoint(qds::core::ConnectionId id, int index, const QPointF &position);
-    void finishControlPoint(qds::core::ConnectionId id, int index, const QPointF &position);
-    void removeControlPoint(qds::core::ConnectionId id, int index);
-    void updateAutomaticRoute(ConnectionItem *item);
+    void previewControlPoint(qds::core::EntityId id, int index, const QPointF &position);
+    void finishControlPoint(qds::core::EntityId id, int index, const QPointF &position);
+    void removeControlPoint(qds::core::EntityId id, int index);
+    void updateAutomaticRoute(RoutedItem *item);
     void cancelRubberLine();
 
     DocumentController *m_controller;
-    QHash<qds::core::EntityId, VariableItem *> m_entityItems;
-    QHash<qds::core::ConnectionId, ConnectionItem *> m_connectionItems;
+    QHash<qds::core::EntityId, DiagramItem *> m_items;
     Tool m_tool = Tool::Select;
     qds::core::EntityId m_connectionSource = 0;
+    QPointF m_connectionStart;
     QGraphicsLineItem *m_rubberLine = nullptr;
     QList<ControlPointHandle *> m_controlHandles;
     ObstacleIndex m_obstacles;
@@ -97,5 +94,8 @@ private:
     bool m_gridVisible = true;
     bool m_snapEnabled = true;
     bool m_areaSelecting = false;
+    bool m_variableDragging = false;
+    QPointF m_dragStart;
+    QHash<qds::core::EntityId, QPointF> m_dragOrigins;
     double m_gridSize = 20.0;
 };
