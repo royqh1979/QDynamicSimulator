@@ -38,6 +38,10 @@ cmake --build R:/build-qdynamic-simulator-qt5-release --parallel
 
 如 CMake 无法自动找到 Qt，请在配置时通过 `CMAKE_PREFIX_PATH` 指定 Qt 安装目录。测试模型使用 SDXorg/test-models 子模块，首次检出或 CI 中执行 `git submodule update --init 3rdparty/test-models`。
 
+## 测试
+
+常规回归使用 `all-test-targets` 和 `ctest --output-on-failure`。`QDS_ENABLE_XMILE_CORPUS_TESTS` 默认 OFF；修改 XMILE 导入时，配置该选项为 ON 并运行 `io-xmile-corpus`，将验证 `samples/SIR/SIR.xmile` 和全部 67 个 SDXorg XMILE 文件。公式引用变量的孤立判断暂缓并在输出中列出，不支持结构和损坏 XML 必须明确拒绝。
+
 ## 目录结构
 
 ```text

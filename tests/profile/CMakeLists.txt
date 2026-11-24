@@ -8,6 +8,7 @@ add_executable(profile-editor
     EditorProfile.cpp
 )
 target_link_libraries(profile-editor PRIVATE QDS::Editor Qt5::Widgets)
+target_compile_definitions(profile-editor PRIVATE QDS_SIR_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/SIR/SIR.xmile")
 add_dependencies(all-profile-targets profile-editor)
 
 add_executable(profile-icons

@@ -6,6 +6,8 @@
 #include <QtTest>
 #include <zlib.h>
 
+#include <unordered_set>
+
 using namespace qds::core;
 
 namespace {
@@ -52,6 +54,44 @@ QByteArray extractDocumentXml(const QString &path)
     return status == Z_STREAM_END && stream.total_out == uncompressedSize ? result : QByteArray {};
 }
 
+void verifyConnectedDocument(const Document &document, std::size_t expectedModelCount, std::size_t expectedConnectorCount)
+{
+    std::size_t modelCount = 0;
+    for (const ModelElement &element : document.model().elements()) {
+        Q_UNUSED(element)
+        ++modelCount;
+    }
+    QCOMPARE(modelCount, expectedModelCount);
+
+    std::unordered_set<EntityId> connected;
+    std::size_t connectorCount = 0;
+    for (const DocumentElement &element : document.elements()) {
+        if (element.kind() == ElementKind::Flow) {
+            const auto &flow = static_cast<const Flow &>(element);
+            QVERIFY(flow.endpoints.from != 0 && flow.endpoints.to != 0);
+            QVERIFY(document.find(flow.endpoints.from) && document.find(flow.endpoints.to));
+            connected.insert(flow.id());
+            connected.insert(flow.endpoints.from);
+            connected.insert(flow.endpoints.to);
+        } else if (element.kind() == ElementKind::Connector) {
+            ++connectorCount;
+            const auto &connector = static_cast<const Connector &>(element);
+            QVERIFY(connector.from != 0 && connector.to != 0);
+            QVERIFY(document.find(connector.from) && document.find(connector.to));
+            connected.insert(connector.id());
+            connected.insert(connector.from);
+            connected.insert(connector.to);
+        }
+    }
+    QCOMPARE(connectorCount, expectedConnectorCount);
+    for (const DocumentElement &element : document.elements())
+        QVERIFY2(connected.count(element.id()) != 0, qPrintable(QString::number(element.id())));
+    for (const auto &entry : document.diagram().routes()) {
+        QVERIFY(!entry.second.manual);
+        QVERIFY(entry.second.controlPoints.empty());
+    }
+}
+
 } // namespace
 
 class TestXmileFile : public QObject
@@ -61,6 +101,7 @@ class TestXmileFile : public QObject
 private slots:
     void nativeRoundTrip();
     void plainXmlOpen();
+    void sirModelImport();
     void xmileExport();
     void xmileRejectsZip();
     void missingViewsAreCompleted();
@@ -223,6 +264,28 @@ void TestXmileFile::plainXmlOpen()
     QVERIFY(document.diagram().position(flow->endpoints.to).x
             > document.diagram().position(flow->endpoints.from).x);
     QVERIFY(document.diagram().position(document.findByName("S")->id()).x > 0.0);
+}
+
+void TestXmileFile::sirModelImport()
+{
+    Document document;
+    QString error;
+    QVERIFY2(qds::io::XmileFile::importFile(QStringLiteral(QDS_SIR_XMILE_PATH), document, &error), qPrintable(error));
+    verifyConnectedDocument(document, 8, 6);
+    const auto *succumbing = dynamic_cast<const Flow *>(document.findByName("succumbing"));
+    const auto *recovering = dynamic_cast<const Flow *>(document.findByName("recovering"));
+    QVERIFY(succumbing && recovering);
+    QCOMPARE(succumbing->endpoints.from, document.findByName("susceptible")->id());
+    QCOMPARE(succumbing->endpoints.to, document.findByName("infectious")->id());
+    QCOMPARE(recovering->endpoints.from, document.findByName("infectious")->id());
+    QCOMPARE(recovering->endpoints.to, document.findByName("recovered")->id());
+
+    QTemporaryDir directory;
+    const QString path = directory.filePath(QStringLiteral("sir-export.xmile"));
+    QVERIFY2(qds::io::XmileFile::exportFile(path, document, &error), qPrintable(error));
+    Document reimported;
+    QVERIFY2(qds::io::XmileFile::importFile(path, reimported, &error), qPrintable(error));
+    verifyConnectedDocument(reimported, 8, 6);
 }
 
 void TestXmileFile::xmileExport()
