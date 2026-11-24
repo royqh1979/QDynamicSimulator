@@ -134,6 +134,8 @@ public:
         QGraphicsItem *parent = nullptr);
 
     int type() const override;
+    QRectF boundingRect() const override;
+    QRectF labelRect() const;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     qds::core::EntityId id() const override { return m_id; }
     qreal arrowSize() const override { return 16.0; }

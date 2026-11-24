@@ -197,6 +197,12 @@ int main(int argc, char **argv)
         flowArrowPointCount += flowItem->arrowHead().size();
     const qint64 flowArrowNs = timer.nsecsElapsed();
 
+    timer.restart();
+    int flowLabelCount = 0;
+    for (int index = 0; index < 1000; ++index)
+        flowLabelCount += flowItem->boundingRect().contains(flowItem->labelRect()) ? 1 : 0;
+    const qint64 flowLabelNs = timer.nsecsElapsed();
+
     DocumentController dragController;
     DiagramScene dragScene(&dragController);
     const EntityId dragStock = dragController.createVariable(ElementKind::Stock, QPointF());
@@ -344,6 +350,7 @@ int main(int argc, char **argv)
                         << "flow_valve_geometry,1000," << valveNs / 1e6 << "," << valveNs / 1000.0 / 1000 << "\n"
                         << "flow_pipeline_geometry,1000," << pipelineNs / 1e6 << "," << pipelineNs / 1000.0 / 1000 << "\n"
                         << "flow_arrow_geometry,1000," << flowArrowNs / 1e6 << "," << flowArrowNs / 1000.0 / 1000 << "\n"
+                        << "flow_label_geometry,1000," << flowLabelNs / 1e6 << "," << flowLabelNs / 1000.0 / 1000 << "\n"
                         << "shift_drag,1000," << modifierDragNs / 1e6 << "," << modifierDragNs / 1000.0 / 1000 << "\n"
                         << "blank_flow_create_undo_redo,1000," << blankFlowNs / 1e6 << "," << blankFlowNs / 1000.0 / 1000 << "\n"
                         << "comment_content_edit,1000," << commentEditNs / 1e6 << "," << commentEditNs / 1000.0 / 1000 << "\n"
@@ -356,7 +363,7 @@ int main(int argc, char **argv)
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
         && matches > 0 && guideCount == 2000 && singleSelectionGuideCount == 1000 && valveCount == 2000
         && lineStyleChecksum == 3000
-        && pipelineCount == 2000 && flowArrowPointCount == 3000 && variableKindsMatch
+        && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000 && variableKindsMatch
         && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic
         && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)

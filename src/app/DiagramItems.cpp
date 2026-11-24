@@ -505,6 +505,20 @@ QVector<QPainterPath> FlowItem::linePaths() const
     return result;
 }
 
+QRectF FlowItem::boundingRect() const
+{
+    return RoutedItem::boundingRect().united(labelRect().adjusted(-2.0, -2.0, 2.0, 2.0));
+}
+
+QRectF FlowItem::labelRect() const
+{
+    const QPainterPath path = geometryPath();
+    if (path.isEmpty())
+        return {};
+    const QPointF center = path.pointAtPercent(0.5);
+    return QRectF(center + QPointF(-60.0, 16.0), QSizeF(120.0, 24.0));
+}
+
 void FlowItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
     RoutedItem::paint(painter, option, widget);
@@ -513,9 +527,8 @@ void FlowItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
         painter->drawPolygon(polygon);
     const QPainterPath path = geometryPath();
     if (!path.isEmpty()) {
-        const QPointF center = path.pointAtPercent(0.5);
         painter->setPen(QColor(25, 30, 35));
-        const QRectF textRect(center + QPointF(-60.0, 16.0), QSizeF(120.0, 24.0));
+        const QRectF textRect = labelRect();
         painter->drawText(textRect, Qt::AlignCenter, painter->fontMetrics().elidedText(m_name, Qt::ElideRight, 120));
     }
 }

@@ -294,6 +294,8 @@ C - 12N - 10T，C，C - 12N + 10T
 
 阀门对称轴沿法线，始终垂直于路径切线，底边与切线平行。切线由中点两侧采样计算，覆盖水平、垂直、斜线和贝塞尔曲线；路径或切线退化时不绘制阀门，避免除零和 NaN。后续支持阀门偏移时应增加明确的路径参数，不创建独立阀门实体。
 
+FlowItem 的名称使用独立 `labelRect()` 计算，`boundingRect()` 必须同时包含路径、阀门和完整名称区域。路径或端点变化时通过 `prepareGeometryChange()` 同时作废旧路径和旧名称区域，不能只扩大路径边界，否则移动关联实体会留下文字残影或裁切名称。
+
 ### 4.2.3 Flow 的 XMILE 边界
 
 目标版本为 XMILE 1.1，仅用于未压缩 XML 的导入/导出。Flow 名称和方程写入标准 `<flow>`，Stock 使用 `<inflow>`/`<outflow>` 引用 Flow；不生成物料 Connector。Constant/Data 在标准 XMILE 中写为 aux，普通 aux 导入为 Auxiliary。XMILE 1.1 没有标准 `<cloud>`，不得输出该标签冒充标准内容。

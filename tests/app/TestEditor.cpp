@@ -59,6 +59,7 @@ private slots:
     void viewOperations();
     void routeModesAndGeometry();
     void flowRoutesAndValveGeometry();
+    void flowLabelRepaint();
     void bezierControlGuideRendering();
     void controlPointDoubleClick();
     void reconnectUndo();
@@ -456,6 +457,49 @@ void TestEditor::flowRoutesAndValveGeometry()
     invalid.mode = RouteMode::Orthogonal;
     controller.setRoute(detached, invalid);
     QCOMPARE(controller.document().diagram().route(detached).mode, RouteMode::Straight);
+}
+
+void TestEditor::flowLabelRepaint()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    scene.setGridVisible(false);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    const EntityId cloud = controller.createCloud(QPointF(400.0, 0.0));
+    const EntityId flow = controller.createFlow(stock, cloud);
+    controller.renameElement(flow, QStringLiteral("Flow label repaint"));
+    auto *item = dynamic_cast<FlowItem *>(scene.item(flow));
+    QVERIFY(item->boundingRect().contains(item->labelRect()));
+
+    DiagramView view(&scene);
+    view.resize(640, 480);
+    view.centerOn(200.0, 0.0);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    QTest::qWait(20);
+    const QImage before = view.grab().toImage();
+    const QRect oldLabel = view.mapFromScene(item->labelRect()).boundingRect().adjusted(-2, -2, 2, 2);
+    const QColor background(250, 250, 250);
+    int paintedBefore = 0;
+    for (int y = oldLabel.top(); y <= oldLabel.bottom(); ++y) {
+        for (int x = oldLabel.left(); x <= oldLabel.right(); ++x) {
+            if (before.pixelColor(x, y) != background)
+                ++paintedBefore;
+        }
+    }
+    QVERIFY(paintedBefore > 0);
+
+    controller.moveElements({{stock, QPointF(160.0, 100.0)}});
+    QTest::qWait(20);
+    const QImage after = view.grab().toImage();
+    int remaining = 0;
+    for (int y = oldLabel.top(); y <= oldLabel.bottom(); ++y) {
+        for (int x = oldLabel.left(); x <= oldLabel.right(); ++x) {
+            if (after.pixelColor(x, y) != background)
+                ++remaining;
+        }
+    }
+    QCOMPARE(remaining, 0);
 }
 
 void TestEditor::bezierControlGuideRendering()

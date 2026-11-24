@@ -71,7 +71,8 @@
 | editor_paste | 1000 | 40.9090 | 40.9090 |
 | connector_line_style | 1000 | 0.0568 | 0.0568 |
 | flow_pipeline_geometry | 1000 | 1.4258 | 1.4258 |
-| flow_arrow_geometry | 1000 | 0.4226 | 0.4226 |
+| flow_arrow_geometry | 1000 | 0.4314 | 0.4314 |
+| flow_label_geometry | 1000 | 6.4028 | 6.4028 |
 | blank_flow_create_undo_redo | 1000 | 17.2425 | 17.2425 |
 | comment_content_edit | 1000 | 417.708 | 417.708 |
 | property_panel_refresh | 1000 | 162.383 | 162.383 |
