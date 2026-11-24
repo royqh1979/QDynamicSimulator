@@ -16,12 +16,17 @@
 
 namespace {
 
-bool isXmileFileDrop(const QMimeData *mime)
+bool isDocumentFileDrop(const QMimeData *mime)
 {
     if (!mime->hasUrls() || mime->urls().size() != 1)
         return false;
     const QUrl url = mime->urls().front();
-    return url.isLocalFile() && QFileInfo(url.toLocalFile()).suffix().compare(QStringLiteral("xmile"), Qt::CaseInsensitive) == 0;
+    if (!url.isLocalFile())
+        return false;
+    const QString suffix = QFileInfo(url.toLocalFile()).suffix();
+    return suffix.compare(QStringLiteral("qds"), Qt::CaseInsensitive) == 0
+        || suffix.compare(QStringLiteral("xmile"), Qt::CaseInsensitive) == 0
+        || suffix.compare(QStringLiteral("xml"), Qt::CaseInsensitive) == 0;
 }
 
 }
@@ -135,19 +140,19 @@ void DiagramView::keyReleaseEvent(QKeyEvent *event)
 
 void DiagramView::dragEnterEvent(QDragEnterEvent *event)
 {
-    if (event->mimeData()->hasFormat(EntityPalette::mimeType()) || isXmileFileDrop(event->mimeData()))
+    if (event->mimeData()->hasFormat(EntityPalette::mimeType()) || isDocumentFileDrop(event->mimeData()))
         event->acceptProposedAction();
 }
 
 void DiagramView::dragMoveEvent(QDragMoveEvent *event)
 {
-    if (event->mimeData()->hasFormat(EntityPalette::mimeType()) || isXmileFileDrop(event->mimeData()))
+    if (event->mimeData()->hasFormat(EntityPalette::mimeType()) || isDocumentFileDrop(event->mimeData()))
         event->acceptProposedAction();
 }
 
 void DiagramView::dropEvent(QDropEvent *event)
 {
-    if (isXmileFileDrop(event->mimeData())) {
+    if (isDocumentFileDrop(event->mimeData())) {
         emit fileOpenRequested(event->mimeData()->urls().front().toLocalFile());
         event->acceptProposedAction();
         return;

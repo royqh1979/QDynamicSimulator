@@ -6,7 +6,11 @@ class QString;
 
 namespace qds::io {
 
-bool saveXmile(const QString &fileName, const core::Document &document, QString *errorMessage = nullptr);
-bool loadXmile(const QString &fileName, core::Document &document, QString *errorMessage = nullptr);
+class XmileFile
+{
+public:
+    static bool importFile(const QString &fileName, core::Document &document, QString *errorMessage = nullptr);
+    static bool exportFile(const QString &fileName, const core::Document &document, QString *errorMessage = nullptr);
+};
 
 } // namespace qds::io

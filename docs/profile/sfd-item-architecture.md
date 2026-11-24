@@ -54,7 +54,7 @@
 
 ## nameKey、Cloud 与空白 Flow 重构结果
 
-本轮使用 XMILE 1.1、workspace 第 2 版、集中式 nameKey 索引及空白端 Cloud 原子创建。工具与上述静态 Release 环境相同。
+本轮使用独立 `DocumentFile`（QDS 单 XML ZIP）与 `XmileFile`（未压缩 XMILE XML）、集中式 nameKey 索引及空白端 Cloud 原子创建。工具与上述静态 Release 环境相同。
 
 | 操作 | 数量 | 总耗时 ms | 每操作 μs |
 | --- | ---: | ---: | ---: |
@@ -74,7 +74,9 @@
 | blank_flow_create_undo_redo | 1000 | 17.2425 | 17.2425 |
 | comment_content_edit | 1000 | 417.708 | 417.708 |
 | property_panel_refresh | 1000 | 162.383 | 162.383 |
-| xmile_save | 1000 | 12.5602 | 12.5602 |
-| xmile_load | 1000 | 25.6342 | 25.6342 |
+| qds_save | 1000 | 9.0636 | 9.0636 |
+| qds_open | 1000 | 23.1877 | 23.1877 |
+| xmile_export | 1000 | 4.8674 | 4.8674 |
+| xmile_import | 1000 | 26.9318 | 26.9318 |
 
-`blank_flow_create_undo_redo` 每轮实际执行“创建两个 Cloud 和一个 Flow → undo 删除全部 → redo 恢复全部 → undo 回到空文档”，并断言 Scene 与 Document 同步。XMILE profile 逐变量断言往返后的 ElementKind 一致，覆盖 Auxiliary、Constant 和 Data。`comment_content_edit` 覆盖正文 ChangeSet、Scene 文本刷新和最终值校验；`flow_pipeline_geometry` 验证每次返回两条 Flow 路径，`property_panel_refresh` 测量独立属性 Widget 的完整刷新。属性面板输入及 undo 同步由编辑器单元测试覆盖。结果只用于后续同环境回归比较，不与不同 Qt 链接方式或旧数据结构的结果直接比较。
+`blank_flow_create_undo_redo` 每轮实际执行“创建两个 Cloud 和一个 Flow → undo 删除全部 → redo 恢复全部 → undo 回到空文档”，并断言 Scene 与 Document 同步。QDS profile 逐变量断言原生往返后的 ElementKind 一致，覆盖 Auxiliary、Constant 和 Data；XMILE profile 单独测量未压缩导出与导入，不要求保留专有分类。`comment_content_edit` 覆盖正文 ChangeSet、Scene 文本刷新和最终值校验；`flow_pipeline_geometry` 验证每次返回两条 Flow 路径，`property_panel_refresh` 测量独立属性 Widget 的完整刷新。属性面板输入及 undo 同步由编辑器单元测试覆盖。结果只用于后续同环境回归比较，不与不同 Qt 链接方式或旧数据结构的结果直接比较。

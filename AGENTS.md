@@ -5,7 +5,7 @@
 - 使用 C++17、Qt 5 Widgets 和 CMake，不使用 QML/Qt Quick。
 - 画布基于 QGraphicsView/QGraphicsScene。
 - 项目许可证为 GPL v3；引入第三方组件前确认许可证兼容性。
-- 原生模型采用 ZIP 容器封装的标准 XMILE 与独立专有 XML，不在 XMILE 主体中混入专有扩展。
+- 原生模型使用 `.qds` 后缀，采用 ZIP 容器封装单个 `document.xml`，完整保存模型、布局和工作区；XMILE 仅用于导入/导出且始终是未压缩 XML，禁止作为 ZIP 处理。开发阶段不保留旧 ZIP 兼容层。
 - 权威构建说明见 `README.md` 和本机环境文档，不凭空创造构建步骤。
 
 ## 2. 架构边界

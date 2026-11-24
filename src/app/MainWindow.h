@@ -35,6 +35,7 @@ private:
     void open();
     bool save();
     bool saveAs();
+    bool exportXmile();
     bool saveFile(const QString &fileName);
     bool maybeSave();
     void setCurrentFile(const QString &fileName);

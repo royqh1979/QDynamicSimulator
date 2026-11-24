@@ -9,7 +9,7 @@
 - 新增中键/空格平移、视图适配、网格吸附、全选、连接删除、对齐和等距分布；场景范围随内容扩展。
 - 新增边界端点、直线/直角/贝塞尔路径、控制点编辑、端点重连、路径锁定和空间索引自动避障；XMILE 保存并恢复连接控制点。
 - 属性面板支持单位和说明；新增方程高亮/补全及未定义变量、括号、未使用变量和依赖环检查。
-- 新增复制、剪切、跨文档粘贴和 Duplicate；ZIP 容器增加独立 workspace.xml，保存路由模式与锁定状态。
+- 新增复制、剪切、跨文档粘贴和 Duplicate；原生 document.xml 保存路由模式与锁定状态。
 - 新增最近文件、定时恢复副本、名称搜索、缩略导航图和 HiDPI 支持。
 - 新增可隐藏绘图元素面板，通过拖放创建实体；连线改为左键拖拽橡皮线，操作结束自动返回选择状态。
 - 连接线新增右键菜单，布线类型子菜单支持互斥勾选，并提供重置、锁定和删除操作。
@@ -19,8 +19,8 @@
 - 按 Vensim/XMILE 概念重构 Flow 与 Connector：Flow 直接持有 Stock/Cloud 端点和路径，支持中文名称、集中式 nameKey 索引、统一 ID、ChangeSet 撤销及级联删除。
 - 语义变量按类型生成 Stock1、Flow1 等唯一默认名称；Cloud/Comment 不再使用唯一名称，Comment 独立保存正文。
 - Rate 支持从任意空白位置开始和结束，自动创建 Cloud 并作为一次原子编辑撤销/重做；独立 XMILE Flow 导入为可见的 Cloud→Cloud，缺失视图自动补齐。
-- 原生保存升级为 XMILE 1.1；workspace 第 2 版通过文件内 uid 保存 Cloud 和 Comment 端点引用，支持相同内容 Comment 的无混淆往返。
-- workspace 增加可选变量分类记录，Constant/Data 经原生 XMILE 往返后不再被读成 Auxiliary；无扩展记录的普通 aux 语义不变。
+- 原生保存改为 `.qds`：ZIP 中仅含一个 `document.xml`，通过文件内 uid 完整保存 Cloud、Comment、Constant/Data、端点和路径，支持无混淆往返。
+- XMILE 1.1 仅用于未压缩 XML 的导入/导出，不再作为 ZIP 或原生保存格式；普通 aux 导入为 Auxiliary，导出时明确专有语义降级。
 - 注释正文可在属性面板编辑，修改、撤销/重做会同步画布和属性输入框，并通过 XMILE text_box 持久化。
 - Data 在界面和资源命名中不再称为外生变量；Flow 改为双实线管线与沙漏形阀门，Arrow 保持单实线，相关 SVG 箭头同步加长。
 - 放大 Flow 箭头并让双实线在箭头前截止，修复管线穿入箭头的问题；Flow 图标缩小双线间距，箭头移到两线中央，沙漏左移以保留间距。
@@ -28,4 +28,4 @@
 - 源代码与测试源码中的直接中文字符串已清除，中文兼容性测试改用 Unicode 转义。
 - 新增 SDXorg/test-models 作为 `3rdparty/test-models` 子模块，为后续 XMILE 互操作和性能测试提供固定来源。
 - Flow 默认直线且仅支持直线/贝塞尔，阀门始终垂直于路径切线；不再提供独立物料流连接类型。
-- 新增 Shift 限轴拖动、Ctrl 拖动复制及 Ctrl+Shift 组合；支持将 XMILE 文件拖入主窗口或画布打开。
+- 新增 Shift 限轴拖动、Ctrl 拖动复制及 Ctrl+Shift 组合；支持将 QDS 或 XMILE 文件拖入主窗口或画布打开。

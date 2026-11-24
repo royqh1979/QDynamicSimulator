@@ -2,6 +2,7 @@
 #include "DiagramScene.h"
 #include "DocumentController.h"
 #include "PropertyPanel.h"
+#include <qds/io/DocumentFile.h>
 #include <qds/io/XmileFile.h>
 
 #include <QActionGroup>
@@ -256,21 +257,39 @@ int main(int argc, char **argv)
     QTemporaryDir directory;
     if (!directory.isValid())
         return 3;
-    const QString path = directory.filePath(QStringLiteral("profile.xmile"));
+    const QString path = directory.filePath(QStringLiteral("profile.qds"));
     QString error;
     timer.restart();
-    if (!qds::io::saveXmile(path, controller.document(), &error))
+    if (!qds::io::DocumentFile::save(path, controller.document(), &error))
         return 4;
     const qint64 saveNs = timer.nsecsElapsed();
 
     Document loaded;
     timer.restart();
-    if (!qds::io::loadXmile(path, loaded, &error))
+    if (!qds::io::DocumentFile::open(path, loaded, &error))
         return 5;
     const qint64 loadNs = timer.nsecsElapsed();
 
+    const QString xmilePath = directory.filePath(QStringLiteral("profile.xmile"));
+    timer.restart();
+    if (!qds::io::XmileFile::exportFile(xmilePath, controller.document(), &error))
+        return 11;
+    const qint64 exportNs = timer.nsecsElapsed();
+    Document exported;
+    timer.restart();
+    if (!qds::io::XmileFile::importFile(xmilePath, exported, &error))
+        return 12;
+    const qint64 importNs = timer.nsecsElapsed();
+    std::size_t exportedModelCount = 0;
+    for (const ModelElement &element : exported.model().elements()) {
+        Q_UNUSED(element)
+        ++exportedModelCount;
+    }
+
     bool variableKindsMatch = true;
+    std::size_t originalModelCount = 0;
     for (const ModelElement &element : controller.document().model().elements()) {
+        ++originalModelCount;
         const ModelElement *loadedElement = loaded.findByName(element.displayName);
         variableKindsMatch = variableKindsMatch && loadedElement && loadedElement->kind() == element.kind();
     }
@@ -297,11 +316,15 @@ int main(int argc, char **argv)
                         << "blank_flow_create_undo_redo,1000," << blankFlowNs / 1e6 << "," << blankFlowNs / 1000.0 / 1000 << "\n"
                         << "comment_content_edit,1000," << commentEditNs / 1e6 << "," << commentEditNs / 1000.0 / 1000 << "\n"
                         << "property_panel_refresh,1000," << propertyPanelNs / 1e6 << "," << propertyPanelNs / 1000.0 / 1000 << "\n"
-                        << "xmile_save," << count << "," << saveNs / 1e6 << "," << saveNs / 1000.0 / count << "\n"
-                        << "xmile_load," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n";
+                        << "qds_save," << count << "," << saveNs / 1e6 << "," << saveNs / 1000.0 / count << "\n"
+                        << "qds_open," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n"
+                        << "xmile_export," << count << "," << exportNs / 1e6 << "," << exportNs / 1000.0 / count << "\n"
+                        << "xmile_import," << count << "," << importNs / 1e6 << "," << importNs / 1000.0 / count << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
         && matches > 0 && guideCount == 2000 && singleSelectionGuideCount == 1000 && valveCount == 2000
-        && pipelineCount == 2000 && flowArrowPointCount == 3000 && variableKindsMatch && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
+        && pipelineCount == 2000 && flowArrowPointCount == 3000 && variableKindsMatch
+        && exportedModelCount == originalModelCount
+        && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)
         QTextStream(stderr) << "validation failed: commands=" << commands << ", points=" << pointCount
                             << ", arrows=" << arrowCount << ", loaded=" << elementCount(loaded) << "\n";

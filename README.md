@@ -1,8 +1,8 @@
 # QDynamicSimulator
 
-QDynamicSimulator 是一款跨平台系统动力学建模与仿真软件。项目采用 C++17、Qt 5 Widgets 和 CMake，以 XMILE 为原生模型格式，许可证为 GPL v3。
+QDynamicSimulator 是一款跨平台系统动力学建模与仿真软件。项目采用 C++17、Qt 5 Widgets 和 CMake，以 QDS 为原生模型格式，支持 XMILE 导入/导出，许可证为 GPL v3。
 
-当前已实现 SFD 编辑闭环：创建存量、流量、辅助变量、常量、Data（数据）、云团和注释，移动、框选、删除与连线，编辑名称和方程，以及打开和保存 XMILE 文件。保存文件为 ZIP deflate 容器，内部包含标准 `model.xmile`；也可直接打开未压缩的 XMILE XML。尚未实现仿真。完整需求见 [requirement.md](requirement.md)。
+当前已实现 SFD 编辑闭环：创建存量、流量、辅助变量、常量、Data（数据）、云团和注释，移动、框选、删除与连线，编辑名称和方程，以及打开和保存 QDS 文件。`.qds` 是 ZIP deflate 容器，内部只有一个 `document.xml`；XMILE 1.1 仅作为未压缩 XML 导入/导出。尚未实现仿真。完整需求见 [requirement.md](requirement.md)。
 
 ## 基本操作
 
@@ -18,8 +18,8 @@ QDynamicSimulator 是一款跨平台系统动力学建模与仿真软件。项�
 - Ctrl+Z 撤销、Ctrl+Y 重做，覆盖创建、删除、移动、连线、重命名、方程和路径编辑。
 - 独立 `PropertyPanel` 属性组件编辑名称、方程、单位和说明；选中注释时编辑正文并同步画布，支持撤销/重做，可脱离主窗口独立测试；模型检查面板可定位错误。
 - 支持复制、剪切、粘贴、Duplicate、最近文件、搜索定位、缩略导航图和定时恢复副本。
-- Ctrl+O 打开，Ctrl+S 保存，也可将本地 XMILE 文件拖入主窗口或画布打开；ZIP 容器包含 XMILE 1.1 `model.xmile` 和独立 `workspace.xml`，后者保存 Cloud 布局及文件内 uid 端点引用。
-- 打开缺少视图或路径的纯 XMILE 时自动补齐可见变量、Flow 和 Cloud；相同内容的 Comment 通过 uid 保持各自连接关系。
+- Ctrl+O 打开，Ctrl+S 保存；打开和拖放均支持 `.qds` 与未压缩 `.xmile`，按内容选择加载通道。Save As 只生成 `.qds`，Export XMILE 生成未压缩 XML。
+- 打开缺少视图或路径的纯 XMILE 时自动补齐可见变量、Flow 和 Cloud；原生 QDS 通过 uid 保持相同内容 Comment 的各自连接关系。
 
 ## 环境要求
 

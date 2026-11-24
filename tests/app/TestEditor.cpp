@@ -9,6 +9,7 @@
 #include "PropertyPanel.h"
 #include "RecentFiles.h"
 #include "Routing.h"
+#include <qds/io/DocumentFile.h>
 #include <qds/io/XmileFile.h>
 
 #include <QDropEvent>
@@ -255,7 +256,7 @@ void TestEditor::missingViewImportProjectsAllVariables()
     file.close();
     Document loaded;
     QString error;
-    QVERIFY2(qds::io::loadXmile(path, loaded, &error), qPrintable(error));
+    QVERIFY2(qds::io::DocumentFile::open(path, loaded, &error), qPrintable(error));
 
     DocumentController controller;
     DiagramScene scene(&controller);
@@ -985,12 +986,12 @@ void TestEditor::fileDropOpen()
 {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
-    const QString path = directory.filePath(QStringLiteral("\u62D6\u653E\u6A21\u578B.xmile"));
+    const QString path = directory.filePath(QStringLiteral("\u62D6\u653E\u6A21\u578B.qds"));
     Document document;
     const EntityId stock = document.createVariable(ElementKind::Stock, {10.0, 20.0});
     document.rename(stock, "\u4E2D\u6587\u5E93\u5B58");
     QString error;
-    QVERIFY2(qds::io::saveXmile(path, document, &error), qPrintable(error));
+    QVERIFY2(qds::io::DocumentFile::save(path, document, &error), qPrintable(error));
 
     MainWindow window;
     DiagramView *view = window.findChild<DiagramView *>();
@@ -1004,10 +1005,27 @@ void TestEditor::fileDropOpen()
     QDropEvent drop(QPoint(20, 20), Qt::CopyAction, &data, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view->viewport(), &drop);
     QVERIFY(drop.isAccepted());
-    QVERIFY(window.windowTitle().contains(QStringLiteral("\u62D6\u653E\u6A21\u578B.xmile")));
+    QVERIFY(window.windowTitle().contains(QStringLiteral("\u62D6\u653E\u6A21\u578B.qds")));
     QVERIFY(scene->item(1));
     QCOMPARE(scene->selectedModelElement(), nullptr);
     QCOMPARE(scene->findElements(QStringLiteral("\u4E2D\u6587\u5E93\u5B58")).size(), std::size_t(1));
+
+    const QString plainPath = directory.filePath(QStringLiteral("plain.xmile"));
+    QFile plainFile(plainPath);
+    QVERIFY(plainFile.open(QIODevice::WriteOnly));
+    plainFile.write("<xmile version=\"1.1\"><model><variables>"
+                    "<stock name=\"Plain\"><eqn>1</eqn></stock>"
+                    "</variables></model></xmile>");
+    plainFile.close();
+    data.setUrls({QUrl::fromLocalFile(plainPath)});
+    QDragEnterEvent plainEnter(QPoint(20, 20), Qt::CopyAction, &data, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view->viewport(), &plainEnter);
+    QVERIFY(plainEnter.isAccepted());
+    QDropEvent plainDrop(QPoint(20, 20), Qt::CopyAction, &data, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view->viewport(), &plainDrop);
+    QVERIFY(plainDrop.isAccepted());
+    QVERIFY(window.windowTitle().contains(QStringLiteral("Untitled.qds")));
+    QCOMPARE(scene->findElements(QStringLiteral("Plain")).size(), std::size_t(1));
 
     QMimeData invalid;
     invalid.setUrls({QUrl::fromLocalFile(directory.filePath(QStringLiteral("not-model.txt")))});

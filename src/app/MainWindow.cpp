@@ -6,6 +6,7 @@
 #include "EntityPalette.h"
 #include "MiniMapView.h"
 #include "PropertyPanel.h"
+#include <qds/io/DocumentFile.h>
 #include <qds/io/XmileFile.h>
 #include <qds/core/Validation.h>
 
@@ -43,12 +44,17 @@ QIcon actionIcon(const char *name)
     return QIcon(QStringLiteral(":/icons/") + QLatin1String(name) + QStringLiteral(".svg"));
 }
 
-bool isXmileFileDrop(const QMimeData *mime)
+bool isDocumentFileDrop(const QMimeData *mime)
 {
     if (!mime->hasUrls() || mime->urls().size() != 1)
         return false;
     const QUrl url = mime->urls().front();
-    return url.isLocalFile() && QFileInfo(url.toLocalFile()).suffix().compare(QStringLiteral("xmile"), Qt::CaseInsensitive) == 0;
+    if (!url.isLocalFile())
+        return false;
+    const QString suffix = QFileInfo(url.toLocalFile()).suffix();
+    return suffix.compare(QStringLiteral("qds"), Qt::CaseInsensitive) == 0
+        || suffix.compare(QStringLiteral("xmile"), Qt::CaseInsensitive) == 0
+        || suffix.compare(QStringLiteral("xml"), Qt::CaseInsensitive) == 0;
 }
 
 }
@@ -96,14 +102,15 @@ bool MainWindow::openFile(const QString &fileName)
 {
     qds::core::Document document;
     QString error;
-    if (!qds::io::loadXmile(fileName, document, &error)) {
+    bool nativeFormat = false;
+    if (!qds::io::DocumentFile::open(fileName, document, &error, &nativeFormat)) {
         QMessageBox::warning(this, tr("Open failed"), error);
         return false;
     }
 
     m_controller->replaceDocument(std::move(document));
-    setCurrentFile(fileName);
-    setDirty(false);
+    setCurrentFile(nativeFormat ? fileName : QString());
+    setDirty(!nativeFormat);
     m_recentFiles.add(fileName);
     updateRecentFiles();
     QFile::remove(recoveryFileName());
@@ -126,13 +133,13 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
 void MainWindow::dragEnterEvent(QDragEnterEvent *event)
 {
-    if (isXmileFileDrop(event->mimeData()))
+    if (isDocumentFileDrop(event->mimeData()))
         event->acceptProposedAction();
 }
 
 void MainWindow::dropEvent(QDropEvent *event)
 {
-    if (!isXmileFileDrop(event->mimeData()))
+    if (!isDocumentFileDrop(event->mimeData()))
         return;
     if (maybeSave())
         openFile(event->mimeData()->urls().front().toLocalFile());
@@ -171,6 +178,10 @@ void MainWindow::createActions()
         saveAs();
     });
     fileMenu->addAction(saveAsAction);
+
+    QAction *exportAction = new QAction(tr("Export XMILE..."), this);
+    connect(exportAction, &QAction::triggered, this, &MainWindow::exportXmile);
+    fileMenu->addAction(exportAction);
 
     fileMenu->addSeparator();
     QAction *exitAction = new QAction(actionIcon("exit"), tr("E&xit"), this);
@@ -420,9 +431,9 @@ void MainWindow::open()
         return;
     const QString fileName = QFileDialog::getOpenFileName(
         this,
-        tr("Open XMILE model"),
+        tr("Open model"),
         QString(),
-        tr("XMILE models (*.xmile);;All files (*)"));
+        tr("QDS documents (*.qds);;XMILE models (*.xmile *.xml);;All files (*)"));
     if (!fileName.isEmpty())
         openFile(fileName);
 }
@@ -438,20 +449,42 @@ bool MainWindow::saveAs()
 {
     QString fileName = QFileDialog::getSaveFileName(
         this,
-        tr("Save XMILE model"),
+        tr("Save QDS document"),
         m_fileName,
+        tr("QDS documents (*.qds);;All files (*)"));
+    if (fileName.isEmpty())
+        return false;
+    if (QFileInfo(fileName).suffix().isEmpty())
+        fileName += QStringLiteral(".qds");
+    return saveFile(fileName);
+}
+
+bool MainWindow::exportXmile()
+{
+    if (!m_propertyPanel->commit())
+        return false;
+    QString fileName = QFileDialog::getSaveFileName(
+        this,
+        tr("Export XMILE model"),
+        QString(),
         tr("XMILE models (*.xmile);;All files (*)"));
     if (fileName.isEmpty())
         return false;
     if (QFileInfo(fileName).suffix().isEmpty())
         fileName += QStringLiteral(".xmile");
-    return saveFile(fileName);
+    QString error;
+    if (!qds::io::XmileFile::exportFile(fileName, m_controller->document(), &error)) {
+        QMessageBox::warning(this, tr("Export failed"), error);
+        return false;
+    }
+    statusBar()->showMessage(tr("Exported %1").arg(QFileInfo(fileName).fileName()), 5000);
+    return true;
 }
 
 bool MainWindow::saveFile(const QString &fileName)
 {
     QString error;
-    if (!qds::io::saveXmile(fileName, m_controller->document(), &error)) {
+    if (!qds::io::DocumentFile::save(fileName, m_controller->document(), &error)) {
         QMessageBox::warning(this, tr("Save failed"), error);
         return false;
     }
@@ -483,7 +516,7 @@ bool MainWindow::maybeSave()
 void MainWindow::setCurrentFile(const QString &fileName)
 {
     m_fileName = fileName;
-    const QString displayName = fileName.isEmpty() ? tr("Untitled.xmile") : QFileInfo(fileName).fileName();
+    const QString displayName = fileName.isEmpty() ? tr("Untitled.qds") : QFileInfo(fileName).fileName();
     setWindowTitle(tr("%1[*] - QDynamicSimulator").arg(displayName));
     setWindowModified(false);
 }
@@ -550,7 +583,7 @@ void MainWindow::updateRecentFiles()
 
 QString MainWindow::recoveryFileName() const
 {
-    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/recovery.xmile");
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/recovery.qds");
 }
 
 void MainWindow::autoSave()
@@ -561,7 +594,7 @@ void MainWindow::autoSave()
     if (!QDir().mkpath(QFileInfo(path).absolutePath()))
         return;
     QString error;
-    if (!qds::io::saveXmile(path, m_controller->document(), &error))
+    if (!qds::io::DocumentFile::save(path, m_controller->document(), &error))
         statusBar()->showMessage(tr("Auto-save failed: %1").arg(error), 5000);
 }
 
@@ -576,7 +609,7 @@ void MainWindow::offerRecovery()
         return;
     qds::core::Document document;
     QString error;
-    if (!qds::io::loadXmile(path, document, &error)) {
+    if (!qds::io::DocumentFile::open(path, document, &error)) {
         QMessageBox::warning(this, tr("Restore failed"), error);
         return;
     }

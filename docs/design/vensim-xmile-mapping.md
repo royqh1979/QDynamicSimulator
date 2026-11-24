@@ -78,4 +78,4 @@ Document
 - 是否误把 Cloud、Comment 当作可计算变量。
 - 是否存在 MaterialFlow 或“依赖线”等平行概念。
 - 是否把同一 Rate 的阀门、名称或管线拆成多个语义 ID。
-- XMILE 往返后是否保留标准语义，并将本项目额外外观信息限制在独立 workspace 中。
+- XMILE 导入/导出是否保留标准语义并明确降级项，本项目额外语义和外观是否完整保存在原生 QDS `document.xml` 中。
