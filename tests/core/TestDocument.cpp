@@ -177,6 +177,9 @@ void TestDocument::routeAndPositionState()
     const EntityId cloud = document.createCloud({200.0, 0.0});
     const EntityId flow = document.createFlow(stock, cloud);
     QCOMPARE(document.diagram().route(flow).mode, RouteMode::Straight);
+    const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
+    const EntityId connector = document.createConnector(auxiliary, flow);
+    QCOMPARE(document.diagram().route(connector), defaultConnectorRoute());
     Route route;
     route.mode = RouteMode::Bezier;
     route.manual = true;

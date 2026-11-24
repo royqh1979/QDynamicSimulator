@@ -245,6 +245,14 @@ EntityId Document::createFlow(EntityId from, EntityId to)
     return insert(std::move(flow), {(source.x + target.x) / 2.0, (source.y + target.y) / 2.0});
 }
 
+Route defaultConnectorRoute()
+{
+    Route route;
+    route.mode = RouteMode::Bezier;
+    route.controlPoints = {{1.0 / 3.0, -50.0, true}, {2.0 / 3.0, 50.0, true}};
+    return route;
+}
+
 EntityId Document::createConnector(EntityId from, EntityId to)
 {
     if (!validConnectorEndpoints(from, to))
@@ -259,7 +267,10 @@ EntityId Document::createConnector(EntityId from, EntityId to)
     auto connector = std::make_unique<Connector>(m_nextId++);
     connector->from = from;
     connector->to = to;
-    return insert(std::move(connector), {});
+    const EntityId id = insert(std::move(connector), {});
+    if (id != 0)
+        m_diagram.m_routes[id] = defaultConnectorRoute();
+    return id;
 }
 
 EntityId Document::createCloud(Vec2 position)

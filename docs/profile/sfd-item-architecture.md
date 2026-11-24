@@ -85,3 +85,17 @@
 | xmile_sir_import | 100 | 9.5488 | 95.4880 |
 
 `blank_flow_create_undo_redo` 每轮实际执行“创建两个 Cloud 和一个 Flow → undo 删除全部 → redo 恢复全部 → undo 回到空文档”，并断言 Scene 与 Document 同步。QDS profile 逐变量断言原生往返后的 ElementKind 一致，覆盖 Auxiliary、Constant 和 Data；XMILE profile 单独测量未压缩导出与导入，不要求保留专有分类。`comment_content_edit` 覆盖正文 ChangeSet、Scene 文本刷新和最终值校验；`flow_pipeline_geometry` 验证每次返回两条 Flow 路径，`property_panel_refresh` 测量独立属性 Widget 的完整刷新。属性面板输入及 undo 同步由编辑器单元测试覆盖。结果只用于后续同环境回归比较，不与不同 Qt 链接方式或旧数据结构的结果直接比较。
+
+## Connector 默认贝塞尔与依赖刷新
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`sir_dependent_route_moves` 导入真实 SIR，定位 infectious 及其 Stock→Flow→Arrow 依赖链，每轮通过 DocumentController 移动 Stock，并读取全部相关 Arrow 的最新路径作为校验；不是只测量孤立几何函数。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| bezier_control_guide_updates | 1000 | 0.7701 | 0.7701 |
+| bezier_guide_single_selection | 1000 | 4.5462 | 4.5462 |
+| flow_center_boundary | 1000 | 9.1708 | 9.1708 |
+| xmile_sir_import | 100 | 10.3845 | 103.845 |
+| sir_dependent_route_moves | 1000 | 72.6264 | 72.6264 |
+
+该结果用于后续同场景回归比较。当前两级依赖刷新直接遍历 Scene 图元，不引入额外派生索引；只有后续 profile 证明需要时才调整索引结构。

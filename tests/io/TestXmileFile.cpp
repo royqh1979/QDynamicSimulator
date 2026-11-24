@@ -67,6 +67,7 @@ void verifyConnectedDocument(const Document &document, std::size_t expectedModel
     std::size_t connectorCount = 0;
     for (const DocumentElement &element : document.elements()) {
         if (element.kind() == ElementKind::Flow) {
+            QCOMPARE(document.diagram().route(element.id()).mode, RouteMode::Straight);
             const auto &flow = static_cast<const Flow &>(element);
             QVERIFY(flow.endpoints.from != 0 && flow.endpoints.to != 0);
             QVERIFY(document.find(flow.endpoints.from) && document.find(flow.endpoints.to));
@@ -74,6 +75,7 @@ void verifyConnectedDocument(const Document &document, std::size_t expectedModel
             connected.insert(flow.endpoints.from);
             connected.insert(flow.endpoints.to);
         } else if (element.kind() == ElementKind::Connector) {
+            QCOMPARE(document.diagram().route(element.id()).mode, RouteMode::Bezier);
             ++connectorCount;
             const auto &connector = static_cast<const Connector &>(element);
             QVERIFY(connector.from != 0 && connector.to != 0);
@@ -88,7 +90,8 @@ void verifyConnectedDocument(const Document &document, std::size_t expectedModel
         QVERIFY2(connected.count(element.id()) != 0, qPrintable(QString::number(element.id())));
     for (const auto &entry : document.diagram().routes()) {
         QVERIFY(!entry.second.manual);
-        QVERIFY(entry.second.controlPoints.empty());
+        for (const RoutePoint &point : entry.second.controlPoints)
+            QVERIFY(point.automatic);
     }
 }
 
@@ -216,6 +219,19 @@ void TestXmileFile::nativeRoundTrip()
             QCOMPARE(static_cast<const Comment &>(element).content,
                      first ? std::string("\u66F4\u65B0\u540E\u7684\u6CE8\u91CA") : std::string("\u6CE8\u91CA"));
         } else if (element.kind() == ElementKind::Connector) {
+            const Route loadedConnectorRoute = loaded.diagram().route(element.id());
+            const Route expectedRoute = defaultConnectorRoute();
+            QCOMPARE(loadedConnectorRoute.mode, expectedRoute.mode);
+            QCOMPARE(loadedConnectorRoute.manual, expectedRoute.manual);
+            QCOMPARE(loadedConnectorRoute.locked, expectedRoute.locked);
+            QCOMPARE(loadedConnectorRoute.controlPoints.size(), expectedRoute.controlPoints.size());
+            for (std::size_t index = 0; index < expectedRoute.controlPoints.size(); ++index) {
+                const RoutePoint &actualPoint = loadedConnectorRoute.controlPoints[index];
+                const RoutePoint &expectedPoint = expectedRoute.controlPoints[index];
+                QCOMPARE(actualPoint.automatic, expectedPoint.automatic);
+                QVERIFY(qAbs(actualPoint.relative.x - expectedPoint.relative.x) < 1e-12);
+                QVERIFY(qAbs(actualPoint.relative.y - expectedPoint.relative.y) < 1e-12);
+            }
             const auto &connector = static_cast<const Connector &>(element);
             const DocumentElement *from = loaded.find(connector.from);
             if (from->kind() != ElementKind::Comment)

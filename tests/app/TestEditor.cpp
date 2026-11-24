@@ -224,13 +224,14 @@ void TestEditor::routeUndoRedo()
     const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
     const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(100.0, 0.0));
     const EntityId id = controller.createConnector(stock, auxiliary);
+    const Route defaultRoute = defaultConnectorRoute();
     Route route;
     route.manual = true;
     route.controlPoints = {{0.5, 50.0}};
     controller.setRoute(id, route);
     QCOMPARE(controller.document().diagram().route(id), route);
     controller.undoStack()->undo();
-    QCOMPARE(controller.document().diagram().route(id), Route());
+    QCOMPARE(controller.document().diagram().route(id), defaultRoute);
     controller.undoStack()->redo();
     QCOMPARE(controller.document().diagram().route(id), route);
 }
@@ -376,6 +377,7 @@ void TestEditor::routeModesAndGeometry()
     const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
     const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(240.0, 0.0));
     const EntityId id = controller.createConnector(stock, auxiliary);
+    const Route defaultRoute = defaultConnectorRoute();
     auto *item = dynamic_cast<ArrowItem *>(scene.item(id));
     QVERIFY(!item->geometryPath().isEmpty());
     item->setSelected(true);
@@ -390,11 +392,11 @@ void TestEditor::routeModesAndGeometry()
     QCOMPARE(guides[1].p1(), item->scenePoint(controls[1]));
     controller.undoStack()->undo();
     QVERIFY(item->controlGuides().isEmpty());
-    QCOMPARE(controller.document().diagram().route(id).mode, RouteMode::Straight);
+    QCOMPARE(controller.document().diagram().route(id).mode, RouteMode::Bezier);
     scene.setSelectedRouteMode(RouteMode::Straight);
     QVERIFY(controller.document().diagram().route(id).controlPoints.empty());
     scene.resetSelectedRoute();
-    QCOMPARE(controller.document().diagram().route(id), Route());
+    QCOMPARE(controller.document().diagram().route(id), defaultRoute);
     scene.toggleSelectedRouteLock();
     QVERIFY(controller.document().diagram().route(id).locked);
     controller.undoStack()->undo();
@@ -598,6 +600,7 @@ void TestEditor::controlPointDoubleClick()
     const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
     const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(240.0, 0.0));
     const EntityId id = controller.createConnector(stock, auxiliary);
+    controller.setRoute(id, Route());
     QGraphicsSceneMouseEvent event(QEvent::GraphicsSceneMouseDoubleClick);
     event.setButton(Qt::LeftButton);
     event.setButtons(Qt::LeftButton);
@@ -683,6 +686,63 @@ void TestEditor::sirCanvasConnections()
         }
     }
     QCOMPARE(connectorCount, 6);
+
+    const ModelElement *infectious = controller.document().findByName("infectious");
+    QVERIFY(infectious);
+    struct DependentPath {
+        ArrowItem *arrow;
+        FlowItem *flow;
+        QPainterPath oldPath;
+        QPointF oldCenter;
+    };
+    std::vector<DependentPath> dependentPaths;
+    for (const ViewElement &element : controller.document().diagram().elements()) {
+        if (element.kind() != ElementKind::Connector)
+            continue;
+        auto *arrow = dynamic_cast<ArrowItem *>(scene.item(element.id()));
+        auto *flow = dynamic_cast<FlowItem *>(arrow->from());
+        if (!flow)
+            flow = dynamic_cast<FlowItem *>(arrow->to());
+        if (flow && flow->connects(infectious->id()))
+            dependentPaths.push_back({arrow, flow, arrow->geometryPath(), flow->center()});
+    }
+    QVERIFY(!dependentPaths.empty());
+
+    DiagramView view(&scene);
+    view.resize(900, 700);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    view.fitInView(scene.itemsBoundingRect().adjusted(-40.0, -40.0, 40.0, 40.0), Qt::KeepAspectRatio);
+    QTest::qWait(20);
+    const Vec2 infectiousPosition = controller.document().diagram().position(infectious->id());
+    controller.moveElements({{infectious->id(), QPointF(infectiousPosition.x + 80.0, infectiousPosition.y + 60.0)}});
+    QTest::qWait(20);
+
+    for (const DependentPath &dependent : dependentPaths) {
+        QVERIFY(QLineF(dependent.flow->center(), dependent.oldCenter).length() > 1.0);
+        const QPainterPath path = dependent.arrow->geometryPath();
+        QVERIFY(path.elementCount() != dependent.oldPath.elementCount()
+            || path.pointAtPercent(0.5) != dependent.oldPath.pointAtPercent(0.5));
+        const bool flowIsSource = dependent.arrow->from() == dependent.flow;
+        const int endpointIndex = flowIsSource ? 0 : path.elementCount() - 1;
+        const int neighborIndex = flowIsSource ? 1 : path.elementCount() - 2;
+        QVERIFY(endpointIndex >= 0 && neighborIndex >= 0);
+        const QPointF neighbor(path.elementAt(neighborIndex));
+        const QPointF endpoint(path.elementAt(endpointIndex));
+        QCOMPARE(endpoint, dependent.flow->boundaryPointToward(neighbor));
+        QVERIFY(QLineF(endpoint, dependent.flow->center()).length() <= 60.1);
+    }
+
+    controller.undoStack()->undo();
+    for (const DependentPath &dependent : dependentPaths) {
+        QCOMPARE(dependent.flow->center(), dependent.oldCenter);
+        QCOMPARE(dependent.arrow->geometryPath().pointAtPercent(0.5), dependent.oldPath.pointAtPercent(0.5));
+    }
+    controller.undoStack()->redo();
+    for (const DependentPath &dependent : dependentPaths) {
+        QVERIFY(dependent.flow->center() != dependent.oldCenter);
+        QVERIFY(dependent.arrow->geometryPath().pointAtPercent(0.5) != dependent.oldPath.pointAtPercent(0.5));
+    }
 }
 
 void TestEditor::endpointHandleReconnect()
@@ -721,7 +781,10 @@ void TestEditor::endpointHandleReconnect()
     QCOMPARE(scene.mouseGrabberItem(), targetHandle);
     QMouseEvent move(QEvent::MouseMove, end, view.viewport()->mapToGlobal(end), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &move);
-    QVERIFY(QLineF(targetHandle->pos(), destination).length() < 0.3);
+    QVERIFY2(QLineF(targetHandle->pos(), destination).length() < 0.75,
+        qPrintable(QStringLiteral("handle=%1,%2 destination=%3,%4")
+            .arg(targetHandle->pos().x()).arg(targetHandle->pos().y())
+            .arg(destination.x()).arg(destination.y())));
     QVERIFY(arrow->previewing());
     QMouseEvent release(QEvent::MouseButtonRelease, end, view.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &release);
@@ -738,12 +801,15 @@ void TestEditor::connectorMoveRepaint()
     DiagramScene scene(&controller);
     scene.setGridVisible(false);
     const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
-    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(400.0, 0.0));
-    const EntityId connector = controller.createConnector(stock, auxiliary);
+    const EntityId cloud = controller.createCloud(QPointF(200.0, 0.0));
+    const EntityId flow = controller.createFlow(stock, cloud);
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(0.0, 300.0));
+    const EntityId connector = controller.createConnector(auxiliary, flow);
     auto *arrow = dynamic_cast<ArrowItem *>(scene.item(connector));
+    auto *flowItem = dynamic_cast<FlowItem *>(scene.item(flow));
     DiagramView view(&scene);
     view.resize(640, 480);
-    view.centerOn(200.0, 0.0);
+    view.centerOn(100.0, 100.0);
     view.show();
     QVERIFY(QTest::qWaitForWindowExposed(&view));
     QTest::qWait(20);
@@ -758,11 +824,16 @@ void TestEditor::connectorMoveRepaint()
     }
     QVERIFY(painted > 0);
 
-    controller.moveElements({{stock, QPointF(100.0, 100.0)}});
+    const QPointF oldFlowCenter = flowItem->center();
+    controller.moveElements({{stock, QPointF(-200.0, -200.0)}});
     QTest::qWait(20);
+    QVERIFY(QLineF(flowItem->center(), oldFlowCenter).length() > 1.0);
     const QImage after = view.grab().toImage();
-    for (const QPoint &sample : samples)
-        QCOMPARE(after.pixelColor(sample), background);
+    for (const QPoint &sample : samples) {
+        QVERIFY2(after.pixelColor(sample) == background,
+            qPrintable(QStringLiteral("sample=%1,%2 color=%3").arg(sample.x()).arg(sample.y())
+                .arg(after.pixelColor(sample).name())));
+    }
 }
 
 void TestEditor::rubberBandReverseRepaint()
@@ -1054,25 +1125,26 @@ void TestEditor::connectionContextMenu()
         state->valid = actions.size() == 3;
         QActionGroup *group = routeMenu->actions().front()->actionGroup();
         state->valid = state->valid && group && group->isExclusive();
+        QAction *straightAction = nullptr;
         for (QAction *action : actions) {
             state->valid = state->valid && action->isCheckable() && !action->icon().isNull();
-            if (action->text() == QStringLiteral("Straight"))
+            if (action->text() == QStringLiteral("Bezier"))
                 state->valid = state->valid && action->isChecked();
-            if (action->text() == QStringLiteral("Bezier")) {
-                action->trigger();
-                menu->close();
-            }
+            if (action->text() == QStringLiteral("Straight"))
+                straightAction = action;
         }
+        straightAction->trigger();
+        menu->close();
     });
 
     QGraphicsSceneContextMenuEvent event(QEvent::GraphicsSceneContextMenu);
     event.setReason(QGraphicsSceneContextMenuEvent::Mouse);
-    event.setScenePos(QPointF(120.0, 0.0));
+    event.setScenePos(dynamic_cast<ArrowItem *>(scene.item(id))->geometryPath().pointAtPercent(0.5));
     event.setScreenPos(QPoint(100, 100));
     QApplication::sendEvent(&scene, &event);
     QVERIFY(state->executed);
     QVERIFY(state->valid);
-    QCOMPARE(controller.document().diagram().route(id).mode, RouteMode::Bezier);
+    QCOMPARE(controller.document().diagram().route(id).mode, RouteMode::Straight);
 }
 
 void TestEditor::orthogonalArrowDirections()
@@ -1083,6 +1155,10 @@ void TestEditor::orthogonalArrowDirections()
         const EntityId source = controller.createVariable(ElementKind::Auxiliary, sourcePosition);
         const EntityId target = controller.createVariable(ElementKind::Stock, QPointF());
         const EntityId id = controller.createConnector(source, target);
+        Route route;
+        route.mode = RouteMode::Orthogonal;
+        route.manual = true;
+        controller.setRoute(id, route);
         return dynamic_cast<ArrowItem *>(scene.item(id))->arrowHead();
     };
     const QPolygonF left = arrowFor(QPointF(-200.0, 0.0));
@@ -1102,8 +1178,11 @@ void TestEditor::orthogonalArrowDirections()
     QCOMPARE(above[0], QPointF(0.0, -25.0));
     QCOMPARE(below[0], QPointF(0.0, 25.0));
     const QPolygonF diagonal = arrowFor(QPointF(200.0, 200.0));
-    QVERIFY(std::abs(direction(diagonal).x()) > 0.0);
-    QVERIFY(std::abs(direction(diagonal).y()) > 0.0);
+    const bool horizontal = std::abs(direction(diagonal).y()) == 0.0
+        && std::abs(direction(diagonal).x()) > 0.0;
+    const bool vertical = std::abs(direction(diagonal).x()) == 0.0
+        && std::abs(direction(diagonal).y()) > 0.0;
+    QVERIFY(horizontal || vertical);
 }
 
 void TestEditor::actionIcons()

@@ -251,7 +251,7 @@ ArrowItem 与 FlowItem 都保存 EntityId 并复用 RoutedItem 的路径能力�
 
 连接线固定在实体上方、控制句柄下方。贝塞尔辅助线及控制句柄仅在单独选中一条曲线时显示，多选和区域选择过程中隐藏。路径预览必须先调用 `prepareGeometryChange()` 通知旧区域，再替换路由数据，确保拖动时旧轨迹被清除。
 
-它不直接修改核心连接关系，不承担自动避障、吸附决策和撤销命令职责。Flow 和 Arrow 都默认使用直线；Arrow 可显式选择直角自动布线。
+它不直接修改核心连接关系，不承担自动避障、吸附决策和撤销命令职责。Flow 默认使用直线；Arrow 默认使用带两个自动相对控制点的贝塞尔曲线，也可显式选择直线或直角自动布线。
 
 Connector 的端点合法性由 Document 聚合层统一校验，create、restore、reconnect 共用同一规则：Comment 只能作为一端 Junction，禁止 Comment→Comment。ArrowItem 在普通端点间绘制单实线，在 Comment 与另一端之间绘制虚线；该显示规则不改变 Connector 的因果或展示语义。
 
@@ -281,7 +281,7 @@ XMILE 中未被任何 Stock 引用的 Flow 仍是语义变量，导入时不得�
 
 Flow.from/to 是唯一权威关系。当前不引入 Stock 流入/流出派生索引，查询直接遍历 Flow；只有 profile 证明存在性能瓶颈时，才在 Document/Model 层统一增加集中式派生索引，不把索引分散保存在 Stock 对象中。nameKey 索引是另一项基础语义索引，按第 3.5 节始终维护。
 
-所有 RoutedItem 的 Route 按统一 EntityId 存入 DiagramDefinition。Flow 只接受 Straight/Bezier，默认 Straight，不运行直角自动避障；Arrow 默认 Straight，可显式选择 Orthogonal。
+所有 RoutedItem 的 Route 按统一 EntityId 存入 DiagramDefinition。Flow 只接受 Straight/Bezier，默认 Straight，不运行直角自动避障；Arrow 默认由 `defaultConnectorRoute()` 生成 Bezier 路径，可显式选择 Straight 或 Orthogonal。
 
 RoutePoint 使用相对坐标：`relative.x` 是沿源→目标方向的比例，`relative.y` 是沿路径法线的像素偏移，场景坐标仅在绘制和拖动时派生。`automatic=true` 表示自动布线点，`false` 表示用户手动点；控制句柄只显示手动点。QDS 同时保存相对值和 automatic 属性。
 
@@ -306,7 +306,7 @@ FlowItem 的名称使用独立 `labelRect()` 计算，`boundingRect()` 必须同
 
 目标版本为 XMILE 1.1，仅用于未压缩 XML 的导入/导出。Flow 名称和方程写入标准 `<flow>`，Stock 使用 `<inflow>`/`<outflow>` 引用 Flow；不生成物料 Connector。Constant/Data 在标准 XMILE 中写为 aux，普通 aux 导入为 Auxiliary。XMILE 1.1 没有标准 `<cloud>`，不得输出该标签冒充标准内容。
 
-导入纯 XMILE 时，Stock 的 inflow/outflow 决定 Flow 语义端点，Stock 位置决定已知端点布局；`x,y`、`pts`、`angle` 只作为布局参考。Flow 的 `x,y` 是阀门参考中心，Connector 的 `x,y` 只是通用显示位置，均不得变成 Route 固定点。`pts` 首尾可用于估计缺失 Cloud 的位置，中间点不得直接写成固定控制点。导入后 Route.manual=false 且 controlPoints 为空，路径由端点自动重算。
+导入纯 XMILE 时，Stock 的 inflow/outflow 决定 Flow 语义端点，Stock 位置决定已知端点布局；`x,y`、`pts`、`angle` 只作为布局参考。Flow 的 `x,y` 是阀门参考中心，Connector 的 `x,y` 只是通用显示位置，均不得变成 Route 固定点。`pts` 首尾可用于估计缺失 Cloud 的位置，中间点不得直接写成固定控制点。导入后 Route.manual=false，路径由端点自动重算；Arrow 可包含默认贝塞尔的 automatic 相对点，但不得包含 XMILE 派生的手动固定点。
 
 没有视图或路径时生成确定性的默认布局。名称、端点、视图补齐和索引建立必须属于同一事务，失败时保留原 Document。导出不得把贝塞尔控制手柄冒充标准锚点，也不得声称保留 Cloud 图形、Constant/Data 分类、Comment Connector、私有路径和工作区语义。
 
@@ -440,7 +440,7 @@ struct ChangeNotification {
 1. 按 removed 中由 Document 计算的依赖顺序删除图元：先控制句柄和 RoutedItem，后端点图元；每项只通过统一 Scene 索引查找。
 2. added 先按“非路由对象→Flow→Connector”排序，再调用 Document::find(id) 创建图元；不能依赖 unordered_map 或通知原始顺序，因为 Flow 端点图元必须先存在，Connector 又可能以 Flow 为端点。
 3. 对 updated 调用 Document::find(id) 并刷新已有图元。
-4. 刷新受影响端口和路径。
+4. 按依赖顺序刷新受影响端口和路径：先更新直接连接移动对象的 Flow，再更新直接连接移动对象或这些 Flow 的 Arrow，最后同步控制句柄。不能只刷新直接连接移动对象的 Arrow，否则 Stock→Flow→Arrow 链上的 Arrow 会使用旧阀门中心。
 
 打开文件或整体替换模型时使用 `documentReset` 并完整重建 Scene；普通编辑不做全场景重建。
 

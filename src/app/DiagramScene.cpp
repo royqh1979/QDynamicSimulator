@@ -263,8 +263,11 @@ void DiagramScene::setSelectedRouteMode(RouteMode mode)
         route.manual = true;
         if (mode == RouteMode::Straight)
             route.controlPoints.clear();
-        else if (mode == RouteMode::Bezier && route.controlPoints.size() < 2) {
-            route.controlPoints = {{1.0 / 3.0, -50.0}, {2.0 / 3.0, 50.0}};
+        else if (mode == RouteMode::Bezier) {
+            if (route.controlPoints.size() < 2)
+                route.controlPoints = defaultConnectorRoute().controlPoints;
+            for (RoutePoint &point : route.controlPoints)
+                point.automatic = false;
         }
         m_controller->setRoute(routed->id(), route);
     }
@@ -275,8 +278,11 @@ void DiagramScene::resetSelectedRoute()
     for (QGraphicsItem *item : selectedItems()) {
         if (auto *routed = dynamic_cast<RoutedItem *>(item)) {
             Route route;
-            if (routed->type() == FlowItem::Type)
+            if (routed->type() == FlowItem::Type) {
                 route.mode = RouteMode::Straight;
+            } else {
+                route = defaultConnectorRoute();
+            }
             m_controller->setRoute(routed->id(), route);
         }
     }
@@ -588,21 +594,25 @@ void DiagramScene::createCanvasItems(std::vector<EntityId> ids)
 
 void DiagramScene::updateDependentRoutes(EntityId id)
 {
+    std::vector<EntityId> updatedFlows;
     for (DiagramItem *item : m_items) {
-        if (auto *routed = dynamic_cast<RoutedItem *>(item); routed && routed->connects(id)) {
-            routed->updatePosition();
-            updateAutomaticRoute(routed);
+        if (auto *flow = dynamic_cast<FlowItem *>(item); flow && flow->connects(id)) {
+            flow->updatePosition();
+            updatedFlows.push_back(flow->id());
         }
     }
-    for (ControlPointHandle *handle : m_controlHandles) {
-        RoutedItem *routed = dynamic_cast<RoutedItem *>(m_items.value(handle->routeId()));
-        if (!routed)
+    for (DiagramItem *item : m_items) {
+        auto *arrow = dynamic_cast<ArrowItem *>(item);
+        if (!arrow)
             continue;
-        if (handle->index() == -1 && routed->from() && routed->from()->id() == id)
-            handle->setPos(routed->from()->pos());
-        else if (handle->index() == -2 && routed->to() && routed->to()->id() == id)
-            handle->setPos(routed->to()->pos());
+        const bool dependsOnMovedFlow = std::any_of(updatedFlows.begin(), updatedFlows.end(),
+            [arrow](EntityId flowId) { return arrow->connects(flowId); });
+        if (arrow->connects(id) || dependsOnMovedFlow) {
+            arrow->updatePosition();
+            updateAutomaticRoute(arrow);
+        }
     }
+    syncControlPoints();
 }
 
 RoutedItem *DiagramScene::selectedRoutedItem() const
@@ -748,7 +758,7 @@ void DiagramScene::updateAutomaticRoute(RoutedItem *item)
     const Route route = m_controller->document().diagram().route(item->id());
     if (route.manual || route.locked || route.mode != RouteMode::Orthogonal)
         return;
-    item->setAutomaticRoute(m_router.route(item->from()->pos(), item->to()->pos(), item->from()->id(), item->to()->id(), m_obstacles));
+    item->setAutomaticRoute(m_router.route(item->from()->center(), item->to()->center(), item->from()->id(), item->to()->id(), m_obstacles));
 }
 
 void DiagramScene::rerouteAll()

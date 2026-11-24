@@ -364,6 +364,11 @@ QVector<QLineF> RoutedItem::controlGuides() const
 {
     if (!m_controlGuidesVisible || m_route.mode != qds::core::RouteMode::Bezier)
         return {};
+    if (!m_route.controlPoints.empty()
+        && std::all_of(m_route.controlPoints.begin(), m_route.controlPoints.end(), [](const qds::core::RoutePoint &point) {
+            return point.automatic;
+        }))
+        return {};
     const QVector<QPointF> pathPoints = points();
     if (pathPoints.size() < 3)
         return {};
@@ -430,8 +435,8 @@ void RoutedItem::updatePosition()
 
 void RoutedItem::routeFrame(QPointF &from, QPointF &delta, QPointF &normal) const
 {
-    const QPointF fromPosition = m_from ? m_from->pos() : m_fallbackPosition + QPointF(-60.0, 0.0);
-    const QPointF toPosition = m_to ? m_to->pos() : m_fallbackPosition + QPointF(60.0, 0.0);
+    const QPointF fromPosition = m_from ? m_from->center() : m_fallbackPosition + QPointF(-60.0, 0.0);
+    const QPointF toPosition = m_to ? m_to->center() : m_fallbackPosition + QPointF(60.0, 0.0);
     from = fromPosition;
     delta = toPosition - fromPosition;
     const double length = std::sqrt(delta.x() * delta.x() + delta.y() * delta.y());
@@ -468,16 +473,16 @@ QVector<QPointF> RoutedItem::points() const
     QVector<QPointF> controls;
     for (const qds::core::RoutePoint &point : m_previewEndpoint == 0 ? m_route.controlPoints : std::vector<qds::core::RoutePoint> {}) {
         const QPointF candidate = scenePoint(point);
-        if ((m_from && samePoint(candidate, m_from->pos())) || (m_to && samePoint(candidate, m_to->pos())))
+        if ((m_from && samePoint(candidate, m_from->center())) || (m_to && samePoint(candidate, m_to->center())))
             continue;
         if (controls.isEmpty() || !samePoint(candidate, controls.back()))
             controls.append(candidate);
     }
 
     const QPointF fromTarget = !controls.isEmpty() ? controls.front()
-        : m_to ? m_to->pos() : m_fallbackPosition;
+        : m_to ? m_to->center() : m_fallbackPosition;
     const QPointF toTarget = !controls.isEmpty() ? controls.back()
-        : m_from ? m_from->pos() : m_fallbackPosition;
+        : m_from ? m_from->center() : m_fallbackPosition;
     const QPointF start = m_previewEndpoint == -1 ? m_previewPosition
         : m_from ? m_from->boundaryPointToward(fromTarget) : m_fallbackPosition + QPointF(-60.0, 0.0);
     const QPointF end = m_previewEndpoint == -2 ? m_previewPosition

@@ -46,6 +46,8 @@ struct Route {
     bool operator!=(const Route &other) const { return !(*this == other); }
 };
 
+Route defaultConnectorRoute();
+
 struct ElementData {
     EntityId id = 0;
     ElementKind kind = ElementKind::Stock;

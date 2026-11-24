@@ -339,8 +339,40 @@ int main(int argc, char **argv)
         if (element.kind() == ElementKind::Connector)
             ++sirConnectorCount;
     }
-    for (const auto &entry : sir.diagram().routes())
-        sirRoutesAutomatic = sirRoutesAutomatic && !entry.second.manual && entry.second.controlPoints.empty();
+    for (const auto &entry : sir.diagram().routes()) {
+        sirRoutesAutomatic = sirRoutesAutomatic && !entry.second.manual;
+        for (const RoutePoint &point : entry.second.controlPoints)
+            sirRoutesAutomatic = sirRoutesAutomatic && point.automatic;
+    }
+
+    DocumentController sirController;
+    DiagramScene sirScene(&sirController);
+    sirController.replaceDocument(std::move(sir));
+    const ModelElement *infectious = sirController.document().findByName("infectious");
+    if (!infectious)
+        return 14;
+    std::vector<ArrowItem *> dependentArrows;
+    for (const ViewElement &element : sirController.document().diagram().elements()) {
+        if (element.kind() != ElementKind::Connector)
+            continue;
+        auto *arrow = dynamic_cast<ArrowItem *>(sirScene.item(element.id()));
+        const auto *sourceFlow = dynamic_cast<FlowItem *>(arrow->from());
+        const auto *targetFlow = dynamic_cast<FlowItem *>(arrow->to());
+        if ((sourceFlow && sourceFlow->connects(infectious->id()))
+            || (targetFlow && targetFlow->connects(infectious->id())))
+            dependentArrows.push_back(arrow);
+    }
+    timer.restart();
+    double dependentEndpointChecksum = 0.0;
+    const Vec2 initialInfectiousPosition = sirController.document().diagram().position(infectious->id());
+    const QPointF infectiousPosition(initialInfectiousPosition.x, initialInfectiousPosition.y);
+    for (int index = 0; index < 1000; ++index) {
+        const QPointF offset(index % 2 == 0 ? 80.0 : 0.0, index % 2 == 0 ? 60.0 : 0.0);
+        sirController.moveElements({{infectious->id(), infectiousPosition + offset}});
+        for (ArrowItem *arrow : dependentArrows)
+            dependentEndpointChecksum += arrow->geometryPath().pointAtPercent(0.5).x();
+    }
+    const qint64 sirDependentMoveNs = timer.nsecsElapsed();
 
     std::size_t exportedModelCount = 0;
     for (const ModelElement &element : exported.model().elements()) {
@@ -386,13 +418,15 @@ int main(int argc, char **argv)
                         << "qds_open," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n"
                         << "xmile_export," << count << "," << exportNs / 1e6 << "," << exportNs / 1000.0 / count << "\n"
                         << "xmile_import," << count << "," << importNs / 1e6 << "," << importNs / 1000.0 / count << "\n"
-                        << "xmile_sir_import,100," << sirImportNs / 1e6 << "," << sirImportNs / 1000.0 / 100 << "\n";
+                        << "xmile_sir_import,100," << sirImportNs / 1e6 << "," << sirImportNs / 1000.0 / 100 << "\n"
+                        << "sir_dependent_route_moves,1000," << sirDependentMoveNs / 1e6 << "," << sirDependentMoveNs / 1000.0 / 1000 << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
         && matches > 0 && guideCount == 2000 && singleSelectionGuideCount == 1000 && valveCount == 2000
         && lineStyleChecksum == 3000 && automaticPointCount > 0 && automaticFlagsValid
         && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000
         && centerBoundaryCount == 1000 && variableKindsMatch
         && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic
+        && !dependentArrows.empty() && dependentEndpointChecksum != 0.0
         && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)
         QTextStream(stderr) << "validation failed: commands=" << commands << ", points=" << pointCount

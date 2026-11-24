@@ -433,7 +433,9 @@ bool parseNativeElement(QXmlStreamReader &reader, NativeRecord &record)
     record.data.flowEndpoints = {from, to};
     record.data.from = from;
     record.data.to = to;
-    record.data.route.mode = core::RouteMode::Straight;
+    record.data.route.mode = record.data.kind == core::ElementKind::Flow
+        ? core::RouteMode::Straight
+        : core::RouteMode::Bezier;
     const QString mode = attributes.value(QStringLiteral("mode")).toString();
     if (mode == QStringLiteral("straight"))
         record.data.route.mode = core::RouteMode::Straight;

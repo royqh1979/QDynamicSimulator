@@ -23,7 +23,7 @@
 - Rate 工具一次创建完整 Flow 实体，直接连接 Stock/Cloud；不得用“流量节点 + 两条物料连接”拼装，也不存在独立 MaterialFlow 工具。
 - Arrow 对应 DiagramDefinition 中唯一的 Connector 类型，表示因果/信息关系；接入 Comment Junction 时仍只是展示对象。
 - XMILE 中 Flow 保存为 `<flow>` 和 `<eqn>`，Stock 的 `<inflow>`/`<outflow>` 引用 Flow；Arrow 保存为 view `<connector>`，不得写成存量流入/流出。
-- Flow 仅支持 Straight/Bezier，默认 Straight；Arrow 可支持 Straight/Orthogonal/Bezier。
+- Flow 仅支持 Straight/Bezier，默认 Straight；Arrow 支持 Straight/Orthogonal/Bezier，默认 Bezier。
 
 ## 2. 当前基础与待修正问题
 
@@ -182,7 +182,7 @@
 
 ### 4.4 路径形式
 
-Flow 仅支持直线和三次贝塞尔曲线，默认直线，不使用直角自动布线。Arrow 支持直线、直角线和三次贝塞尔曲线，默认直线。
+Flow 仅支持直线和三次贝塞尔曲线，默认直线，不使用直角自动布线。Arrow 支持直线、直角线和三次贝塞尔曲线，默认使用带两个自动相对控制点的三次贝塞尔曲线；自动点不显示控制手柄，用户显式调整路径后转为手动点。
 
 每种路径支持：
 

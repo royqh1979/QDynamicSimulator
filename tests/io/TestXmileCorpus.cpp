@@ -4,6 +4,7 @@
 #include <QFile>
 #include <QtTest>
 
+#include <algorithm>
 #include <unordered_set>
 
 using namespace qds::core;
@@ -101,7 +102,10 @@ private slots:
                 failures.append(path + ": isolated element " + QString::number(element.id()));
             }
             for (const auto &entry : document.diagram().routes()) {
-                if (entry.second.manual || !entry.second.controlPoints.empty())
+                const auto &points = entry.second.controlPoints;
+                const bool hasFixedPoints = std::any_of(points.begin(), points.end(),
+                    [](const RoutePoint &point) { return !point.automatic; });
+                if (entry.second.manual || hasFixedPoints)
                     failures.append(path + ": fixed route data");
             }
         }
