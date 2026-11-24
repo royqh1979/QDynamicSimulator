@@ -296,7 +296,11 @@ C - 12N - 10T，C，C - 12N + 10T
 
 目标版本为 XMILE 1.1，仅用于未压缩 XML 的导入/导出。Flow 名称和方程写入标准 `<flow>`，Stock 使用 `<inflow>`/`<outflow>` 引用 Flow；不生成物料 Connector。Constant/Data 在标准 XMILE 中写为 aux，普通 aux 导入为 Auxiliary。XMILE 1.1 没有标准 `<cloud>`，不得输出该标签冒充标准内容。
 
-导入纯 XMILE 时，根据 Stock 的 inflow/outflow 和 Flow 路径补建开放端 Cloud；没有视图或路径时生成确定性的默认布局。名称、端点、视图补齐和索引建立必须属于同一事务，失败时保留原 Document。导出不得声称保留 Cloud 图形、Constant/Data 分类、Comment Connector、私有路径和工作区语义。
+导入纯 XMILE 时，Stock 的 inflow/outflow 决定 Flow 语义端点，Stock 位置决定已知端点布局；`x,y`、`pts`、`angle` 只作为布局参考。Flow 的 `x,y` 是阀门参考中心，Connector 的 `x,y` 只是通用显示位置，均不得变成 Route 固定点。`pts` 首尾可用于估计缺失 Cloud 的位置，中间点不得直接写成固定控制点。导入后 Route.manual=false 且 controlPoints 为空，路径由端点自动重算。
+
+没有视图或路径时生成确定性的默认布局。名称、端点、视图补齐和索引建立必须属于同一事务，失败时保留原 Document。导出不得把贝塞尔控制手柄冒充标准锚点，也不得声称保留 Cloud 图形、Constant/Data 分类、Comment Connector、私有路径和工作区语义。
+
+真实互操作验证首先使用 `3rdparty/test-models/samples/SIR/SIR.xmile`，要求全部 Flow/Connector 端点有效、无孤立实体、无固定 Route 点。CMake 选项 `QDS_ENABLE_XMILE_CORPUS_TESTS` 默认 OFF；修改 XMILE 导入功能时显式开启，遍历 `3rdparty/test-models` 下全部 XMILE 文件执行同族结构验证，不得静默跳过文件。多模型/模块及多 Stock 同向端点必须明确报不支持，禁止部分导入；损坏 XML 必须明确拒绝，并在测试输出中分类记录。公式引用变量的孤立判断暂缓并在测试输出中列出，待公式依赖分析实现后恢复；这些文件仍验证导入、端点和 Route。
 
 ### 4.2.4 原生 QDS 单 XML 格式
 

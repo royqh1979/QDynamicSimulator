@@ -280,6 +280,29 @@ int main(int argc, char **argv)
     if (!qds::io::XmileFile::importFile(xmilePath, exported, &error))
         return 12;
     const qint64 importNs = timer.nsecsElapsed();
+
+    Document sir;
+    timer.restart();
+    for (int index = 0; index < 100; ++index) {
+        sir.clear();
+        if (!qds::io::XmileFile::importFile(QStringLiteral(QDS_SIR_XMILE_PATH), sir, &error))
+            return 13;
+    }
+    const qint64 sirImportNs = timer.nsecsElapsed();
+    std::size_t sirModelCount = 0;
+    std::size_t sirConnectorCount = 0;
+    bool sirRoutesAutomatic = true;
+    for (const ModelElement &element : sir.model().elements()) {
+        Q_UNUSED(element)
+        ++sirModelCount;
+    }
+    for (const ViewElement &element : sir.diagram().elements()) {
+        if (element.kind() == ElementKind::Connector)
+            ++sirConnectorCount;
+    }
+    for (const auto &entry : sir.diagram().routes())
+        sirRoutesAutomatic = sirRoutesAutomatic && !entry.second.manual && entry.second.controlPoints.empty();
+
     std::size_t exportedModelCount = 0;
     for (const ModelElement &element : exported.model().elements()) {
         Q_UNUSED(element)
@@ -319,11 +342,12 @@ int main(int argc, char **argv)
                         << "qds_save," << count << "," << saveNs / 1e6 << "," << saveNs / 1000.0 / count << "\n"
                         << "qds_open," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n"
                         << "xmile_export," << count << "," << exportNs / 1e6 << "," << exportNs / 1000.0 / count << "\n"
-                        << "xmile_import," << count << "," << importNs / 1e6 << "," << importNs / 1000.0 / count << "\n";
+                        << "xmile_import," << count << "," << importNs / 1e6 << "," << importNs / 1000.0 / count << "\n"
+                        << "xmile_sir_import,100," << sirImportNs / 1e6 << "," << sirImportNs / 1000.0 / 100 << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
         && matches > 0 && guideCount == 2000 && singleSelectionGuideCount == 1000 && valveCount == 2000
         && pipelineCount == 2000 && flowArrowPointCount == 3000 && variableKindsMatch
-        && exportedModelCount == originalModelCount
+        && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic
         && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)
         QTextStream(stderr) << "validation failed: commands=" << commands << ", points=" << pointCount
