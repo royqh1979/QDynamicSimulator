@@ -23,7 +23,9 @@ void expectValue(const std::string &equation, double expected, const EvaluationC
     QVERIFY2(analysis.issues.empty(), equation.c_str());
     const EvaluationResult result = evaluate(analysis, context);
     QVERIFY2(result.value.has_value(), result.error.c_str());
-    QVERIFY2(qAbs(*result.value - expected) < 1e-12, equation.c_str());
+    const auto *scalar = std::get_if<double>(&*result.value);
+    QVERIFY(scalar);
+    QVERIFY2(qAbs(*scalar - expected) < 1e-12, equation.c_str());
 }
 
 void expectError(const std::string &equation, const EvaluationContext &context = {})
@@ -78,7 +80,19 @@ void TestEvaluation::resolvedReferences()
     };
     EvaluationResult evaluated = evaluateFormula(entry.formula.ast.get(), context);
     QVERIFY2(evaluated.value.has_value(), evaluated.error.c_str());
-    QCOMPARE(*evaluated.value, 8.5);
+    const auto *scalar = std::get_if<double>(&*evaluated.value);
+    QVERIFY(scalar);
+    QCOMPARE(*scalar, 8.5);
+
+    document.rename(input, "Input.Value");
+    document.setEquation(result, "\"Input.Value\" * 2 + Offset");
+    const ModelAnalysis qualifiedAnalysis = analyzeDocument(document);
+    const ElementAnalysis &qualifiedEntry = element(qualifiedAnalysis, result);
+    evaluated = evaluateFormula(qualifiedEntry.formula.ast.get(), context);
+    QVERIFY2(evaluated.value.has_value(), evaluated.error.c_str());
+    scalar = std::get_if<double>(&*evaluated.value);
+    QVERIFY(scalar);
+    QCOMPARE(*scalar, 8.5);
 
     context.readVariable = {};
     QVERIFY(!evaluateFormula(entry.formula.ast.get(), context).value);
@@ -135,11 +149,12 @@ void TestEvaluation::constantsAndMath()
     expectValue("ABS(-2) + INT(-1.2) + MAX(3, 4) + MIN(3, 4) + MAX(5) + MIN(5)", 17.0);
     expectValue("LN(EXP(1)) + LOG(EXP(1)) + LOG10(100) + SQRT(9)", 7.0);
     expectValue("ARCCOS(1) + ARCSIN(0) + ARCTAN(0) + COS(0) + SIN(0) + TAN(0)", 1.0);
+    expectValue("SUM(1) + SIZE(5) + STDDEV(2)", 2.0);
 
     const EvaluationResult infinity = evaluate(analyzeFormula("INF + 1 / 0"));
-    QVERIFY(infinity.value && std::isinf(*infinity.value));
+    QVERIFY(infinity.value && std::isinf(*std::get_if<double>(&*infinity.value)));
     const EvaluationResult nan = evaluate(analyzeFormula("SQRT(-1)"));
-    QVERIFY(nan.value && std::isnan(*nan.value));
+    QVERIFY(nan.value && std::isnan(*std::get_if<double>(&*nan.value)));
 }
 
 void TestEvaluation::shortCircuit()
@@ -168,7 +183,6 @@ void TestEvaluation::errorsAndUnsupported()
     expectError("DELAY(1, 2)");
     expectError("INIT(1)");
     expectError("SELF");
-    expectError("SUM(1)");
     expectError("A[1]");
     expectError("A[*, 1:2, @1]");
     expectError("A'");
