@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QElapsedTimer>
+#include <QFrame>
 #include <QGraphicsLineItem>
 #include <QGraphicsProxyWidget>
 #include <QGraphicsSceneMouseEvent>
@@ -144,6 +145,32 @@ int main(int argc, char **argv)
         delete preview;
     }
     const qint64 previewNs = timer.nsecsElapsed();
+
+    DocumentController areaController;
+    DiagramScene areaScene(&areaController);
+    areaController.createVariable(ElementKind::Stock, QPointF());
+    areaController.createVariable(ElementKind::Auxiliary, QPointF(200.0, 200.0));
+    DiagramView areaView(&areaScene);
+    areaView.resize(640, 480);
+    auto *areaFrame = areaView.findChild<QFrame *>(QStringLiteral("selectionFrame"));
+    if (!areaFrame)
+        return 32;
+    const QPoint areaStart(400, 300);
+    QMouseEvent areaPress(QEvent::MouseButtonPress, areaStart, areaView.viewport()->mapToGlobal(areaStart), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(areaView.viewport(), &areaPress);
+    timer.restart();
+    int areaResizeCount = 0;
+    for (int index = 0; index < 1000; ++index) {
+        const QPoint point = index % 2 == 0 ? QPoint(100, 100) : QPoint(200, 200);
+        QMouseEvent move(QEvent::MouseMove, point, areaView.viewport()->mapToGlobal(point), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(areaView.viewport(), &move);
+        if (areaFrame->geometry() != QRect(areaStart, point).normalized())
+            return 33;
+        ++areaResizeCount;
+    }
+    const qint64 areaResizeNs = timer.nsecsElapsed();
+    QMouseEvent areaRelease(QEvent::MouseButtonRelease, QPoint(200, 200), areaView.viewport()->mapToGlobal(QPoint(200, 200)), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(areaView.viewport(), &areaRelease);
 
     timer.restart();
     for (int index = 0; index < 1000; ++index) {
@@ -743,6 +770,7 @@ int main(int argc, char **argv)
                         << "editor_paste," << pasted.size() << "," << pasteNs / 1e6 << "," << pasteNs / 1000.0 / count << "\n"
                         << "editor_search_100," << count * 100 << "," << searchNs / 1e6 << "," << searchNs / 1000.0 / (count * 100) << "\n"
                         << "rubber_preview,1000," << previewNs / 1e6 << "," << previewNs / 1000.0 / 1000 << "\n"
+                        << "rubber_band_resize,1000," << areaResizeNs / 1e6 << "," << areaResizeNs / 1000.0 / 1000 << "\n"
                         << "connection_context_menu,1000," << contextMenuNs / 1e6 << "," << contextMenuNs / 1000.0 / 1000 << "\n"
                         << "inline_rename," << inlineRenameCount << "," << inlineRenameNs / 1e6 << "," << inlineRenameNs / 1000.0 / count << "\n"
                         << "connector_line_style,1000," << connectorStyleNs / 1e6 << "," << connectorStyleNs / 1000.0 / 1000 << "\n"
@@ -776,7 +804,7 @@ int main(int argc, char **argv)
                         << "xmile_sir_import,100," << sirImportNs / 1e6 << "," << sirImportNs / 1000.0 / 100 << "\n"
                         << "sir_dependent_route_moves,1000," << sirDependentMoveNs / 1e6 << "," << sirDependentMoveNs / 1000.0 / 1000 << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
-        && inlineRenameCount == count && matches > 0 && guideCount == 2000 && automaticGuideCount == 2000 && automaticGroupManual
+        && inlineRenameCount == count && areaResizeCount == 1000 && matches > 0 && guideCount == 2000 && automaticGuideCount == 2000 && automaticGroupManual
         && connectorDragGuideCount == 2000 && connectorDragStateValid
         && endpointPreviewGuideCount == 2000 && endpointPreviewHandlesValid
         && flowEndpointPreviewCount == count

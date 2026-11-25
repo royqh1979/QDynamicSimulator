@@ -18,6 +18,7 @@
 #include <QDropEvent>
 #include <QFile>
 #include <QFontComboBox>
+#include <QFrame>
 #include <QGraphicsProxyWidget>
 #include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSceneMouseEvent>
@@ -28,6 +29,7 @@
 #include <QMenuBar>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QPaintEvent>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -41,6 +43,19 @@
 #include <optional>
 
 using namespace qds::core;
+
+class PaintRegionRecorder : public QObject
+{
+public:
+    QRegion region;
+
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (event->type() == QEvent::Paint)
+            region |= static_cast<QPaintEvent *>(event)->region();
+        return QObject::eventFilter(watched, event);
+    }
+};
 
 class TestEntityPalette : public EntityPalette
 {
@@ -1437,19 +1452,51 @@ void TestEditor::connectorDragSelectionRepaint()
 
 void TestEditor::rubberBandReverseRepaint()
 {
-    DocumentController controller;
-    DiagramScene scene(&controller);
-    scene.setGridVisible(false);
-    DiagramView view(&scene);
-    view.resize(640, 480);
-    view.show();
-    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    MainWindow window;
+    auto *scene = window.findChild<DiagramScene *>();
+    auto *viewPointer = window.findChild<DiagramView *>();
+    QVERIFY(scene && viewPointer);
+    DiagramView &view = *viewPointer;
+    scene->setGridVisible(false);
+    window.resize(1000, 800);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
     QTest::qWait(20);
     const QImage before = view.grab().toImage();
-    QTest::mousePress(view.viewport(), Qt::LeftButton, Qt::NoModifier, QPoint(400, 300));
-    QTest::mouseMove(view.viewport(), QPoint(100, 100));
-    QTest::mouseMove(view.viewport(), QPoint(200, 200));
-    QTest::mouseRelease(view.viewport(), Qt::LeftButton, Qt::NoModifier, QPoint(200, 200));
+    PaintRegionRecorder recorder;
+    view.viewport()->installEventFilter(&recorder);
+    auto *selectionFrame = view.findChild<QFrame *>(QStringLiteral("selectionFrame"));
+    QVERIFY(selectionFrame);
+    auto sendMouse = [&view](QEvent::Type type, const QPoint &point, Qt::MouseButton button, Qt::MouseButtons buttons) {
+        QMouseEvent event(type, point, view.viewport()->mapToGlobal(point), button, buttons, Qt::NoModifier);
+        QApplication::sendEvent(view.viewport(), &event);
+    };
+    sendMouse(QEvent::MouseButtonPress, QPoint(400, 300), Qt::LeftButton, Qt::LeftButton);
+    sendMouse(QEvent::MouseMove, QPoint(100, 100), Qt::NoButton, Qt::LeftButton);
+    const QRect expandedBand = selectionFrame->geometry();
+    QVERIFY(!expandedBand.isEmpty());
+    QTest::qWait(20);
+    const QImage expandedImage = view.grab().toImage();
+    int selectionPixels = 0;
+    const QRect expandedArea = expandedBand.intersected(expandedImage.rect());
+    for (int y = expandedArea.top(); y <= expandedArea.bottom(); ++y) {
+        for (int x = expandedArea.left(); x <= expandedArea.right(); ++x)
+            selectionPixels += expandedImage.pixelColor(x, y) == diagram_palette::SelectionColor ? 1 : 0;
+    }
+    if (QGuiApplication::platformName() == QStringLiteral("windows"))
+        QVERIFY(selectionPixels > 0);
+    recorder.region = QRegion();
+    sendMouse(QEvent::MouseMove, QPoint(200, 200), Qt::NoButton, Qt::LeftButton);
+    QTest::qWait(20);
+    QVERIFY(selectionFrame->isVisible());
+    QCOMPARE(selectionFrame->geometry(), QRect(200, 200, 201, 101));
+    if (QGuiApplication::platformName() == QStringLiteral("windows"))
+        QVERIFY(recorder.region.contains(expandedBand));
+    const QImage reversed = view.grab().toImage();
+    view.viewport()->repaint();
+    QCOMPARE(reversed, view.grab().toImage());
+    sendMouse(QEvent::MouseButtonRelease, QPoint(200, 200), Qt::LeftButton, Qt::NoButton);
+    QVERIFY(!selectionFrame->isVisible());
     const QImage after = view.grab().toImage();
     QCOMPARE(after, before);
 }
