@@ -1,3 +1,4 @@
+#include <qds/core/Analysis.h>
 #include <qds/core/Formula.h>
 
 #include <QElapsedTimer>
@@ -28,9 +29,50 @@ int main(int argc, char **argv)
     const qint64 elapsedNs = timer.nsecsElapsed();
     if (totalNodes == 0)
         return 3;
+
+    Document document;
+    document.createVariable(ElementKind::Stock);
+    std::string previousName = "Stock1";
+    for (int index = 0; index < count; ++index) {
+        const EntityId id = document.createVariable(ElementKind::Auxiliary);
+        const std::string currentName = "Equation" + std::to_string(index);
+        if (!document.rename(id, currentName))
+            return 4;
+        for (const char prefix : std::string("bcdef")) {
+            const EntityId input = document.createVariable(ElementKind::Auxiliary);
+            if (!document.rename(input, prefix + std::to_string(index)))
+                return 4;
+        }
+        const std::string equation = previousName + "*b" + std::to_string(index)
+            + "+ABS(c" + std::to_string(index) + ")-IF d" + std::to_string(index)
+            + " THEN e" + std::to_string(index) + " ELSE f" + std::to_string(index);
+        document.setEquation(id, equation);
+        previousName = currentName;
+    }
+    timer.restart();
+    ModelAnalysis modelAnalysis = analyzeDocument(document);
+    const qint64 documentNs = timer.nsecsElapsed();
+    std::size_t dependencyCount = 0;
+    for (const auto &entry : modelAnalysis.dependencies.edges)
+        dependencyCount += entry.second.size();
+    std::size_t referenceCount = 0;
+    for (const ElementAnalysis &entry : modelAnalysis.elements)
+        referenceCount += entry.references.size();
+    for (const ModelIssue &issue : modelAnalysis.issues) {
+        if (issue.severity == IssueSeverity::Error) {
+            QTextStream(stderr) << "Model analysis failed: " << QString::fromStdString(issue.message) << "\n";
+            return 5;
+        }
+    }
+    if (referenceCount != static_cast<std::size_t>(count) * 6 || dependencyCount != referenceCount)
+        return 6;
     QTextStream(stdout) << "operation,count,total_ms,per_formula_us\n"
                         << "formula_analyze," << count << "," << elapsedNs / 1e6 << ","
                         << elapsedNs / 1000.0 / count << "\n"
-                        << "formula_nodes," << totalNodes << ",\n";
+                        << "formula_nodes," << totalNodes << ",\n"
+                        << "document_analysis," << count << "," << documentNs / 1e6 << ","
+                        << documentNs / 1000.0 / count << "\n"
+                        << "formula_references," << referenceCount << ",\n"
+                        << "formula_dependencies," << dependencyCount << ",\n";
     return 0;
 }

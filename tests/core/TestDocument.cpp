@@ -309,7 +309,8 @@ void TestDocument::validation()
     document.rename(stock, "\u5E93\u5B58");
     document.setEquation(stock, "100");
     document.rename(first, "\u8F85\u52A9 \u53D8\u91CF");
-    document.setEquation(first, "Missing + 1");
+    document.setEquation(first, "Auxiliary2 + Missing");
+    document.setEquation(second, "\"\u8F85\u52A9 \u53D8\u91CF\"");
     document.createConnector(first, second);
     document.createConnector(second, first);
     const auto issues = validateDocument(document);
