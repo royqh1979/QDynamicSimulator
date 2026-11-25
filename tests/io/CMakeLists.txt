@@ -14,6 +14,17 @@ endif()
 add_test(NAME io-xmile COMMAND test-xmile)
 add_dependencies(all-test-targets test-xmile)
 
+add_executable(test-array-files
+    TestArrayFiles.cpp
+)
+target_link_libraries(test-array-files PRIVATE QDS::IO Qt5::Test)
+target_compile_definitions(test-array-files PRIVATE
+    QDS_ARRAY_APPLY_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/min_max_1arg/test_min_max_1arg.xmile"
+    QDS_ARRAY_INDIVIDUAL_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/subscript_individually_defined_1d_arrays/subscript_individually_defined_1d_arrays.xmile"
+)
+add_test(NAME io-array-files COMMAND test-array-files)
+add_dependencies(all-test-targets test-array-files)
+
 if(QDS_ENABLE_XMILE_CORPUS_TESTS)
     add_executable(test-xmile-corpus TestXmileCorpus.cpp)
     target_link_libraries(test-xmile-corpus PRIVATE QDS::IO Qt5::Test)

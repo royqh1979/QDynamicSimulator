@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace qds::core {
 
@@ -38,12 +40,22 @@ private:
     ElementKind m_kind;
 };
 
+struct ArrayElementEquation {
+    std::vector<std::size_t> indices;
+    std::string equation;
+
+    bool operator==(const ArrayElementEquation &other) const { return indices == other.indices && equation == other.equation; }
+    bool operator!=(const ArrayElementEquation &other) const { return !(*this == other); }
+};
+
 class ModelElement : public DocumentElement
 {
 public:
     std::string displayName;
     std::string nameKey;
     std::string equation;
+    std::vector<std::string> dimensions;
+    std::vector<ArrayElementEquation> elementEquations;
     std::string unit;
     std::string comment;
 
@@ -121,6 +133,28 @@ public:
     }
 
     std::string content;
+};
+
+struct DimensionElement {
+    std::string displayName;
+    std::string nameKey;
+
+    bool operator==(const DimensionElement &other) const
+    {
+        return displayName == other.displayName && nameKey == other.nameKey;
+    }
+};
+
+struct Dimension {
+    std::string displayName;
+    std::string nameKey;
+    std::vector<DimensionElement> elements;
+
+    const DimensionElement *findElement(const std::string &name) const;
+    bool operator==(const Dimension &other) const
+    {
+        return displayName == other.displayName && nameKey == other.nameKey && elements == other.elements;
+    }
 };
 
 class Document;

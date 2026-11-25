@@ -40,6 +40,16 @@ std::string normalizeIdentifier(const std::string &name)
     return normalized;
 }
 
+const DimensionElement *Dimension::findElement(const std::string &name) const
+{
+    const std::string key = normalizeIdentifier(name);
+    for (const DimensionElement &element : elements) {
+        if (!element.nameKey.empty() && element.nameKey == key)
+            return &element;
+    }
+    return nullptr;
+}
+
 ModelRange Model::elements() const
 {
     return ModelRange(m_document.m_elements);

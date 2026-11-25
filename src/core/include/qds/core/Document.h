@@ -77,6 +77,8 @@ struct ElementData {
     ElementKind kind = ElementKind::Stock;
     std::string displayName;
     std::string equation;
+    std::vector<std::string> dimensions;
+    std::vector<ArrayElementEquation> elementEquations;
     std::string unit;
     std::string comment;
     std::string content;
@@ -90,6 +92,7 @@ struct ElementData {
     bool operator==(const ElementData &other) const
     {
         return id == other.id && kind == other.kind && displayName == other.displayName && equation == other.equation
+            && dimensions == other.dimensions && elementEquations == other.elementEquations
             && unit == other.unit && comment == other.comment && content == other.content
             && flowEndpoints == other.flowEndpoints && from == other.from && to == other.to
             && position == other.position && route == other.route && font == other.font;
@@ -207,6 +210,10 @@ public:
     DocumentElement *find(EntityId id);
     const DocumentElement *find(EntityId id) const;
     const ModelElement *findByName(const std::string &name) const;
+    const Dimension *findDimension(const std::string &name) const;
+    const std::vector<Dimension> &dimensions() const { return m_dimensions; }
+    bool defineDimension(const std::string &displayName, std::size_t size);
+    bool defineDimension(const std::string &displayName, const std::vector<std::string> &elements);
 
     DocumentRange elements() const { return DocumentRange(m_elements); }
     const Model &model() const { return m_model; }
@@ -228,6 +235,8 @@ public:
 
     bool rename(EntityId id, const std::string &displayName);
     bool setEquation(EntityId id, const std::string &equation);
+    bool setDimensions(EntityId id, const std::vector<std::string> &dimensions);
+    bool setElementEquation(EntityId id, const std::vector<std::size_t> &indices, const std::string &equation);
     bool setUnit(EntityId id, const std::string &unit);
     bool setComment(EntityId id, const std::string &comment);
     bool setCommentContent(EntityId id, const std::string &content);
@@ -244,13 +253,18 @@ private:
 
     template <typename T>
     EntityId insert(std::unique_ptr<T> element, Vec2 position);
+    bool defineDimensionData(Dimension dimension);
     bool validFlowEndpoint(EntityId id) const;
     bool validConnectorEndpoints(EntityId from, EntityId to) const;
+    bool validArrayData(const std::vector<std::string> &dimensions,
+        const std::vector<ArrayElementEquation> &elementEquations, const std::string &equation) const;
     std::string uniqueName(ElementKind kind);
     void updateReferences(EntityId id, const std::string &oldName, const std::string &newName);
 
     std::unordered_map<EntityId, std::unique_ptr<DocumentElement>> m_elements;
     std::unordered_map<std::string, EntityId> m_nameIndex;
+    std::vector<Dimension> m_dimensions;
+    std::unordered_map<std::string, std::size_t> m_dimensionIndex;
     std::unordered_map<ElementKind, std::uint64_t> m_nextNameSuffix;
     EntityId m_nextId = 1;
     Model m_model;

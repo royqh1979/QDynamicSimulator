@@ -53,6 +53,12 @@ public:
             return conditional(*static_cast<const ConditionalNode *>(node));
         case FormulaNodeKind::Subscript:
             return failure(node, "Subscript evaluation is not supported");
+        case FormulaNodeKind::Wildcard:
+            return failure(node, "Wildcard evaluation is not supported");
+        case FormulaNodeKind::Range:
+            return failure(node, "Range evaluation is not supported");
+        case FormulaNodeKind::DimensionPosition:
+            return failure(node, "Dimension position evaluation is not supported");
         }
         return failure(node, "Unknown formula node");
     }

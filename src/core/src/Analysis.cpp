@@ -25,6 +25,15 @@ void addReference(ModelAnalysis &result, ElementAnalysis &owner, EntityId depend
         edges.push_back(owner.id);
 }
 
+bool isDimensionElement(const Document &document, const std::string &nameKey)
+{
+    const std::size_t separator = nameKey.find('.');
+    if (separator == std::string::npos)
+        return false;
+    const Dimension *dimension = document.findDimension(nameKey.substr(0, separator));
+    return dimension && dimension->findElement(nameKey.substr(separator + 1));
+}
+
 void resolveNode(const Document &document, ModelAnalysis &result, ElementAnalysis &owner, FormulaNode *node)
 {
     if (!node)
@@ -32,6 +41,8 @@ void resolveNode(const Document &document, ModelAnalysis &result, ElementAnalysi
     if (auto *reference = dynamic_cast<ReferenceNode *>(node)) {
         if (const FunctionSignature *signature = findFunctionSignature(reference->nameKey);
             signature && signature->minArguments == 0 && signature->maxArguments == 0)
+            return;
+        if (document.findDimension(reference->nameKey) || isDimensionElement(document, reference->nameKey))
             return;
         if (const ModelElement *model = document.model().findByName(reference->nameKey)) {
             reference->entityId = model->id();
@@ -76,8 +87,23 @@ void resolveNode(const Document &document, ModelAnalysis &result, ElementAnalysi
     }
     if (auto *subscript = dynamic_cast<SubscriptNode *>(node)) {
         resolveNode(document, result, owner, subscript->target.get());
-        for (const auto &index : subscript->indices)
+        const auto *reference = dynamic_cast<const ReferenceNode *>(subscript->target.get());
+        const ModelElement *target = reference ? document.model().findByName(reference->nameKey) : nullptr;
+        for (std::size_t position = 0; position < subscript->indices.size(); ++position) {
+            const auto &index = subscript->indices[position];
+            const auto *name = dynamic_cast<const ReferenceNode *>(index.get());
+            if (name && target && position < target->dimensions.size()) {
+                const Dimension *dimension = document.findDimension(target->dimensions[position]);
+                if (dimension && (name->nameKey == dimension->nameKey || dimension->findElement(name->nameKey)))
+                    continue;
+            }
             resolveNode(document, result, owner, index.get());
+        }
+        return;
+    }
+    if (auto *range = dynamic_cast<RangeNode *>(node)) {
+        resolveNode(document, result, owner, range->begin.get());
+        resolveNode(document, result, owner, range->end.get());
     }
 }
 
@@ -86,6 +112,11 @@ void reportCycles(const Document &document, ModelAnalysis &result)
     std::unordered_map<EntityId, int> state;
     std::unordered_set<EntityId> reported;
     std::function<void(EntityId)> visit = [&](EntityId id) {
+        const auto *model = dynamic_cast<const ModelElement *>(document.find(id));
+        if (model && !model->dimensions.empty()) {
+            state[id] = 2;
+            return;
+        }
         state[id] = 1;
         const auto found = result.dependencies.edges.find(id);
         if (found != result.dependencies.edges.end()) {
@@ -127,10 +158,28 @@ ModelAnalysis analyzeDocument(const Document &document)
         }
         ElementAnalysis owner;
         owner.id = element.id();
+        const auto analyzeOwned = [&](FormulaAnalysis &formula) {
+            for (const FormulaIssue &issue : formula.issues)
+                addIssue(result, element.id(), IssueSeverity::Error, issue.message, "parse", issue.span);
+            resolveNode(document, result, owner, formula.ast.get());
+        };
         owner.formula = analyzeFormula(element.equation);
-        for (const FormulaIssue &issue : owner.formula.issues)
-            addIssue(result, element.id(), IssueSeverity::Error, issue.message, "parse", issue.span);
-        resolveNode(document, result, owner, owner.formula.ast.get());
+        analyzeOwned(owner.formula);
+        for (const ArrayElementEquation &entry : element.elementEquations) {
+            ArrayElementAnalysis item;
+            item.indices = entry.indices;
+            item.formula = analyzeFormula(entry.equation);
+            analyzeOwned(item.formula);
+            owner.elementFormulas.push_back(std::move(item));
+        }
+        if (!element.elementEquations.empty()) {
+            std::size_t expected = 1;
+            for (const std::string &name : element.dimensions)
+                expected *= document.findDimension(name)->elements.size();
+            if (element.elementEquations.size() != expected)
+                addIssue(result, element.id(), IssueSeverity::Error, "Array element equations are incomplete",
+                    "incomplete-array-elements", {});
+        }
         result.elements.push_back(std::move(owner));
     }
     for (const ModelElement &element : document.model().elements()) {

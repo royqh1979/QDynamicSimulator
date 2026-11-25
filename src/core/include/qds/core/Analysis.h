@@ -8,9 +8,15 @@
 
 namespace qds::core {
 
+struct ArrayElementAnalysis {
+    std::vector<std::size_t> indices;
+    FormulaAnalysis formula;
+};
+
 struct ElementAnalysis {
     EntityId id = 0;
     FormulaAnalysis formula;
+    std::vector<ArrayElementAnalysis> elementFormulas;
     std::unordered_set<EntityId> references;
 };
 

@@ -128,6 +128,8 @@ Document::Document()
 Document::Document(Document &&other) noexcept
     : m_elements(std::move(other.m_elements))
     , m_nameIndex(std::move(other.m_nameIndex))
+    , m_dimensions(std::move(other.m_dimensions))
+    , m_dimensionIndex(std::move(other.m_dimensionIndex))
     , m_nextNameSuffix(std::move(other.m_nextNameSuffix))
     , m_nextId(other.m_nextId)
     , m_model(*this)
@@ -145,6 +147,8 @@ Document &Document::operator=(Document &&other) noexcept
         return *this;
     m_elements = std::move(other.m_elements);
     m_nameIndex = std::move(other.m_nameIndex);
+    m_dimensions = std::move(other.m_dimensions);
+    m_dimensionIndex = std::move(other.m_dimensionIndex);
     m_nextNameSuffix = std::move(other.m_nextNameSuffix);
     m_nextId = other.m_nextId;
     m_diagram.m_positions = std::move(other.m_diagram.m_positions);
@@ -172,6 +176,57 @@ const ModelElement *Document::findByName(const std::string &name) const
     if (it == m_nameIndex.end())
         return nullptr;
     return dynamic_cast<const ModelElement *>(find(it->second));
+}
+
+const Dimension *Document::findDimension(const std::string &name) const
+{
+    const auto found = m_dimensionIndex.find(normalizeIdentifier(name));
+    return found == m_dimensionIndex.end() ? nullptr : &m_dimensions[found->second];
+}
+
+bool Document::defineDimension(const std::string &displayName, std::size_t size)
+{
+    if (size == 0)
+        return false;
+    Dimension dimension;
+    dimension.displayName = trimDisplayName(displayName);
+    dimension.nameKey = normalizeIdentifier(dimension.displayName);
+    dimension.elements.resize(size);
+    for (std::size_t index = 0; index < size; ++index)
+        dimension.elements[index].displayName = std::to_string(index + 1);
+    return defineDimensionData(std::move(dimension));
+}
+
+bool Document::defineDimension(const std::string &displayName, const std::vector<std::string> &elements)
+{
+    Dimension dimension;
+    dimension.displayName = trimDisplayName(displayName);
+    dimension.nameKey = normalizeIdentifier(dimension.displayName);
+    for (const std::string &name : elements) {
+        DimensionElement element;
+        element.displayName = trimDisplayName(name);
+        element.nameKey = normalizeIdentifier(element.displayName);
+        dimension.elements.push_back(std::move(element));
+    }
+    return defineDimensionData(std::move(dimension));
+}
+
+bool Document::defineDimensionData(Dimension dimension)
+{
+    if (dimension.nameKey.empty() || dimension.elements.empty() || m_nameIndex.count(dimension.nameKey)
+        || m_dimensionIndex.count(dimension.nameKey))
+        return false;
+    const bool numbered = dimension.elements.front().nameKey.empty();
+    std::unordered_set<std::string> elementNames;
+    for (const DimensionElement &element : dimension.elements) {
+        if (numbered != element.nameKey.empty())
+            return false;
+        if (!numbered && !elementNames.insert(element.nameKey).second)
+            return false;
+    }
+    m_dimensionIndex[dimension.nameKey] = m_dimensions.size();
+    m_dimensions.push_back(std::move(dimension));
+    return true;
 }
 
 ViewRange DiagramDefinition::elements() const
@@ -209,7 +264,7 @@ EntityId Document::insert(std::unique_ptr<T> element, Vec2 position)
     if (id == 0 || m_elements.count(id))
         return 0;
     if (auto *model = dynamic_cast<ModelElement *>(element.get())) {
-        if (model->nameKey.empty() || m_nameIndex.count(model->nameKey))
+        if (model->nameKey.empty() || m_nameIndex.count(model->nameKey) || m_dimensionIndex.count(model->nameKey))
             return 0;
         m_nameIndex[model->nameKey] = id;
     }
@@ -354,6 +409,8 @@ std::optional<ElementData> Document::capture(EntityId id) const
     if (auto *model = dynamic_cast<const ModelElement *>(element)) {
         data.displayName = model->displayName;
         data.equation = model->equation;
+        data.dimensions = model->dimensions;
+        data.elementEquations = model->elementEquations;
         data.unit = model->unit;
         data.comment = model->comment;
     }
@@ -374,7 +431,9 @@ bool Document::restore(const ElementData &data)
     if (find(id))
         return false;
     const std::string normalized = normalizeIdentifier(data.displayName);
-    if (data.kind <= ElementKind::Data && (normalized.empty() || m_nameIndex.count(normalized)))
+    if (data.kind <= ElementKind::Data && (normalized.empty() || m_nameIndex.count(normalized)
+            || m_dimensionIndex.count(normalized)
+            || !validArrayData(data.dimensions, data.elementEquations, data.equation)))
         return false;
     const bool fontSupported = data.kind <= ElementKind::Data || data.kind == ElementKind::Comment;
     if (data.font.pointSize < 0 || (!fontSupported && data.font != FontStyle {}))
@@ -407,6 +466,10 @@ bool Document::restore(const ElementData &data)
         model->displayName = trimDisplayName(data.displayName);
         model->nameKey = normalizeIdentifier(model->displayName);
         model->equation = data.equation;
+        model->dimensions = data.dimensions;
+        for (std::string &name : model->dimensions)
+            name = normalizeIdentifier(name);
+        model->elementEquations = data.elementEquations;
         model->unit = data.unit;
         model->comment = data.comment;
     }
@@ -436,9 +499,13 @@ bool Document::apply(const ElementData &data)
     if (element->kind() != data.kind)
         return false;
     if (auto *model = dynamic_cast<ModelElement *>(element)) {
-        if (!rename(data.id, data.displayName))
+        if (!validArrayData(data.dimensions, data.elementEquations, data.equation) || !rename(data.id, data.displayName))
             return false;
         model->equation = data.equation;
+        model->dimensions = data.dimensions;
+        for (std::string &name : model->dimensions)
+            name = normalizeIdentifier(name);
+        model->elementEquations = data.elementEquations;
         model->unit = data.unit;
         model->comment = data.comment;
     }
@@ -472,7 +539,7 @@ bool Document::rename(EntityId id, const std::string &displayName)
     if (normalized.empty())
         return false;
     const auto existing = m_nameIndex.find(normalized);
-    if (existing != m_nameIndex.end() && existing->second != id)
+    if ((existing != m_nameIndex.end() && existing->second != id) || m_dimensionIndex.count(normalized))
         return false;
     if (model->displayName == trimmed)
         return true;
@@ -491,6 +558,43 @@ bool Document::setEquation(EntityId id, const std::string &equation)
     if (!model)
         return false;
     model->equation = equation;
+    model->elementEquations.clear();
+    return true;
+}
+
+bool Document::setDimensions(EntityId id, const std::vector<std::string> &dimensions)
+{
+    auto *model = dynamic_cast<ModelElement *>(find(id));
+    if (!model)
+        return false;
+    std::vector<std::string> keys;
+    keys.reserve(dimensions.size());
+    for (const std::string &name : dimensions)
+        keys.push_back(normalizeIdentifier(name));
+    if (!validArrayData(keys, {}, model->equation))
+        return false;
+    model->dimensions = std::move(keys);
+    model->elementEquations.clear();
+    return true;
+}
+
+bool Document::setElementEquation(EntityId id, const std::vector<std::size_t> &indices, const std::string &equation)
+{
+    auto *model = dynamic_cast<ModelElement *>(find(id));
+    if (!model)
+        return false;
+    std::vector<ArrayElementEquation> updated = model->elementEquations;
+    const auto found = std::find_if(updated.begin(), updated.end(), [&indices](const ArrayElementEquation &entry) {
+        return entry.indices == indices;
+    });
+    if (found == updated.end())
+        updated.push_back({indices, equation});
+    else
+        found->equation = equation;
+    if (!validArrayData(model->dimensions, updated, {}))
+        return false;
+    model->equation.clear();
+    model->elementEquations = std::move(updated);
     return true;
 }
 
@@ -604,12 +708,42 @@ void Document::clear()
 {
     m_elements.clear();
     m_nameIndex.clear();
+    m_dimensions.clear();
+    m_dimensionIndex.clear();
     m_nextNameSuffix.clear();
     m_diagram.m_positions.clear();
     m_diagram.m_routes.clear();
     m_diagram.m_fontStyles.clear();
     m_workspace = {};
     m_nextId = 1;
+}
+
+bool Document::validArrayData(const std::vector<std::string> &dimensions,
+    const std::vector<ArrayElementEquation> &elementEquations, const std::string &equation) const
+{
+    if (dimensions.empty())
+        return elementEquations.empty();
+    if (!equation.empty() && !elementEquations.empty())
+        return false;
+    for (const std::string &name : dimensions) {
+        if (!findDimension(name))
+            return false;
+    }
+    std::unordered_set<std::string> uniqueIndices;
+    for (const ArrayElementEquation &entry : elementEquations) {
+        if (entry.indices.size() != dimensions.size())
+            return false;
+        std::string key;
+        for (std::size_t index = 0; index < entry.indices.size(); ++index) {
+            const Dimension *dimension = findDimension(dimensions[index]);
+            if (entry.indices[index] >= dimension->elements.size())
+                return false;
+            key += std::to_string(entry.indices[index]) + ",";
+        }
+        if (!uniqueIndices.insert(key).second)
+            return false;
+    }
+    return true;
 }
 
 bool Document::validFlowEndpoint(EntityId id) const
@@ -636,7 +770,7 @@ std::string Document::uniqueName(ElementKind kind)
         suffix = 1;
     for (;;) {
         const std::string candidate = base + std::to_string(suffix++);
-        if (!m_nameIndex.count(normalizeIdentifier(candidate)))
+        if (!m_nameIndex.count(normalizeIdentifier(candidate)) && !m_dimensionIndex.count(normalizeIdentifier(candidate)))
             return candidate;
     }
 }
@@ -644,8 +778,11 @@ std::string Document::uniqueName(ElementKind kind)
 void Document::updateReferences(EntityId, const std::string &oldName, const std::string &newName)
 {
     for (auto &entry : m_elements) {
-        if (auto *model = dynamic_cast<ModelElement *>(entry.second.get()))
+        if (auto *model = dynamic_cast<ModelElement *>(entry.second.get())) {
             model->equation = replaceReference(model->equation, oldName, newName);
+            for (ArrayElementEquation &element : model->elementEquations)
+                element.equation = replaceReference(element.equation, oldName, newName);
+        }
     }
 }
 

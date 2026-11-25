@@ -170,6 +170,7 @@ void TestEvaluation::errorsAndUnsupported()
     expectError("SELF");
     expectError("SUM(1)");
     expectError("A[1]");
+    expectError("A[*, 1:2, @1]");
     expectError("A'");
     expectError("Unknown(1)");
 }
