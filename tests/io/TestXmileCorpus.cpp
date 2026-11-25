@@ -1,4 +1,5 @@
 #include <qds/io/XmileFile.h>
+#include <qds/core/Formula.h>
 
 #include <QDirIterator>
 #include <QFile>
@@ -32,6 +33,7 @@ private slots:
         QStringList formulaOnlyFiles;
         QStringList invalidFiles;
         QStringList unsupportedFiles;
+        int corpusFormulaCount = 0;
         for (const QString &path : files) {
             QFile file(path);
             QVERIFY(file.open(QIODevice::ReadOnly));
@@ -101,6 +103,18 @@ private slots:
                 }
                 failures.append(path + ": isolated element " + QString::number(element.id()));
             }
+            for (const ModelElement &element : document.model().elements()) {
+                if (element.equation.empty())
+                    continue;
+                ++corpusFormulaCount;
+                FormulaAnalysis analysis = analyzeFormula(element.equation);
+                if (analysis.ast)
+                    QVERIFY(formulaNodeCount(analysis.ast.get()) > 0);
+                for (const FormulaIssue &issue : analysis.issues) {
+                    QVERIFY(issue.span.begin <= issue.span.end);
+                    QVERIFY(issue.span.end <= element.equation.size());
+                }
+            }
             for (const auto &entry : document.diagram().routes()) {
                 const auto &points = entry.second.controlPoints;
                 const bool hasFixedPoints = std::any_of(points.begin(), points.end(),
@@ -118,6 +132,7 @@ private slots:
             qInfo("Invalid XMILE rejected as required: %s", qPrintable(invalidFiles.join(", ")));
         if (!unsupportedFiles.isEmpty())
             qInfo("Unsupported model structures rejected without partial import: %s", qPrintable(unsupportedFiles.join(", ")));
+        QVERIFY(corpusFormulaCount > 0);
         QVERIFY2(failures.isEmpty(), qPrintable(failures.join('\n')));
     }
 };
