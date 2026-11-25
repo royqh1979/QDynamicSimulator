@@ -144,3 +144,13 @@
 | inline_rename | 1000 | 1916.08 | 1916.08 |
 
 回归覆盖 Stock 和 Flow、非法重名、Esc 取消、undo/redo 以及属性面板名称/方程/单位/说明的完整恢复。内联编辑器从 Scene 移除后延迟销毁，避免在 `editingFinished` 事件栈内同步删除发送者。
+
+## 窗口布局保存与恢复
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`window_layout_restore` 执行 100 次真实 MainWindow 关闭和重新构造：关闭时经 QSettings 写入 geometry/state，新窗口从同一 INI 文件恢复；校验恢复后的客户区尺寸与完整 Dock 状态。原窗口实际显示并等待窗口系统处理，计时包含关闭、QSettings 读写和新窗口构造。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| window_layout_restore | 100 | 13777.2 | 137772 |
+
+单元测试使用隔离 QSettings 目录，覆盖窗口 geometry 原始字节、Dock 隐藏/浮动状态、稳定 objectName 和第二次启动恢复，不读写开发者真实配置。profile 的尺寸断言使用关闭前实际尺寸，避免不同平台窗口管理器对未显示窗口 frame 的调整影响结果。

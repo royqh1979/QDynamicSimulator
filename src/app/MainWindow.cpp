@@ -96,6 +96,7 @@ MainWindow::MainWindow(QWidget *parent)
     setCurrentFile(QString());
     statusBar()->showMessage(tr("Drag elements with Select; zoom with the mouse wheel"), 5000);
     resize(1200, 800);
+    restoreWindowLayout();
 }
 
 bool MainWindow::openFile(const QString &fileName)
@@ -123,6 +124,7 @@ bool MainWindow::openFile(const QString &fileName)
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     if (maybeSave()) {
+        saveWindowLayout();
         if (!m_dirty)
             QFile::remove(recoveryFileName());
         event->accept();
@@ -150,6 +152,7 @@ void MainWindow::createActions()
 {
     QMenu *fileMenu = menuBar()->addMenu(tr("&File"));
     QToolBar *fileToolBar = addToolBar(tr("File"));
+    fileToolBar->setObjectName(QStringLiteral("fileToolBar"));
 
     QAction *newAction = new QAction(actionIcon("new"), tr("&New"), this);
     newAction->setShortcut(QKeySequence::New);
@@ -191,6 +194,7 @@ void MainWindow::createActions()
 
     QMenu *editMenu = menuBar()->addMenu(tr("&Edit"));
     QToolBar *editToolBar = addToolBar(tr("Edit"));
+    editToolBar->setObjectName(QStringLiteral("editToolBar"));
     QAction *undoAction = m_controller->undoStack()->createUndoAction(this, tr("&Undo"));
     undoAction->setIcon(actionIcon("undo"));
     undoAction->setShortcut(QKeySequence::Undo);
@@ -360,6 +364,7 @@ void MainWindow::createActions()
 void MainWindow::createPropertyPanel()
 {
     QDockWidget *paletteDock = new QDockWidget(tr("Drawing elements"), this);
+    paletteDock->setObjectName(QStringLiteral("paletteDock"));
     EntityPalette *palette = new EntityPalette(paletteDock);
     connect(palette, &EntityPalette::toolRequested, this, [this](DiagramScene::Tool tool) {
         setTool(tool);
@@ -368,12 +373,14 @@ void MainWindow::createPropertyPanel()
     addDockWidget(Qt::LeftDockWidgetArea, paletteDock);
 
     QDockWidget *dock = new QDockWidget(tr("Properties"), this);
+    dock->setObjectName(QStringLiteral("propertyDock"));
     dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     m_propertyPanel = new PropertyPanel(m_controller, m_scene, dock);
     dock->setWidget(m_propertyPanel);
     addDockWidget(Qt::RightDockWidgetArea, dock);
 
     QDockWidget *issuesDock = new QDockWidget(tr("Model validation"), this);
+    issuesDock->setObjectName(QStringLiteral("issuesDock"));
     m_issueList = new QListWidget(issuesDock);
     issuesDock->setWidget(m_issueList);
     addDockWidget(Qt::BottomDockWidgetArea, issuesDock);
@@ -387,6 +394,7 @@ void MainWindow::createPropertyPanel()
     });
 
     QDockWidget *navigationDock = new QDockWidget(tr("Navigation"), this);
+    navigationDock->setObjectName(QStringLiteral("navigationDock"));
     QWidget *navigation = new QWidget(navigationDock);
     QVBoxLayout *navigationLayout = new QVBoxLayout(navigation);
     QLineEdit *searchEdit = new QLineEdit(navigation);
@@ -413,6 +421,20 @@ void MainWindow::createPropertyPanel()
     });
     m_propertyPanel->refresh();
     refreshValidation();
+}
+
+void MainWindow::restoreWindowLayout()
+{
+    QSettings settings;
+    restoreGeometry(settings.value(QStringLiteral("mainWindow/geometry")).toByteArray());
+    restoreState(settings.value(QStringLiteral("mainWindow/state")).toByteArray());
+}
+
+void MainWindow::saveWindowLayout()
+{
+    QSettings settings;
+    settings.setValue(QStringLiteral("mainWindow/geometry"), saveGeometry());
+    settings.setValue(QStringLiteral("mainWindow/state"), saveState());
 }
 
 void MainWindow::newFile()

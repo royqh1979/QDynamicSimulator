@@ -31,6 +31,8 @@ protected:
 private:
     void createActions();
     void createPropertyPanel();
+    void restoreWindowLayout();
+    void saveWindowLayout();
     void newFile();
     void open();
     bool save();
