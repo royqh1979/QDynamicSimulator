@@ -9,6 +9,7 @@ add_executable(profile-editor
 )
 target_link_libraries(profile-editor PRIVATE QDS::Editor Qt5::Widgets)
 target_compile_definitions(profile-editor PRIVATE QDS_SIR_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/SIR/SIR.xmile")
+target_compile_definitions(profile-editor PRIVATE QDS_MOVE_UNDO_QDS_PATH="${CMAKE_SOURCE_DIR}/tests/data/move-undo.qds")
 add_dependencies(all-profile-targets profile-editor)
 
 add_executable(profile-icons

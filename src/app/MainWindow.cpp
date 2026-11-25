@@ -24,12 +24,14 @@
 #include <QIcon>
 #include <QImage>
 #include <QKeySequence>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QScrollBar>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QStatusBar>
@@ -98,6 +100,17 @@ MainWindow::MainWindow(QWidget *parent)
 
     setCurrentFile(QString());
     statusBar()->showMessage(tr("Drag elements with Select; zoom with the mouse wheel"), 5000);
+    m_cursorPosition = new QLabel(this);
+    m_cursorPosition->setObjectName(QStringLiteral("cursorPosition"));
+    statusBar()->addPermanentWidget(m_cursorPosition);
+    connect(m_view, &DiagramView::cursorScenePositionChanged, this, [this](const QPointF &position) {
+        m_cursorScenePosition = position;
+        updateCursorStatus();
+    });
+    connect(m_view, &DiagramView::viewportChanged, this, &MainWindow::updateCursorStatus);
+    connect(m_view->horizontalScrollBar(), &QScrollBar::valueChanged, this, &MainWindow::updateCursorStatus);
+    connect(m_view->verticalScrollBar(), &QScrollBar::valueChanged, this, &MainWindow::updateCursorStatus);
+    updateCursorStatus();
     resize(1200, 800);
     restoreWindowLayout();
 }
@@ -448,6 +461,15 @@ void MainWindow::saveWindowLayout()
     QSettings settings;
     settings.setValue(QStringLiteral("mainWindow/geometry"), saveGeometry());
     settings.setValue(QStringLiteral("mainWindow/state"), saveState());
+}
+
+void MainWindow::updateCursorStatus()
+{
+    const QPointF viewOrigin = m_view->mapToScene(0, 0);
+    m_cursorPosition->setText(tr("Cursor: %1, %2  View: %3, %4  Zoom: %5%")
+        .arg(QString::number(m_cursorScenePosition.x(), 'f', 1), QString::number(m_cursorScenePosition.y(), 'f', 1),
+             QString::number(viewOrigin.x(), 'f', 1), QString::number(viewOrigin.y(), 'f', 1))
+        .arg(qRound(m_view->transform().m11() * 100.0)));
 }
 
 void MainWindow::newFile()

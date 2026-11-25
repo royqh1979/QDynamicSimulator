@@ -187,3 +187,21 @@
 | rubber_band_resize | 1000 | 1.2199 | 1.2199 |
 
 回归使用 MainWindow 中央 View 和显式 button/buttons 鼠标事件，检查反向缩小、完整旧选区 Paint（Windows 插件）、帧图像与全量重绘一致以及释放后隐藏。offscreen 对子 Widget 的 Paint 区域合成方式不同，因此仅对 Windows 插件断言完整区域，offscreen 仍执行同一几何和像素场景。
+
+## 光标与视口状态显示
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`cursor_status_update` 通过真实 View 鼠标移动更新状态栏，逐轮校验光标场景坐标文本，覆盖坐标换算和 QLabel 刷新；视口原点及 zoom/scrollbar 更新由单元测试覆盖。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| cursor_status_update | 1000 | 2.1131 | 2.1131 |
+
+## Undo 真实屏幕重绘
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`move_undo_repaint` 使用 `tests/data/move-undo.qds` 中同时连接 succumbing 的多个 Connector，在 66% 缩放下将 contact_infectivity 纵向移动 400 场景单位后 undo；每轮通过 `QScreen::grabWindow()` 比较恢复帧与初始帧，覆盖 FullViewportUpdate、Scene 依赖刷新和真实屏幕捕获。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| move_undo_repaint | 20 | 212.507 | 10625.4 |
+
+对照测试表明 `grab()` 会重新渲染 Widget，可能掩盖 backing store 残影；Minimal/BoundingRect 模式仍可能出现旧 Connector，而 FullViewportUpdate 能恢复一致画面。该策略只重绘视口，不增加 Document 或 Route 计算。
