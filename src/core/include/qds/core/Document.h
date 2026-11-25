@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace qds::core {
@@ -214,6 +215,9 @@ public:
     const std::vector<Dimension> &dimensions() const { return m_dimensions; }
     bool defineDimension(const std::string &displayName, std::size_t size);
     bool defineDimension(const std::string &displayName, const std::vector<std::string> &elements);
+    bool defineMacro(MacroDefinition macro);
+    const MacroDefinition *findMacro(const std::string &name, std::size_t argumentCount) const;
+    const std::vector<MacroDefinition> &macros() const { return m_macros; }
 
     DocumentRange elements() const { return DocumentRange(m_elements); }
     const Model &model() const { return m_model; }
@@ -265,6 +269,8 @@ private:
     std::unordered_map<std::string, EntityId> m_nameIndex;
     std::vector<Dimension> m_dimensions;
     std::unordered_map<std::string, std::size_t> m_dimensionIndex;
+    std::vector<MacroDefinition> m_macros;
+    std::unordered_set<std::string> m_macroNames;
     std::unordered_map<ElementKind, std::uint64_t> m_nextNameSuffix;
     EntityId m_nextId = 1;
     Model m_model;

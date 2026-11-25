@@ -20,12 +20,19 @@ struct ElementAnalysis {
     std::unordered_set<EntityId> references;
 };
 
+struct MacroAnalysis {
+    const MacroDefinition *definition = nullptr;
+    FormulaAnalysis formula;
+    std::vector<FormulaAnalysis> defaults;
+};
+
 struct DependencyGraph {
     std::unordered_map<EntityId, std::vector<EntityId>> edges;
 };
 
 struct ModelAnalysis {
     std::vector<ElementAnalysis> elements;
+    std::vector<MacroAnalysis> macros;
     DependencyGraph dependencies;
     std::unordered_set<EntityId> structurallyUsed;
     std::vector<ModelIssue> issues;

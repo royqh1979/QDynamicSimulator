@@ -202,6 +202,59 @@ int main(int argc, char **argv)
     const qint64 literalNs = timer.nsecsElapsed();
     if (literalValueCount != evaluatedValueCount || !std::isfinite(literalChecksum))
         return 16;
+
+    Document macros;
+    const EntityId macroGlobal = macros.createVariable(ElementKind::Constant);
+    macros.rename(macroGlobal, "Global");
+    MacroDefinition macro;
+    macro.displayName = "Scale";
+    macro.parameters = {{"x", "x", {}}, {"factor", "factor", "2"}};
+    macro.equation = "x * factor + Global";
+    if (!macros.defineMacro(std::move(macro)))
+        return 17;
+    std::unordered_map<EntityId, Value> macroValues {{macroGlobal, 10.0}};
+    std::vector<EntityId> macroOutputs;
+    for (int index = 0; index < count; ++index) {
+        const EntityId input = macros.createVariable(ElementKind::Auxiliary);
+        const EntityId output = macros.createVariable(ElementKind::Auxiliary);
+        const std::string inputName = "Input" + std::to_string(index);
+        macros.rename(input, inputName);
+        macros.rename(output, "Output" + std::to_string(index));
+        macros.setEquation(output, "Scale(" + inputName + ")");
+        macroValues[input] = 1.0;
+        macroOutputs.push_back(output);
+    }
+    timer.restart();
+    const ModelAnalysis macroAnalysis = analyzeDocument(macros);
+    const qint64 macroNs = timer.nsecsElapsed();
+    for (const ModelIssue &issue : macroAnalysis.issues) {
+        if (issue.severity == IssueSeverity::Error) {
+            QTextStream(stderr) << "Macro analysis failed: " << QString::fromStdString(issue.message) << "\n";
+            return 18;
+        }
+    }
+    std::unordered_map<EntityId, const FormulaNode *> macroFormulas;
+    for (const ElementAnalysis &entry : macroAnalysis.elements)
+        macroFormulas[entry.id] = entry.formula.ast.get();
+    EvaluationContext macroContext;
+    macroContext.readVariable = [&macroValues](EntityId id) -> std::optional<Value> {
+        const auto found = macroValues.find(id);
+        return found == macroValues.end() ? std::nullopt : std::optional<Value>(found->second);
+    };
+    timer.restart();
+    double macroChecksum = 0.0;
+    for (const EntityId id : macroOutputs) {
+        const EvaluationResult evaluated = evaluateFormula(macroFormulas.at(id), macroContext);
+        const auto *value = evaluated.value ? std::get_if<double>(&*evaluated.value) : nullptr;
+        if (!value) {
+            QTextStream(stderr) << "Macro evaluation failed: " << QString::fromStdString(evaluated.error) << "\n";
+            return 19;
+        }
+        macroChecksum += *value;
+    }
+    const qint64 macroEvaluationNs = timer.nsecsElapsed();
+    if (!std::isfinite(macroChecksum))
+        return 20;
     QTextStream(stdout) << "operation,count,total_ms,per_formula_us\n"
                         << "formula_analyze," << count << "," << elapsedNs / 1e6 << ","
                         << elapsedNs / 1000.0 / count << "\n"
@@ -223,6 +276,11 @@ int main(int argc, char **argv)
                         << "array_literal_evaluate," << count << "," << literalNs / 1e6 << ","
                         << literalNs / 1000.0 / count << "\n"
                         << "array_literal_values," << literalValueCount << ",\n"
-                        << "array_literal_checksum," << literalChecksum << ",\n";
+                        << "array_literal_checksum," << literalChecksum << ",\n"
+                        << "macro_analysis," << count << "," << macroNs / 1e6 << ","
+                        << macroNs / 1000.0 / count << "\n"
+                        << "macro_evaluate," << count << "," << macroEvaluationNs / 1e6 << ","
+                        << macroEvaluationNs / 1000.0 / count << "\n"
+                        << "macro_checksum," << macroChecksum << ",\n";
     return 0;
 }

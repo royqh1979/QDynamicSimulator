@@ -39,3 +39,10 @@ add_executable(test-array-evaluation
 target_link_libraries(test-array-evaluation PRIVATE QDS::Core Qt5::Test)
 add_test(NAME core-array-evaluation COMMAND test-array-evaluation)
 add_dependencies(all-test-targets test-array-evaluation)
+
+add_executable(test-macros
+    TestMacros.cpp
+)
+target_link_libraries(test-macros PRIVATE QDS::Core Qt5::Test)
+add_test(NAME core-macros COMMAND test-macros)
+add_dependencies(all-test-targets test-macros)
