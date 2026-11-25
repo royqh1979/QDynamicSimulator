@@ -135,6 +135,7 @@ Document::Document(Document &&other) noexcept
 {
     m_diagram.m_positions = std::move(other.m_diagram.m_positions);
     m_diagram.m_routes = std::move(other.m_diagram.m_routes);
+    m_diagram.m_fontStyles = std::move(other.m_diagram.m_fontStyles);
 }
 
 Document &Document::operator=(Document &&other) noexcept
@@ -147,6 +148,7 @@ Document &Document::operator=(Document &&other) noexcept
     m_nextId = other.m_nextId;
     m_diagram.m_positions = std::move(other.m_diagram.m_positions);
     m_diagram.m_routes = std::move(other.m_diagram.m_routes);
+    m_diagram.m_fontStyles = std::move(other.m_diagram.m_fontStyles);
     return *this;
 }
 
@@ -189,6 +191,12 @@ Route DiagramDefinition::route(EntityId id) const
         result.mode = RouteMode::Straight;
     const auto it = m_routes.find(id);
     return it == m_routes.end() ? result : it->second;
+}
+
+FontStyle DiagramDefinition::fontStyle(EntityId id) const
+{
+    const auto it = m_fontStyles.find(id);
+    return it == m_fontStyles.end() ? FontStyle {} : it->second;
 }
 
 template <typename T>
@@ -325,6 +333,7 @@ std::vector<EntityId> Document::remove(EntityId id)
         m_elements.erase(removedId);
         m_diagram.m_positions.erase(removedId);
         m_diagram.m_routes.erase(removedId);
+        m_diagram.m_fontStyles.erase(removedId);
     }
     return removed;
 }
@@ -339,6 +348,7 @@ std::optional<ElementData> Document::capture(EntityId id) const
     data.kind = element->kind();
     data.position = diagram().position(id);
     data.route = diagram().route(id);
+    data.font = diagram().fontStyle(id);
     if (auto *model = dynamic_cast<const ModelElement *>(element)) {
         data.displayName = model->displayName;
         data.equation = model->equation;
@@ -363,6 +373,9 @@ bool Document::restore(const ElementData &data)
         return false;
     const std::string normalized = normalizeIdentifier(data.displayName);
     if (data.kind <= ElementKind::Data && (normalized.empty() || m_nameIndex.count(normalized)))
+        return false;
+    const bool fontSupported = data.kind <= ElementKind::Data || data.kind == ElementKind::Comment;
+    if (data.font.pointSize < 0 || (!fontSupported && data.font != FontStyle {}))
         return false;
     std::unique_ptr<DocumentElement> element;
     if (data.kind == ElementKind::Flow) {
@@ -407,6 +420,7 @@ bool Document::restore(const ElementData &data)
     }
     if (insert(std::move(element), data.position) == 0)
         return false;
+    setFontStyle(id, data.font);
     if (data.kind == ElementKind::Flow || data.kind == ElementKind::Connector)
         m_diagram.m_routes[id] = route;
     return true;
@@ -439,6 +453,8 @@ bool Document::apply(const ElementData &data)
             return false;
     }
     setPosition(data.id, data.position);
+    if (!setFontStyle(data.id, data.font))
+        return false;
     if (data.kind == ElementKind::Flow || data.kind == ElementKind::Connector)
         return setRoute(data.id, data.route);
     return true;
@@ -521,6 +537,21 @@ bool Document::setPosition(EntityId id, Vec2 position)
     return true;
 }
 
+bool Document::setFontStyle(EntityId id, const FontStyle &font)
+{
+    const DocumentElement *element = find(id);
+    if (!element || font.pointSize < 0)
+        return false;
+    const bool supported = dynamic_cast<const ModelElement *>(element) || element->kind() == ElementKind::Comment;
+    if (!supported)
+        return font == FontStyle {};
+    if (font == FontStyle {})
+        m_diagram.m_fontStyles.erase(id);
+    else
+        m_diagram.m_fontStyles[id] = font;
+    return true;
+}
+
 bool Document::reconnectFlow(EntityId id, EntityId from, EntityId to)
 {
     auto *flow = dynamic_cast<Flow *>(find(id));
@@ -574,6 +605,7 @@ void Document::clear()
     m_nextNameSuffix.clear();
     m_diagram.m_positions.clear();
     m_diagram.m_routes.clear();
+    m_diagram.m_fontStyles.clear();
     m_nextId = 1;
 }
 

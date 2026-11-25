@@ -133,6 +133,9 @@ void TestXmileFile::nativeRoundTrip()
     document.setEquation(stock, "100");
     document.setUnit(stock, "people");
     document.setComment(stock, "Population stock");
+    document.setFontStyle(stock, {"Arial", 18});
+    document.setFontStyle(note, {"", 14});
+    document.setFontStyle(flow, {"Times New Roman", 16});
     document.setEquation(flow, "\u8F85\u52A9\u53D8\u91CF * 0.5");
     QVERIFY(document.rename(auxiliary, "\u8F85\u52A9\u53D8\u91CF"));
     QVERIFY(document.rename(constant, "\u5E38\u91CF"));
@@ -169,6 +172,8 @@ void TestXmileFile::nativeRoundTrip()
     QCOMPARE(xml.count("<comment"), 2);
     QVERIFY(xml.contains("<constant"));
     QVERIFY(xml.contains("<data"));
+    QVERIFY(xml.contains("font-family=\"Arial\""));
+    QVERIFY(xml.contains("font-size=\"14\""));
 
     Document loaded;
     bool nativeFormat = false;
@@ -192,11 +197,13 @@ void TestXmileFile::nativeRoundTrip()
     QCOMPARE(loadedStock->unit, std::string("people"));
     QCOMPARE(loadedStock->comment, std::string("Population stock"));
     QCOMPARE(loaded.diagram().position(loadedStock->id()), Vec2({120.5, 80.25}));
+    QCOMPARE(loaded.diagram().fontStyle(loadedStock->id()), (FontStyle {"Arial", 18}));
     QCOMPARE(loaded.findByName("\u5E38\u91CF")->kind(), ElementKind::Constant);
     QCOMPARE(loaded.findByName("\u5916\u90E8\u6570\u636E")->kind(), ElementKind::Data);
     QCOMPARE(loaded.findByName("\u8F85\u52A9\u53D8\u91CF")->kind(), ElementKind::Auxiliary);
     const auto *loadedFlow = dynamic_cast<const Flow *>(loaded.findByName("Flow1"));
     QVERIFY(loadedFlow);
+    QCOMPARE(loaded.diagram().fontStyle(loadedFlow->id()), (FontStyle {"Times New Roman", 16}));
     QCOMPARE(loadedFlow->equation, std::string("\u8F85\u52A9\u53D8\u91CF * 0.5"));
     QCOMPARE(loadedFlow->endpoints.from, loadedStock->id());
     QVERIFY(loadedFlow->endpoints.to != 0);
@@ -219,6 +226,8 @@ void TestXmileFile::nativeRoundTrip()
         } else if (element.kind() == ElementKind::Comment) {
             ++commentCount;
             const bool first = loaded.diagram().position(element.id()) == Vec2({100.0, 300.0});
+            if (first)
+                QCOMPARE(loaded.diagram().fontStyle(element.id()), (FontStyle {"", 14}));
             QCOMPARE(static_cast<const Comment &>(element).content,
                      first ? std::string("\u66F4\u65B0\u540E\u7684\u6CE8\u91CA") : std::string("\u6CE8\u91CA"));
         } else if (element.kind() == ElementKind::Connector) {

@@ -16,6 +16,7 @@
 #include <QDockWidget>
 #include <QDropEvent>
 #include <QFile>
+#include <QFontComboBox>
 #include <QGraphicsProxyWidget>
 #include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSceneMouseEvent>
@@ -26,6 +27,8 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QSettings>
+#include <QSignalBlocker>
+#include <QSpinBox>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QToolBar>
@@ -75,6 +78,7 @@ private slots:
     void inlineRenameUndoRedo();
     void commentContentEditing();
     void propertyPanelWidget();
+    void fontStyleUndoRedo();
     void moveUndoRedo();
     void flowAndCascadeRestore();
     void routeUndoRedo();
@@ -288,6 +292,59 @@ void TestEditor::propertyPanelWidget()
     QCOMPARE(model->comment, std::string("Population stock"));
     scene.clearSelection();
     QVERIFY(!name->isEnabled() && !equation->isEnabled() && !unit->isEnabled() && !comment->isEnabled());
+}
+
+void TestEditor::fontStyleUndoRedo()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    PropertyPanel panel(&controller, &scene);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId comment = controller.createComment(QStringLiteral("Note"), QPointF(200.0, 0.0));
+    scene.item(stock)->setSelected(true);
+    auto *fontCombo = panel.findChild<QFontComboBox *>(QStringLiteral("fontCombo"));
+    auto *fontSize = panel.findChild<QSpinBox *>(QStringLiteral("fontSize"));
+    QVERIFY(fontCombo && fontSize && fontCombo->isEnabled() && fontSize->isEnabled());
+    {
+        const QSignalBlocker fontBlocker(fontCombo);
+        const QSignalBlocker sizeBlocker(fontSize);
+        fontCombo->setCurrentFont(QFont(QStringLiteral("Arial")));
+        fontSize->setValue(18);
+    }
+    QVERIFY(panel.commit());
+    const FontStyle expected {"Arial", 18};
+    QCOMPARE(controller.document().diagram().fontStyle(stock), expected);
+    QCOMPARE(scene.item(stock)->labelFont().family(), QStringLiteral("Arial"));
+    QCOMPARE(scene.item(stock)->labelFont().pointSize(), 18);
+    controller.undoStack()->undo();
+    QCOMPARE(controller.document().diagram().fontStyle(stock), FontStyle {});
+    controller.undoStack()->redo();
+    QCOMPARE(controller.document().diagram().fontStyle(stock), expected);
+
+    const ClipboardData clipboard = controller.copyElements({stock});
+    const std::vector<EntityId> pasted = controller.pasteClipboard(clipboard, QPointF(100.0, 100.0));
+    QCOMPARE(pasted.size(), std::size_t(1));
+    QCOMPARE(controller.document().diagram().fontStyle(pasted.front()), expected);
+    QCOMPARE(scene.item(pasted.front())->labelFont().pointSize(), 18);
+    controller.undoStack()->undo();
+
+    scene.clearSelection();
+    scene.item(comment)->setSelected(true);
+    {
+        const QSignalBlocker fontBlocker(fontCombo);
+        const QSignalBlocker sizeBlocker(fontSize);
+        fontCombo->setCurrentFont(QFont(QStringLiteral("Times New Roman")));
+        fontSize->setValue(16);
+    }
+    QVERIFY(panel.commit());
+    const FontStyle commentFont {"Times New Roman", 16};
+    QCOMPARE(controller.document().diagram().fontStyle(comment), commentFont);
+    QCOMPARE(scene.item(comment)->labelFont().family(), QStringLiteral("Times New Roman"));
+    QCOMPARE(scene.item(comment)->labelFont().pointSize(), 16);
+    controller.undoStack()->undo();
+    QCOMPARE(controller.document().diagram().fontStyle(comment), FontStyle {});
+    controller.undoStack()->redo();
+    QCOMPARE(controller.document().diagram().fontStyle(comment), commentFont);
 }
 
 void TestEditor::moveUndoRedo()

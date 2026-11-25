@@ -154,3 +154,13 @@
 | window_layout_restore | 100 | 13777.2 | 137772 |
 
 单元测试使用隔离 QSettings 目录，覆盖窗口 geometry 原始字节、Dock 隐藏/浮动状态、稳定 objectName 和第二次启动恢复，不读写开发者真实配置。profile 的尺寸断言使用关闭前实际尺寸，避免不同平台窗口管理器对未显示窗口 frame 的调整影响结果。
+
+## 元素字体编辑
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`font_style_edit` 每轮通过 DocumentController 修改 Stock 的字体族和字号，校验 DiagramDefinition 与 Item 的 QFont 投影，再在计时外 undo。QDS profile 额外写入 Arial 18，并按名称查找加载后的 Stock 验证字体，避免依赖原生文件内 uid 重排。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| font_style_edit | 1000 | 1.5564 | 1.5564 |
+
+单元测试覆盖核心 FontStyle、非法对象、负字号、capture/restore、Document 移动、属性面板、undo/redo、复制粘贴、QDS 往返和默认字体恢复。字体只进入原生 QDS；XMILE 行为不变。

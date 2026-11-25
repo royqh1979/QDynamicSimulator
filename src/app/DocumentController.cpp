@@ -1,5 +1,6 @@
 #include "DocumentController.h"
 
+#include <QFont>
 #include <QUndoCommand>
 
 #include <algorithm>
@@ -277,6 +278,23 @@ void DocumentController::setCommentContent(EntityId id, const QString &content)
     record.kind = ElementKind::Comment;
     record.before = m_document.capture(id);
     if (!m_document.setCommentContent(id, content.toStdString()))
+        return;
+    record.after = m_document.capture(id);
+    pushChanges(ChangeSet {{std::move(record)}}, true);
+}
+
+void DocumentController::setFontStyle(EntityId id, const QFont &font)
+{
+    const QFont defaultFont;
+    const FontStyle style = font.family() == defaultFont.family() && font.pointSize() == defaultFont.pointSize()
+        ? FontStyle {} : FontStyle {font.family().toStdString(), font.pointSize()};
+    if (!m_document.find(id) || m_document.diagram().fontStyle(id) == style)
+        return;
+    ChangeRecord record;
+    record.id = id;
+    record.kind = m_document.find(id)->kind();
+    record.before = m_document.capture(id);
+    if (!m_document.setFontStyle(id, style))
         return;
     record.after = m_document.capture(id);
     pushChanges(ChangeSet {{std::move(record)}}, true);

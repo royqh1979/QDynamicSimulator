@@ -4,9 +4,12 @@
 
 class DocumentController;
 class DiagramScene;
+class QFont;
 class EquationEditor;
+class QFontComboBox;
 class QLabel;
 class QLineEdit;
+class QSpinBox;
 
 class PropertyPanel : public QWidget
 {
@@ -19,6 +22,8 @@ public:
     void refresh();
 
 private:
+    void commitFontStyle(const QFont &font);
+
     DocumentController *m_controller;
     DiagramScene *m_scene;
     QLineEdit *m_nameEdit;
@@ -26,4 +31,6 @@ private:
     QLineEdit *m_unitEdit;
     QLineEdit *m_commentEdit;
     QLabel *m_commentLabel;
+    QFontComboBox *m_fontCombo;
+    QSpinBox *m_fontSize;
 };

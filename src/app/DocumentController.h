@@ -16,6 +16,8 @@ struct ClipboardData {
     bool empty() const { return elements.empty(); }
 };
 
+class QFont;
+
 class DocumentController : public QObject
 {
     Q_OBJECT
@@ -42,6 +44,7 @@ public:
     void setUnit(qds::core::EntityId id, const QString &unit);
     void setComment(qds::core::EntityId id, const QString &comment);
     void setCommentContent(qds::core::EntityId id, const QString &content);
+    void setFontStyle(qds::core::EntityId id, const QFont &font);
     void moveElements(const std::vector<std::pair<qds::core::EntityId, QPointF>> &positions);
     bool reconnectFlow(qds::core::EntityId id, qds::core::EntityId from, qds::core::EntityId to);
     bool reconnectConnector(qds::core::EntityId id, qds::core::EntityId from, qds::core::EntityId to);

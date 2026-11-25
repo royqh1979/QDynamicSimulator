@@ -17,6 +17,7 @@ private slots:
     void removeCascades();
     void restoreWithStableIds();
     void routeAndPositionState();
+    void fontStyleState();
     void clearDocument();
     void entityAndConnectorTypes();
     void reconnectRoutes();
@@ -193,6 +194,33 @@ void TestDocument::routeAndPositionState()
     orthogonal.mode = RouteMode::Orthogonal;
     QVERIFY(!document.setRoute(flow, orthogonal));
     QCOMPARE(document.diagram().route(flow).mode, RouteMode::Bezier);
+}
+
+void TestDocument::fontStyleState()
+{
+    Document document;
+    const EntityId stock = document.createVariable(ElementKind::Stock);
+    const EntityId comment = document.createComment("Note");
+    const EntityId cloud = document.createCloud();
+    QCOMPARE(document.diagram().fontStyle(stock), FontStyle {});
+    const FontStyle stockFont {"Arial", 18};
+    QVERIFY(document.setFontStyle(stock, stockFont));
+    QCOMPARE(document.diagram().fontStyle(stock), stockFont);
+    const FontStyle commentFont {"", 14};
+    QVERIFY(document.setFontStyle(comment, commentFont));
+    QCOMPARE(document.diagram().fontStyle(comment), commentFont);
+    QVERIFY(!document.setFontStyle(cloud, stockFont));
+    QVERIFY(!document.setFontStyle(stock, {"Arial", -1}));
+    QVERIFY(!document.setFontStyle(9999, stockFont));
+
+    const ElementData captured = *document.capture(stock);
+    QCOMPARE(captured.font, stockFont);
+    document.remove(stock);
+    QVERIFY(document.diagram().fontStyles().empty() || document.diagram().fontStyle(stock) == FontStyle {});
+    QVERIFY(document.restore(captured));
+    QCOMPARE(document.diagram().fontStyle(stock), stockFont);
+    QVERIFY(document.setFontStyle(stock, FontStyle {}));
+    QCOMPARE(document.diagram().fontStyle(stock), FontStyle {});
 }
 
 void TestDocument::clearDocument()
