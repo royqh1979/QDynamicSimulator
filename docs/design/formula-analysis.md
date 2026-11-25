@@ -21,7 +21,7 @@ UTF-8 equation
 
 采用手写 Lexer 和 Pratt/ precedence-climbing Parser，不引入第三方 parser 依赖。Pratt 便于准确实现右结合乘方、一元运算符、函数调用和 IF THEN ELSE，同时保留每个节点的源码范围。
 
-每个 ModelElement 独立解析；单公式失败只产生诊断，不阻断其他元素。AST 构建完成后不可变，后续检查共享只读访问。
+每个 ModelElement 独立解析；单公式失败只产生诊断，不阻断其他元素。AST 的节点类型、源码范围和子节点结构在语法分析完成后不可变；符号解析只填写 `ReferenceNode.entityId`，`ModelAnalysis` 返回后供后续检查共享只读访问。
 
 ## 3. AST 与结果所有权
 

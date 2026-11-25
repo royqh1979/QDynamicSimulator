@@ -1,9 +1,11 @@
 add_library(qds-core STATIC
     include/qds/core/ChangeSet.h
+    include/qds/core/Analysis.h
     include/qds/core/Document.h
     include/qds/core/Formula.h
     include/qds/core/Model.h
     include/qds/core/Validation.h
+    src/Analysis.cpp
     src/Document.cpp
     src/Formula.cpp
     src/Model.cpp

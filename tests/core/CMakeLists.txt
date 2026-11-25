@@ -11,3 +11,10 @@ add_executable(test-formula
 target_link_libraries(test-formula PRIVATE QDS::Core Qt5::Test)
 add_test(NAME core-formula COMMAND test-formula)
 add_dependencies(all-test-targets test-formula)
+
+add_executable(test-analysis
+    TestAnalysis.cpp
+)
+target_link_libraries(test-analysis PRIVATE QDS::Core Qt5::Test)
+add_test(NAME core-analysis COMMAND test-analysis)
+add_dependencies(all-test-targets test-analysis)
