@@ -382,6 +382,27 @@ void writeNativeDimensions(QXmlStreamWriter &writer, const core::Document &docum
     writer.writeEndElement();
 }
 
+void writeNativeMacros(QXmlStreamWriter &writer, const core::Document &document)
+{
+    if (document.macros().empty())
+        return;
+    writer.writeStartElement(QStringLiteral("macros"));
+    for (const core::MacroDefinition &macro : document.macros()) {
+        writer.writeStartElement(QStringLiteral("macro"));
+        writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(macro.displayName));
+        for (const core::MacroParameter &parameter : macro.parameters) {
+            writer.writeStartElement(QStringLiteral("parm"));
+            writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(parameter.displayName));
+            if (!parameter.defaultEquation.empty())
+                writer.writeAttribute(QStringLiteral("default"), QString::fromStdString(parameter.defaultEquation));
+            writer.writeEndElement();
+        }
+        writer.writeTextElement(QStringLiteral("eqn"), QString::fromStdString(macro.equation));
+        writer.writeEndElement();
+    }
+    writer.writeEndElement();
+}
+
 void writeNativeArrayDefinition(QXmlStreamWriter &writer, const core::Document &document, const core::ModelElement &element)
 {
     if (element.dimensions.empty())
@@ -413,6 +434,7 @@ QByteArray writeNativeXml(const core::Document &document)
     writer.writeStartElement(QStringLiteral("qds-document"));
     writer.writeAttribute(QStringLiteral("version"), QStringLiteral("1"));
     writeNativeDimensions(writer, document);
+    writeNativeMacros(writer, document);
     writer.writeStartElement(QStringLiteral("model"));
     for (const core::ModelElement &element : document.model().elements()) {
         writer.writeStartElement(nativeKindTag(element.kind()));
@@ -515,6 +537,38 @@ bool parseNativeDimensions(QXmlStreamReader &reader, core::Document &document)
             invalid = sizeOk || !document.defineDimension(name.toStdString(), names);
         }
         if (invalid)
+            return false;
+    }
+    return false;
+}
+
+bool parseNativeMacros(QXmlStreamReader &reader, core::Document &document)
+{
+    while (reader.readNext() != QXmlStreamReader::Invalid) {
+        if (reader.isEndElement() && reader.name() == QStringLiteral("macros"))
+            return true;
+        if (!reader.isStartElement() || reader.name() != QStringLiteral("macro"))
+            continue;
+        core::MacroDefinition macro;
+        macro.displayName = reader.attributes().value(QStringLiteral("name")).toString().toStdString();
+        while (reader.readNext() != QXmlStreamReader::Invalid) {
+            if (reader.isEndElement() && reader.name() == QStringLiteral("macro"))
+                break;
+            if (!reader.isStartElement())
+                continue;
+            if (reader.name() == QStringLiteral("parm")) {
+                core::MacroParameter parameter;
+                parameter.displayName = reader.attributes().value(QStringLiteral("name")).toString().toStdString();
+                parameter.defaultEquation = reader.attributes().value(QStringLiteral("default")).toString().toStdString();
+                macro.parameters.push_back(std::move(parameter));
+                reader.skipCurrentElement();
+            } else if (reader.name() == QStringLiteral("eqn")) {
+                macro.equation = reader.readElementText().toStdString();
+            } else {
+                reader.skipCurrentElement();
+            }
+        }
+        if (!document.defineMacro(std::move(macro)))
             return false;
     }
     return false;
@@ -658,6 +712,13 @@ bool parseNativeXml(const QByteArray &xml, core::Document &document, QString *er
         }
         if (reader.name() == QStringLiteral("model") || reader.name() == QStringLiteral("diagram"))
             continue;
+        if (reader.name() == QStringLiteral("macros")) {
+            if (!parseNativeMacros(reader, parsed)) {
+                setError(errorMessage, translate("The QDS macros are invalid."));
+                return false;
+            }
+            continue;
+        }
         if (reader.name() == QStringLiteral("dimensions")) {
             if (!parseNativeDimensions(reader, parsed)) {
                 setError(errorMessage, translate("The QDS dimensions are invalid."));

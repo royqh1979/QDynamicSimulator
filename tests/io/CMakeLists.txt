@@ -25,6 +25,13 @@ target_compile_definitions(test-array-files PRIVATE
 add_test(NAME io-array-files COMMAND test-array-files)
 add_dependencies(all-test-targets test-array-files)
 
+add_executable(test-macro-files
+    TestMacroFiles.cpp
+)
+target_link_libraries(test-macro-files PRIVATE QDS::IO Qt5::Test)
+add_test(NAME io-macro-files COMMAND test-macro-files)
+add_dependencies(all-test-targets test-macro-files)
+
 if(QDS_ENABLE_XMILE_CORPUS_TESTS)
     add_executable(test-xmile-corpus TestXmileCorpus.cpp)
     target_link_libraries(test-xmile-corpus PRIVATE QDS::IO Qt5::Test)

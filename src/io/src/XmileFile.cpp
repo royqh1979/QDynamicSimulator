@@ -144,6 +144,23 @@ void writeXmileDimensions(QXmlStreamWriter &writer, const core::Document &docume
     writer.writeEndElement();
 }
 
+void writeXmileMacros(QXmlStreamWriter &writer, const core::Document &document)
+{
+    for (const core::MacroDefinition &macro : document.macros()) {
+        writer.writeStartElement(QStringLiteral("macro"));
+        writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(macro.displayName));
+        for (const core::MacroParameter &parameter : macro.parameters) {
+            writer.writeStartElement(QStringLiteral("parm"));
+            if (!parameter.defaultEquation.empty())
+                writer.writeAttribute(QStringLiteral("default"), QString::fromStdString(parameter.defaultEquation));
+            writer.writeCharacters(QString::fromStdString(parameter.displayName));
+            writer.writeEndElement();
+        }
+        writer.writeTextElement(QStringLiteral("eqn"), QString::fromStdString(macro.equation));
+        writer.writeEndElement();
+    }
+}
+
 void writeXmileArrayDefinition(QXmlStreamWriter &writer, const core::Document &document, const core::ModelElement &element)
 {
     if (element.dimensions.empty())
@@ -189,14 +206,18 @@ QByteArray writeXml(const core::Document &document)
     writer.writeTextElement(QStringLiteral("product"), QStringLiteral("QDynamicSimulator"));
     writer.writeEndElement();
 
-    if (!document.dimensions().empty()) {
-        std::size_t maximumDimensions = 0;
-        for (const core::ModelElement &element : model.elements())
-            maximumDimensions = std::max(maximumDimensions, element.dimensions.size());
+    if (!document.dimensions().empty() || !document.macros().empty()) {
         writer.writeStartElement(QStringLiteral("options"));
-        writer.writeStartElement(QStringLiteral("uses_arrays"));
-        writer.writeAttribute(QStringLiteral("maximum_dimensions"), QString::number(maximumDimensions));
-        writer.writeEndElement();
+        if (!document.dimensions().empty()) {
+            std::size_t maximumDimensions = 0;
+            for (const core::ModelElement &element : model.elements())
+                maximumDimensions = std::max(maximumDimensions, element.dimensions.size());
+            writer.writeStartElement(QStringLiteral("uses_arrays"));
+            writer.writeAttribute(QStringLiteral("maximum_dimensions"), QString::number(maximumDimensions));
+            writer.writeEndElement();
+        }
+        if (!document.macros().empty())
+            writer.writeEmptyElement(QStringLiteral("uses_macros"));
         writer.writeEndElement();
     }
 
@@ -207,6 +228,7 @@ QByteArray writeXml(const core::Document &document)
     writer.writeEndElement();
 
     writeXmileDimensions(writer, document);
+    writeXmileMacros(writer, document);
 
     writer.writeStartElement(QStringLiteral("model"));
     writer.writeStartElement(QStringLiteral("variables"));
@@ -327,6 +349,36 @@ struct PendingFlowLayout {
     core::Vec2 valveCenter;
     bool hasValveCenter = false;
 };
+
+bool parseXmileMacro(QXmlStreamReader &reader, core::Document &document, QString *errorMessage)
+{
+    core::MacroDefinition macro;
+    macro.displayName = reader.attributes().value(QStringLiteral("name")).toString().toStdString();
+    while (reader.readNext() != QXmlStreamReader::Invalid) {
+        if (reader.isEndElement() && reader.name() == QStringLiteral("macro")) {
+            if (document.defineMacro(std::move(macro)))
+                return true;
+            setError(errorMessage, translate("The XMILE macro is invalid or has a conflicting signature."));
+            return false;
+        }
+        if (!reader.isStartElement())
+            continue;
+        if (reader.name() == QStringLiteral("parm")) {
+            core::MacroParameter parameter;
+            parameter.displayName = reader.attributes().value(QStringLiteral("name")).toString().toStdString();
+            parameter.defaultEquation = reader.attributes().value(QStringLiteral("default")).toString().toStdString();
+            const QString text = reader.readElementText().trimmed();
+            if (!text.isEmpty())
+                parameter.displayName = text.toStdString();
+            macro.parameters.push_back(std::move(parameter));
+        } else if (reader.name() == QStringLiteral("eqn")) {
+            macro.equation = reader.readElementText().trimmed().toStdString();
+        } else {
+            reader.skipCurrentElement();
+        }
+    }
+    return false;
+}
 
 bool parseXmileDimensions(QXmlStreamReader &reader, core::Document &document, QString *errorMessage)
 {
@@ -822,6 +874,9 @@ bool parseXml(
         const QString tag = reader.name().toString();
         if (tag == QStringLiteral("xmile")) {
             foundRoot = true;
+        } else if (tag == QStringLiteral("macro")) {
+            if (!parseXmileMacro(reader, parsed, errorMessage))
+                return false;
         } else if (tag == QStringLiteral("dimensions")) {
             if (!parseXmileDimensions(reader, parsed, errorMessage))
                 return false;

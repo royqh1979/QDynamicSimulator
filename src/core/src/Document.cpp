@@ -130,6 +130,8 @@ Document::Document(Document &&other) noexcept
     , m_nameIndex(std::move(other.m_nameIndex))
     , m_dimensions(std::move(other.m_dimensions))
     , m_dimensionIndex(std::move(other.m_dimensionIndex))
+    , m_macros(std::move(other.m_macros))
+    , m_macroNames(std::move(other.m_macroNames))
     , m_nextNameSuffix(std::move(other.m_nextNameSuffix))
     , m_nextId(other.m_nextId)
     , m_model(*this)
@@ -149,6 +151,8 @@ Document &Document::operator=(Document &&other) noexcept
     m_nameIndex = std::move(other.m_nameIndex);
     m_dimensions = std::move(other.m_dimensions);
     m_dimensionIndex = std::move(other.m_dimensionIndex);
+    m_macros = std::move(other.m_macros);
+    m_macroNames = std::move(other.m_macroNames);
     m_nextNameSuffix = std::move(other.m_nextNameSuffix);
     m_nextId = other.m_nextId;
     m_diagram.m_positions = std::move(other.m_diagram.m_positions);
@@ -214,7 +218,7 @@ bool Document::defineDimension(const std::string &displayName, const std::vector
 bool Document::defineDimensionData(Dimension dimension)
 {
     if (dimension.nameKey.empty() || dimension.elements.empty() || m_nameIndex.count(dimension.nameKey)
-        || m_dimensionIndex.count(dimension.nameKey))
+        || m_dimensionIndex.count(dimension.nameKey) || m_macroNames.count(dimension.nameKey))
         return false;
     const bool numbered = dimension.elements.front().nameKey.empty();
     std::unordered_set<std::string> elementNames;
@@ -227,6 +231,49 @@ bool Document::defineDimensionData(Dimension dimension)
     m_dimensionIndex[dimension.nameKey] = m_dimensions.size();
     m_dimensions.push_back(std::move(dimension));
     return true;
+}
+
+bool Document::defineMacro(MacroDefinition macro)
+{
+    macro.displayName = trimDisplayName(macro.displayName);
+    macro.nameKey = normalizeIdentifier(macro.displayName);
+    if (macro.nameKey.empty() || macro.equation.empty() || m_nameIndex.count(macro.nameKey)
+        || m_dimensionIndex.count(macro.nameKey))
+        return false;
+    std::unordered_set<std::string> parameters;
+    bool hasDefault = false;
+    for (MacroParameter &parameter : macro.parameters) {
+        parameter.displayName = trimDisplayName(parameter.displayName);
+        parameter.nameKey = normalizeIdentifier(parameter.displayName);
+        if (parameter.nameKey.empty() || !parameters.insert(parameter.nameKey).second)
+            return false;
+        if (parameter.defaultEquation.empty()) {
+            if (hasDefault)
+                return false;
+        } else {
+            hasDefault = true;
+        }
+    }
+    const std::size_t required = macro.requiredArguments();
+    for (const MacroDefinition &existing : m_macros) {
+        if (existing.nameKey == macro.nameKey && required <= existing.parameters.size()
+            && existing.requiredArguments() <= macro.parameters.size())
+            return false;
+    }
+    m_macroNames.insert(macro.nameKey);
+    m_macros.push_back(std::move(macro));
+    return true;
+}
+
+const MacroDefinition *Document::findMacro(const std::string &name, std::size_t argumentCount) const
+{
+    const std::string key = normalizeIdentifier(name);
+    for (const MacroDefinition &macro : m_macros) {
+        if (macro.nameKey == key && argumentCount >= macro.requiredArguments()
+            && argumentCount <= macro.parameters.size())
+            return &macro;
+    }
+    return nullptr;
 }
 
 ViewRange DiagramDefinition::elements() const
@@ -264,7 +311,7 @@ EntityId Document::insert(std::unique_ptr<T> element, Vec2 position)
     if (id == 0 || m_elements.count(id))
         return 0;
     if (auto *model = dynamic_cast<ModelElement *>(element.get())) {
-        if (model->nameKey.empty() || m_nameIndex.count(model->nameKey) || m_dimensionIndex.count(model->nameKey))
+        if (model->nameKey.empty() || m_nameIndex.count(model->nameKey) || m_dimensionIndex.count(model->nameKey) || m_macroNames.count(model->nameKey))
             return 0;
         m_nameIndex[model->nameKey] = id;
     }
@@ -432,7 +479,7 @@ bool Document::restore(const ElementData &data)
         return false;
     const std::string normalized = normalizeIdentifier(data.displayName);
     if (data.kind <= ElementKind::Data && (normalized.empty() || m_nameIndex.count(normalized)
-            || m_dimensionIndex.count(normalized)
+            || m_dimensionIndex.count(normalized) || m_macroNames.count(normalized)
             || !validArrayData(data.dimensions, data.elementEquations, data.equation)))
         return false;
     const bool fontSupported = data.kind <= ElementKind::Data || data.kind == ElementKind::Comment;
@@ -539,7 +586,8 @@ bool Document::rename(EntityId id, const std::string &displayName)
     if (normalized.empty())
         return false;
     const auto existing = m_nameIndex.find(normalized);
-    if ((existing != m_nameIndex.end() && existing->second != id) || m_dimensionIndex.count(normalized))
+    if ((existing != m_nameIndex.end() && existing->second != id) || m_dimensionIndex.count(normalized)
+        || m_macroNames.count(normalized))
         return false;
     if (model->displayName == trimmed)
         return true;
@@ -710,6 +758,8 @@ void Document::clear()
     m_nameIndex.clear();
     m_dimensions.clear();
     m_dimensionIndex.clear();
+    m_macros.clear();
+    m_macroNames.clear();
     m_nextNameSuffix.clear();
     m_diagram.m_positions.clear();
     m_diagram.m_routes.clear();
@@ -770,7 +820,8 @@ std::string Document::uniqueName(ElementKind kind)
         suffix = 1;
     for (;;) {
         const std::string candidate = base + std::to_string(suffix++);
-        if (!m_nameIndex.count(normalizeIdentifier(candidate)) && !m_dimensionIndex.count(normalizeIdentifier(candidate)))
+        if (!m_nameIndex.count(normalizeIdentifier(candidate)) && !m_dimensionIndex.count(normalizeIdentifier(candidate))
+            && !m_macroNames.count(normalizeIdentifier(candidate)))
             return candidate;
     }
 }
