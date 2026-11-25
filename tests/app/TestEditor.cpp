@@ -81,6 +81,8 @@ private slots:
     void boundaryEndpoints();
     void sirCanvasConnections();
     void endpointHandleReconnect();
+    void flowEndpointPreviewDependentsRepaint();
+    void connectorEndpointCrossingRepaint();
     void endpointTargetHighlight();
     void connectorMoveRepaint();
     void connectorDragSelectionRepaint();
@@ -999,6 +1001,130 @@ void TestEditor::endpointHandleReconnect()
     QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, targetStock);
     controller.undoStack()->redo();
     QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, flow);
+}
+
+void TestEditor::flowEndpointPreviewDependentsRepaint()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    scene.setGridVisible(false);
+    const EntityId sourceStock = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId oldTarget = controller.createVariable(ElementKind::Stock, QPointF(400.0, 0.0));
+    const EntityId newTarget = controller.createVariable(ElementKind::Stock, QPointF(400.0, 400.0));
+    const EntityId flow = controller.createFlow(sourceStock, oldTarget);
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(-400.0, 400.0));
+    const EntityId connector = controller.createConnector(auxiliary, flow);
+    auto *flowItem = dynamic_cast<FlowItem *>(scene.item(flow));
+    auto *arrow = dynamic_cast<ArrowItem *>(scene.item(connector));
+    flowItem->setSelected(true);
+
+    ControlPointHandle *targetHandle = nullptr;
+    for (QGraphicsItem *item : scene.items()) {
+        auto *handle = qgraphicsitem_cast<ControlPointHandle *>(item);
+        if (handle && handle->routeId() == flow && handle->index() == -2)
+            targetHandle = handle;
+    }
+    QVERIFY(targetHandle);
+    DiagramView view(&scene);
+    view.resize(900, 800);
+    view.centerOn(QPointF(0.0, 200.0));
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    const QPainterPath oldArrowPath = arrow->geometryPath();
+    const QRectF oldArrowPaintBounds = oldArrowPath.boundingRect().adjusted(-4.0, -4.0, 4.0, 4.0);
+    const QPoint start = view.mapFromScene(targetHandle->pos());
+    const QPoint end = view.mapFromScene(scene.item(newTarget)->center());
+    QCOMPARE(view.itemAt(start), targetHandle);
+    QSignalSpy changedSpy(&scene, &QGraphicsScene::changed);
+    QMouseEvent press(QEvent::MouseButtonPress, start, view.viewport()->mapToGlobal(start), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &press);
+    QMouseEvent move(QEvent::MouseMove, end, view.viewport()->mapToGlobal(end), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &move);
+    QVERIFY(flowItem->previewing());
+    QTest::qWait(20);
+    QRectF invalidated;
+    for (const auto &notification : changedSpy) {
+        for (const QRectF &rect : notification.at(0).value<QList<QRectF>>())
+            invalidated = invalidated.united(rect);
+    }
+    QVERIFY2(invalidated.contains(oldArrowPaintBounds), qPrintable(QStringLiteral("invalidated=%1,%2 %3x%4 oldArrow=%5,%6 %7x%8")
+        .arg(invalidated.x()).arg(invalidated.y()).arg(invalidated.width()).arg(invalidated.height())
+        .arg(oldArrowPaintBounds.x()).arg(oldArrowPaintBounds.y()).arg(oldArrowPaintBounds.width()).arg(oldArrowPaintBounds.height())));
+    const QRectF newArrowPaintBounds = arrow->geometryPath().boundingRect().adjusted(-4.0, -4.0, 4.0, 4.0);
+    QVERIFY(invalidated.contains(newArrowPaintBounds));
+    const QImage preview = view.grab().toImage();
+    view.viewport()->repaint();
+    QCOMPARE(preview, view.grab().toImage());
+    QVERIFY(arrow->geometryPath().pointAtPercent(0.5) != oldArrowPath.pointAtPercent(0.5));
+    const QPainterPath previewArrowPath = arrow->geometryPath();
+    const QPointF expectedEnd = flowItem->boundaryPointToward(previewArrowPath.elementAt(previewArrowPath.elementCount() - 2));
+    const QPointF actualEnd = previewArrowPath.pointAtPercent(1.0);
+    QVERIFY2(QLineF(actualEnd, expectedEnd).length() < 0.75,
+        qPrintable(QStringLiteral("actual=%1,%2 expected=%3,%4")
+            .arg(actualEnd.x()).arg(actualEnd.y()).arg(expectedEnd.x()).arg(expectedEnd.y())));
+
+    QMouseEvent release(QEvent::MouseButtonRelease, end, view.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &release);
+    QVERIFY(!flowItem->previewing());
+    QCOMPARE(static_cast<const Flow *>(controller.document().find(flow))->endpoints.to, newTarget);
+    QTest::qWait(20);
+    const QImage reconnected = view.grab().toImage();
+    view.viewport()->repaint();
+    QCOMPARE(reconnected, view.grab().toImage());
+}
+
+void TestEditor::connectorEndpointCrossingRepaint()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    scene.setGridVisible(false);
+    const EntityId source = controller.createVariable(ElementKind::Auxiliary, QPointF(-250.0, -250.0));
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId newTarget = controller.createVariable(ElementKind::Stock, QPointF(250.0, 250.0));
+    const EntityId connector = controller.createConnector(source, stock);
+    auto *arrow = dynamic_cast<ArrowItem *>(scene.item(connector));
+    arrow->setSelected(true);
+
+    ControlPointHandle *targetHandle = nullptr;
+    for (QGraphicsItem *item : scene.items()) {
+        auto *handle = qgraphicsitem_cast<ControlPointHandle *>(item);
+        if (handle && handle->routeId() == connector && handle->index() == -2)
+            targetHandle = handle;
+    }
+    QVERIFY(targetHandle);
+    DiagramView view(&scene);
+    view.resize(800, 800);
+    view.centerOn(QPointF());
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    const QPoint start = view.mapFromScene(targetHandle->pos());
+    const QPoint end = view.mapFromScene(scene.item(newTarget)->center());
+    QCOMPARE(view.itemAt(start), targetHandle);
+    QMouseEvent press(QEvent::MouseButtonPress, start, view.viewport()->mapToGlobal(start), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &press);
+    QMouseEvent move(QEvent::MouseMove, end, view.viewport()->mapToGlobal(end), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &move);
+    QVERIFY(arrow->previewing());
+    QTest::qWait(20);
+    const QRectF previewBounds = arrow->sceneBoundingRect();
+    QSignalSpy changedSpy(&scene, &QGraphicsScene::changed);
+
+    QMouseEvent release(QEvent::MouseButtonRelease, end, view.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &release);
+    QVERIFY(!arrow->previewing());
+    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, newTarget);
+    QTest::qWait(20);
+    QRectF invalidated;
+    for (const auto &notification : changedSpy) {
+        for (const QRectF &rect : notification.at(0).value<QList<QRectF>>())
+            invalidated = invalidated.united(rect);
+    }
+    QVERIFY2(invalidated.contains(previewBounds), qPrintable(QStringLiteral("invalidated=%1,%2 %3x%4 preview=%5,%6 %7x%8")
+        .arg(invalidated.x()).arg(invalidated.y()).arg(invalidated.width()).arg(invalidated.height())
+        .arg(previewBounds.x()).arg(previewBounds.y()).arg(previewBounds.width()).arg(previewBounds.height())));
+    const QImage restored = view.grab().toImage();
+    view.viewport()->repaint();
+    QCOMPARE(restored, view.grab().toImage());
 }
 
 void TestEditor::endpointTargetHighlight()

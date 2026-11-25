@@ -263,6 +263,51 @@ int main(int argc, char **argv)
     }
     const qint64 endpointPreviewNs = timer.nsecsElapsed();
 
+    DocumentController previewFlowController;
+    DiagramScene previewFlowScene(&previewFlowController);
+    const EntityId previewFlowSource = previewFlowController.createVariable(ElementKind::Stock, QPointF());
+    const EntityId previewFlowOldTarget = previewFlowController.createVariable(ElementKind::Stock, QPointF(400.0, 0.0));
+    const EntityId previewFlowNewTarget = previewFlowController.createVariable(ElementKind::Stock, QPointF(400.0, 400.0));
+    const EntityId previewFlow = previewFlowController.createFlow(previewFlowSource, previewFlowOldTarget);
+    const EntityId previewFlowAuxiliary = previewFlowController.createVariable(ElementKind::Auxiliary, QPointF(-400.0, 400.0));
+    const EntityId previewFlowConnector = previewFlowController.createConnector(previewFlowAuxiliary, previewFlow);
+    auto *previewFlowItem = dynamic_cast<FlowItem *>(previewFlowScene.item(previewFlow));
+    auto *previewFlowArrow = dynamic_cast<ArrowItem *>(previewFlowScene.item(previewFlowConnector));
+    previewFlowItem->setSelected(true);
+    ControlPointHandle *previewFlowHandle = nullptr;
+    for (QGraphicsItem *item : previewFlowScene.items()) {
+        auto *handle = qgraphicsitem_cast<ControlPointHandle *>(item);
+        if (handle && handle->routeId() == previewFlow && handle->index() == -2)
+            previewFlowHandle = handle;
+    }
+    if (!previewFlowHandle)
+        return 20;
+    DiagramView previewFlowView(&previewFlowScene);
+    previewFlowView.resize(900, 800);
+    previewFlowView.centerOn(QPointF(0.0, 200.0));
+    qint64 flowEndpointPreviewNs = 0;
+    int flowEndpointPreviewCount = 0;
+    for (int index = 0; index < count; ++index) {
+        const EntityId target = index % 2 == 0 ? previewFlowNewTarget : previewFlowOldTarget;
+        const QPoint start = previewFlowView.mapFromScene(previewFlowHandle->pos());
+        const QPoint end = previewFlowView.mapFromScene(previewFlowScene.item(target)->center());
+        timer.restart();
+        QMouseEvent press(QEvent::MouseButtonPress, start, previewFlowView.viewport()->mapToGlobal(start), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(previewFlowView.viewport(), &press);
+        QMouseEvent move(QEvent::MouseMove, end, previewFlowView.viewport()->mapToGlobal(end), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(previewFlowView.viewport(), &move);
+        QMouseEvent release(QEvent::MouseButtonRelease, end, previewFlowView.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(previewFlowView.viewport(), &release);
+        flowEndpointPreviewNs += timer.nsecsElapsed();
+        const auto *flow = dynamic_cast<const Flow *>(previewFlowController.document().find(previewFlow));
+        const QPainterPath arrowPath = previewFlowArrow->geometryPath();
+        const QPointF expectedEnd = previewFlowItem->boundaryPointToward(arrowPath.elementAt(arrowPath.elementCount() - 2));
+        if (!flow || flow->endpoints.to != target || previewFlowItem->previewing()
+            || QLineF(arrowPath.pointAtPercent(1.0), expectedEnd).length() > 0.75)
+            return 21;
+        ++flowEndpointPreviewCount;
+    }
+
     DocumentController flowTargetController;
     DiagramScene flowTargetScene(&flowTargetController);
     const EntityId flowTargetSource = flowTargetController.createVariable(ElementKind::Auxiliary, QPointF(0.0, -200.0));
@@ -547,6 +592,7 @@ int main(int argc, char **argv)
                         << "automatic_bezier_edit_reset,1000," << automaticBezierEditNs / 1e6 << "," << automaticBezierEditNs / 1000.0 / 1000 << "\n"
                         << "connector_drag_selection,1000," << connectorDragStateNs / 1e6 << "," << connectorDragStateNs / 1000.0 / 1000 << "\n"
                         << "endpoint_preview_cancel,1000," << endpointPreviewNs / 1e6 << "," << endpointPreviewNs / 1000.0 / 1000 << "\n"
+                        << "flow_endpoint_preview_dependents," << flowEndpointPreviewCount << "," << flowEndpointPreviewNs / 1e6 << "," << flowEndpointPreviewNs / 1000.0 / count << "\n"
                         << "connector_create_to_flow," << connectorToFlowCount << "," << connectorToFlowNs / 1e6 << "," << connectorToFlowNs / 1000.0 / count << "\n"
                         << "endpoint_target_highlight," << endpointTargetHighlightCount << "," << endpointTargetHighlightNs / 1e6 << "," << endpointTargetHighlightNs / 1000.0 / count << "\n"
                         << "bezier_guide_single_selection,1000," << guideSelectionNs / 1e6 << "," << guideSelectionNs / 1000.0 / 1000 << "\n"
@@ -569,6 +615,7 @@ int main(int argc, char **argv)
         && matches > 0 && guideCount == 2000 && automaticGuideCount == 2000 && automaticGroupManual
         && connectorDragGuideCount == 2000 && connectorDragStateValid
         && endpointPreviewGuideCount == 2000 && endpointPreviewHandlesValid
+        && flowEndpointPreviewCount == count
         && connectorToFlowCount == count && endpointTargetHighlightCount == count
         && singleSelectionGuideCount == 1000 && valveCount == 2000
         && lineStyleChecksum == 3000 && automaticPointCount > 0 && automaticFlagsValid

@@ -224,7 +224,7 @@ QGraphicsObject
 - 通过独立 `center()` 虚函数提供几何中心，默认等于 `pos()`；FlowItem 返回路径中点作为阀门中心，RoutedItem 不使用 `setPos()` 移动。
 - 提供端口布局和边界交点查询；所有连接都以 center 为定位参考，但实际端点是路径与实体边界的交点。
 - 选中路由对象时，端点句柄直接放在路径首尾边界交点，拖动句柄只重连，不修改实体中心。
-- RoutedItem 通过统一 `updateLayout()` 声明旧/新几何失效；boundingRect 必须联合 `geometryPath().boundingRect()` 与 `controlPointRect()`，并覆盖阀门、文字和辅助线，确保远离曲线实际控制点的手柄也纳入失效区域。创建连接与端点拖动使用不同预览对象，取消、重连和文档重置时按各自生命周期清理，避免残影。
+- RoutedItem 通过统一 `updateLayout()` 声明旧/新几何失效；端点预览状态虽然不修改 Route，也必须在写入 `m_previewEndpoint/m_previewPosition` **之前**调用 `prepareGeometryChange()`，再更新状态并调用 `update()`，禁止先改状态再由 updateLayout 查询旧轮廓。boundingRect 必须联合 `geometryPath().boundingRect()` 与 `controlPointRect()`，并覆盖阀门、文字和辅助线，确保远离曲线实际控制点的手柄也纳入失效区域。创建连接与端点拖动使用不同预览对象，取消、重连和文档重置时按各自生命周期清理，避免残影。
 - 根据文档变化刷新显示缓存。
 
 子类只实现真正不同的外形、端口和交互。Constant、Data 与 Auxiliary 如果行为一致，可共用 VariableItem，并通过绘制策略区分外观。
@@ -289,7 +289,7 @@ Flow.from/to 是唯一权威关系。当前不引入 Stock 流入/流出派生�
 
 RoutePoint 使用相对坐标：`relative.x` 是沿源→目标方向的比例，`relative.y` 是沿路径法线的像素偏移，场景坐标仅在绘制和拖动时派生。`automatic=true` 表示自动布线点，`false` 表示用户手动点。自动贝塞尔点与手动点一样显示控制句柄和辅助线并可编辑；任意控制点新增、移动或删除时，整条曲线的全部控制点成组转为手动。正交自动布线点仍隐藏。QDS 同时保存相对值和 automatic 属性；恢复未手动编辑的贝塞尔 Connector 时按当前 `defaultConnectorRoute()` 重建派生点，保留 locked，手动路径原样恢复。
 
-端点拖动预览直接由原 RoutedItem 计算，不复制图元、不隐藏原图元，也不修改 Document。预览端点可位于空白或非法目标上，此时不校验端点约束；释放后才校验并提交，非法释放恢复原路径。预览期间保留两个端点句柄，隐藏全部中间控制句柄和贝塞尔辅助线；统一由 `syncControlPoints()` 在开始、有效提交和取消时切换可见性并恢复选中曲线的句柄，不能只更新预览路径。
+端点拖动预览直接由原 RoutedItem 计算，不复制图元、不隐藏原图元，也不修改 Document。预览端点可位于空白或非法目标上，此时不校验端点约束；释放后才校验并提交，非法释放恢复原路径。预览期间保留两个端点句柄，隐藏全部中间控制句柄和贝塞尔辅助线；统一由 `syncControlPoints()` 在开始、有效提交和取消时切换可见性并恢复选中曲线的句柄，不能只更新预览路径。Flow 预览和恢复还必须复用 `updateDependentRoutes()` 刷新以其为端点的 Arrow，使依赖 Arrow 的旧/新绘制区域都失效；不能只重算 Flow 后等待全量重绘间接更新 Arrow。
 
 删除 Stock/Cloud 时必须级联删除所有以其为端点的 Flow 及相关 Arrow。Flow 和 Arrow 只有在两端对象一并复制时才可粘贴，不允许保留外部端点。
 
