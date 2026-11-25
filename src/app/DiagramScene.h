@@ -13,6 +13,7 @@
 class DocumentController;
 class QGraphicsLineItem;
 class QGraphicsProxyWidget;
+class QImage;
 
 class DiagramScene : public QGraphicsScene
 {
@@ -53,6 +54,9 @@ public:
     void alignSelected(Qt::Alignment alignment);
     void distributeSelected(bool horizontal);
     void setGridVisible(bool visible);
+    bool gridVisible() const { return m_gridVisible; }
+    QRectF contentRect() const;
+    QImage renderImage();
     void setSnapEnabled(bool enabled);
     void setSelectedRouteMode(qds::core::RouteMode mode);
     void resetSelectedRoute();

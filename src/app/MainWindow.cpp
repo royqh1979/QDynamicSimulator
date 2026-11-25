@@ -12,6 +12,8 @@
 
 #include <QAction>
 #include <QActionGroup>
+#include <QApplication>
+#include <QClipboard>
 #include <QCloseEvent>
 #include <QDir>
 #include <QDockWidget>
@@ -20,6 +22,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QIcon>
+#include <QImage>
 #include <QKeySequence>
 #include <QLineEdit>
 #include <QListWidget>
@@ -185,6 +188,12 @@ void MainWindow::createActions()
     QAction *exportAction = new QAction(tr("Export XMILE..."), this);
     connect(exportAction, &QAction::triggered, this, &MainWindow::exportXmile);
     fileMenu->addAction(exportAction);
+    QAction *exportPngAction = new QAction(tr("Export PNG..."), this);
+    exportPngAction->setObjectName(QStringLiteral("exportPngAction"));
+    connect(exportPngAction, &QAction::triggered, this, [this]() {
+        exportPng();
+    });
+    fileMenu->addAction(exportPngAction);
 
     fileMenu->addSeparator();
     QAction *exitAction = new QAction(actionIcon("exit"), tr("E&xit"), this);
@@ -270,6 +279,10 @@ void MainWindow::createActions()
     copyAction->setShortcut(QKeySequence::Copy);
     connect(copyAction, &QAction::triggered, this, copySelection);
     editMenu->addAction(copyAction);
+    QAction *copyPngAction = new QAction(tr("Copy as PNG"), this);
+    copyPngAction->setObjectName(QStringLiteral("copyPngAction"));
+    connect(copyPngAction, &QAction::triggered, this, &MainWindow::copyPng);
+    editMenu->addAction(copyPngAction);
     QAction *cutAction = new QAction(actionIcon("cut"), tr("Cut"), this);
     cutAction->setShortcut(QKeySequence::Cut);
     connect(cutAction, &QAction::triggered, this, [this, copySelection]() {
@@ -500,6 +513,48 @@ bool MainWindow::exportXmile()
         return false;
     }
     statusBar()->showMessage(tr("Exported %1").arg(QFileInfo(fileName).fileName()), 5000);
+    return true;
+}
+
+bool MainWindow::exportPng()
+{
+    QString fileName = QFileDialog::getSaveFileName(
+        this,
+        tr("Export PNG image"),
+        QString(),
+        tr("PNG images (*.png);;All files (*)"));
+    if (fileName.isEmpty())
+        return false;
+    if (QFileInfo(fileName).suffix().isEmpty())
+        fileName += QStringLiteral(".png");
+    return exportPng(fileName);
+}
+
+bool MainWindow::exportPng(const QString &fileName)
+{
+    if (!m_propertyPanel->commit())
+        return false;
+    if (!m_scene->renderImage().save(fileName, "PNG")) {
+        QMessageBox::warning(this, tr("Export failed"), tr("Could not write the PNG image."));
+        return false;
+    }
+    statusBar()->showMessage(tr("Exported %1").arg(QFileInfo(fileName).fileName()), 5000);
+    return true;
+}
+
+bool MainWindow::copyPng()
+{
+    if (!m_propertyPanel->commit())
+        return false;
+    const QImage image = m_scene->renderImage();
+    QClipboard *clipboard = QApplication::clipboard();
+    clipboard->setImage(image);
+    const QImage copied = clipboard->image();
+    if (copied.isNull() || copied != image) {
+        QMessageBox::warning(this, tr("Copy failed"), tr("The clipboard is unavailable or was changed by another application."));
+        return false;
+    }
+    statusBar()->showMessage(tr("Copied PNG image to the clipboard"), 5000);
     return true;
 }
 

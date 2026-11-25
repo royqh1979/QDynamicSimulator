@@ -9,6 +9,7 @@
 
 #include <QActionGroup>
 #include <QApplication>
+#include <QClipboard>
 #include <QElapsedTimer>
 #include <QGraphicsLineItem>
 #include <QGraphicsProxyWidget>
@@ -16,6 +17,7 @@
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QSettings>
 #include <QTemporaryDir>
@@ -547,6 +549,59 @@ int main(int argc, char **argv)
         fontController.undoStack()->undo();
     }
 
+    DocumentController pngController;
+    DiagramScene pngScene(&pngController);
+    std::vector<EntityId> pngIds;
+    for (int index = 0; index < 20; ++index) {
+        const ElementKind kind = index % 2 == 0 ? ElementKind::Stock : ElementKind::Auxiliary;
+        pngIds.push_back(pngController.createVariable(kind, QPointF((index % 5) * 180.0, (index / 5) * 140.0)));
+    }
+    for (int index = 1; index < 20; ++index)
+        pngController.createConnector(pngIds[static_cast<std::size_t>(index - 1)], pngIds[static_cast<std::size_t>(index)]);
+    const int pngIterations = qMax(1, count / 10);
+    timer.restart();
+    int pngRenderCount = 0;
+    quint32 pngChecksum = 0;
+    for (int index = 0; index < pngIterations; ++index) {
+        const QImage image = pngScene.renderImage();
+        pngChecksum += image.pixelColor(0, 0).rgb();
+        ++pngRenderCount;
+    }
+    const qint64 pngRenderNs = timer.nsecsElapsed();
+    const QImage pngImage = pngScene.renderImage();
+    QTemporaryDir pngDirectory;
+    if (!pngDirectory.isValid() || pngImage.isNull())
+        return 29;
+    const QString pngPath = pngDirectory.filePath(QStringLiteral("profile.png"));
+    const int pngFileIterations = qMax(1, count / 50);
+    timer.restart();
+    int pngFileCount = 0;
+    for (int index = 0; index < pngFileIterations; ++index) {
+        if (!pngImage.save(pngPath, "PNG"))
+            return 30;
+        ++pngFileCount;
+    }
+    const qint64 pngFileNs = timer.nsecsElapsed();
+    QMimeData previousClipboard;
+    const QMimeData *clipboardData = QApplication::clipboard()->mimeData();
+    if (clipboardData) {
+        for (const QString &format : clipboardData->formats())
+            previousClipboard.setData(format, clipboardData->data(format));
+    }
+    timer.restart();
+    int pngClipboardCount = 0;
+    for (int index = 0; index < pngIterations; ++index) {
+        QApplication::clipboard()->setImage(pngImage);
+        if (QApplication::clipboard()->image() != pngImage)
+            return 31;
+        ++pngClipboardCount;
+    }
+    const qint64 pngClipboardNs = timer.nsecsElapsed();
+    auto *restoreClipboard = new QMimeData;
+    for (const QString &format : previousClipboard.formats())
+        restoreClipboard->setData(format, previousClipboard.data(format));
+    QApplication::clipboard()->setMimeData(restoreClipboard);
+
     QTemporaryDir layoutDirectory;
     if (!layoutDirectory.isValid())
         return 25;
@@ -710,6 +765,9 @@ int main(int argc, char **argv)
                         << "comment_content_edit,1000," << commentEditNs / 1e6 << "," << commentEditNs / 1000.0 / 1000 << "\n"
                         << "property_panel_refresh,1000," << propertyPanelNs / 1e6 << "," << propertyPanelNs / 1000.0 / 1000 << "\n"
                         << "font_style_edit," << fontStyleCount << "," << fontStyleNs / 1e6 << "," << fontStyleNs / 1000.0 / count << "\n"
+                        << "png_render," << pngRenderCount << "," << pngRenderNs / 1e6 << "," << pngRenderNs / 1000.0 / pngRenderCount << "\n"
+                        << "png_file_export," << pngFileCount << "," << pngFileNs / 1e6 << "," << pngFileNs / 1000.0 / pngFileCount << "\n"
+                        << "png_clipboard_copy," << pngClipboardCount << "," << pngClipboardNs / 1e6 << "," << pngClipboardNs / 1000.0 / pngClipboardCount << "\n"
                         << "window_layout_restore," << windowLayoutCount << "," << windowLayoutNs / 1e6 << "," << windowLayoutNs / 1000.0 / windowLayoutCount << "\n"
                         << "qds_save," << count << "," << saveNs / 1e6 << "," << saveNs / 1000.0 / count << "\n"
                         << "qds_open," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n"
@@ -728,6 +786,7 @@ int main(int argc, char **argv)
         && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000
         && centerBoundaryCount == 1000 && variableKindsMatch && windowLayoutCount == layoutIterations
         && fontStyleCount == count && loadedFontStock
+        && pngRenderCount == pngIterations && pngFileCount == pngFileIterations && pngClipboardCount == pngIterations && pngChecksum != 0
         && loaded.diagram().fontStyle(loadedFontStock->id()) == (FontStyle {"Arial", 18})
         && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic
         && !dependentArrows.empty() && dependentEndpointChecksum != 0.0

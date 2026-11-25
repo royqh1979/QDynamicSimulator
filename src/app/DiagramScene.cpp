@@ -9,6 +9,7 @@
 #include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSceneMouseEvent>
 #include <QIcon>
+#include <QImage>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QMenu>
@@ -263,6 +264,51 @@ void DiagramScene::setGridVisible(bool visible)
 {
     m_gridVisible = visible;
     update();
+}
+
+QRectF DiagramScene::contentRect() const
+{
+    QRectF bounds;
+    for (const DiagramItem *item : m_items)
+        bounds = bounds.united(item->sceneBoundingRect());
+    return bounds.isEmpty() ? QRectF(0.0, 0.0, 400.0, 300.0) : bounds.adjusted(-20.0, -20.0, 20.0, 20.0);
+}
+
+QImage DiagramScene::renderImage()
+{
+    const QRectF bounds = contentRect();
+    const double scale = std::max(0.01, std::min({2.0, 16384.0 / bounds.width(), 16384.0 / bounds.height()}));
+    QImage image(qMax(1, qCeil(bounds.width() * scale)), qMax(1, qCeil(bounds.height() * scale)), QImage::Format_RGB32);
+    image.fill(diagram_palette::CanvasBackgroundColor);
+
+    const QList<QGraphicsItem *> selection = selectedItems();
+    const bool gridVisible = m_gridVisible;
+    const bool rubberVisible = m_rubberLine && m_rubberLine->isVisible();
+    const bool editorVisible = m_inlineNameEditor && m_inlineNameEditor->isVisible();
+    QWidget *editorWidget = m_inlineNameEditor ? m_inlineNameEditor->widget() : nullptr;
+    const bool editorSignalsBlocked = editorWidget && editorWidget->blockSignals(true);
+    if (m_rubberLine)
+        m_rubberLine->hide();
+    if (m_inlineNameEditor)
+        m_inlineNameEditor->hide();
+    clearSelection();
+    setGridVisible(false);
+    {
+        QPainter painter(&image);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::TextAntialiasing);
+        render(&painter, QRectF(QPointF(0.0, 0.0), QSizeF(image.size())), bounds, Qt::IgnoreAspectRatio);
+    }
+    setGridVisible(gridVisible);
+    for (QGraphicsItem *item : selection)
+        item->setSelected(true);
+    if (m_rubberLine)
+        m_rubberLine->setVisible(rubberVisible);
+    if (m_inlineNameEditor)
+        m_inlineNameEditor->setVisible(editorVisible);
+    if (editorWidget)
+        editorWidget->blockSignals(editorSignalsBlocked);
+    return image;
 }
 
 void DiagramScene::setSnapEnabled(bool enabled)

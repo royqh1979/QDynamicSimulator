@@ -13,6 +13,7 @@
 #include <qds/io/DocumentFile.h>
 #include <qds/io/XmileFile.h>
 
+#include <QClipboard>
 #include <QDockWidget>
 #include <QDropEvent>
 #include <QFile>
@@ -20,6 +21,7 @@
 #include <QGraphicsProxyWidget>
 #include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSceneMouseEvent>
+#include <QImageReader>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
@@ -120,6 +122,7 @@ private slots:
     void unifiedIdUndoRedo();
     void modifierDragOperations();
     void fileDropOpen();
+    void pngExportAndClipboard();
     void windowLayoutPersistence();
 };
 
@@ -2054,6 +2057,79 @@ void TestEditor::fileDropOpen()
     QDragEnterEvent rejected(QPoint(20, 20), Qt::CopyAction, &invalid, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view->viewport(), &rejected);
     QVERIFY(!rejected.isAccepted());
+}
+
+void TestEditor::pngExportAndClipboard()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(300.0, 0.0));
+    const EntityId connector = controller.createConnector(stock, auxiliary);
+    auto *arrow = dynamic_cast<ArrowItem *>(scene.item(connector));
+    arrow->setSelected(true);
+    auto visibleHandleCount = [&scene]() {
+        int count = 0;
+        for (QGraphicsItem *item : scene.items()) {
+            const auto *handle = qgraphicsitem_cast<ControlPointHandle *>(item);
+            if (handle && handle->isVisible())
+                ++count;
+        }
+        return count;
+    };
+    const int handlesBefore = visibleHandleCount();
+    QVERIFY(handlesBefore > 0);
+    const QImage rendered = scene.renderImage();
+    QVERIFY(!rendered.isNull());
+    QCOMPARE(rendered.pixelColor(0, 0), diagram_palette::CanvasBackgroundColor);
+    QCOMPARE(rendered.width(), qCeil(scene.contentRect().width() * 2.0));
+    QCOMPARE(rendered.height(), qCeil(scene.contentRect().height() * 2.0));
+    int selectionPixels = 0;
+    int contentPixels = 0;
+    for (int y = 0; y < rendered.height(); ++y) {
+        for (int x = 0; x < rendered.width(); ++x) {
+            const QColor color = rendered.pixelColor(x, y);
+            selectionPixels += color == diagram_palette::SelectionColor ? 1 : 0;
+            contentPixels += color != diagram_palette::CanvasBackgroundColor ? 1 : 0;
+        }
+    }
+    QCOMPARE(selectionPixels, 0);
+    QVERIFY(contentPixels > 0);
+    QVERIFY(scene.gridVisible());
+    QVERIFY(arrow->isSelected());
+    QCOMPARE(visibleHandleCount(), handlesBefore);
+
+    MainWindow window;
+    auto *windowController = window.findChild<DocumentController *>();
+    auto *windowScene = window.findChild<DiagramScene *>();
+    QVERIFY(windowController && windowScene);
+    windowController->createVariable(ElementKind::Stock, QPointF());
+    QVERIFY(window.findChild<QAction *>(QStringLiteral("exportPngAction")));
+    QVERIFY(window.findChild<QAction *>(QStringLiteral("copyPngAction")));
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath(QStringLiteral("diagram.png"));
+    QVERIFY(window.exportPng(path));
+    QImageReader reader(path);
+    QCOMPARE(reader.format(), QByteArray("png"));
+    const QImage exported = reader.read();
+    QVERIFY(!exported.isNull());
+    QCOMPARE(exported.size(), windowScene->renderImage().size());
+
+    QMimeData previousClipboard;
+    const QMimeData *clipboardData = QApplication::clipboard()->mimeData();
+    if (clipboardData) {
+        for (const QString &format : clipboardData->formats())
+            previousClipboard.setData(format, clipboardData->data(format));
+    }
+    QVERIFY(window.copyPng());
+    const QImage copied = QApplication::clipboard()->image();
+    QVERIFY(!copied.isNull());
+    QCOMPARE(copied.size(), windowScene->renderImage().size());
+    auto *restoreClipboard = new QMimeData;
+    for (const QString &format : previousClipboard.formats())
+        restoreClipboard->setData(format, previousClipboard.data(format));
+    QApplication::clipboard()->setMimeData(restoreClipboard);
 }
 
 void TestEditor::windowLayoutPersistence()
