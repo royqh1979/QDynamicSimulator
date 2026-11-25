@@ -27,6 +27,7 @@
 #include <QTemporaryDir>
 #include <QThread>
 #include <QTextStream>
+#include <QTranslator>
 
 #include <vector>
 
@@ -709,6 +710,17 @@ int main(int argc, char **argv)
         restoreClipboard->setData(format, previousClipboard.data(format));
     QApplication::clipboard()->setMimeData(restoreClipboard);
 
+    Q_INIT_RESOURCE(i18n);
+    timer.restart();
+    int translationLoadCount = 0;
+    for (int index = 0; index < count; ++index) {
+        QTranslator translator;
+        if (!translator.load(QStringLiteral(":/i18n/qds_zh_CN.qm")))
+            return 39;
+        ++translationLoadCount;
+    }
+    const qint64 translationLoadNs = timer.nsecsElapsed();
+
     QTemporaryDir layoutDirectory;
     if (!layoutDirectory.isValid())
         return 25;
@@ -879,6 +891,7 @@ int main(int argc, char **argv)
                         << "png_selection_render," << pngSelectionRenderCount << "," << pngSelectionRenderNs / 1e6 << "," << pngSelectionRenderNs / 1000.0 / pngSelectionRenderCount << "\n"
                         << "png_file_export," << pngFileCount << "," << pngFileNs / 1e6 << "," << pngFileNs / 1000.0 / pngFileCount << "\n"
                         << "png_clipboard_copy," << pngClipboardCount << "," << pngClipboardNs / 1e6 << "," << pngClipboardNs / 1000.0 / pngClipboardCount << "\n"
+                        << "translation_load," << translationLoadCount << "," << translationLoadNs / 1e6 << "," << translationLoadNs / 1000.0 / translationLoadCount << "\n"
                         << "window_layout_restore," << windowLayoutCount << "," << windowLayoutNs / 1e6 << "," << windowLayoutNs / 1000.0 / windowLayoutCount << "\n"
                         << "qds_save," << count << "," << saveNs / 1e6 << "," << saveNs / 1000.0 / count << "\n"
                         << "qds_open," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n"
@@ -898,6 +911,7 @@ int main(int argc, char **argv)
         && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000
         && centerBoundaryCount == 1000 && variableKindsMatch && windowLayoutCount == layoutIterations
         && fontStyleCount == count && loadedFontStock
+        && translationLoadCount == count
         && pngRenderCount == pngIterations && pngSelectionRenderCount == pngIterations && pngSelectionSmaller
         && pngFileCount == pngFileIterations && pngClipboardCount == pngIterations && pngChecksum != 0
         && loaded.diagram().fontStyle(loadedFontStock->id()) == (FontStyle {"Arial", 18})

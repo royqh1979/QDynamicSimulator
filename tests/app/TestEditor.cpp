@@ -38,6 +38,7 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QToolBar>
+#include <QTranslator>
 #include <QUrl>
 #include <QtTest>
 
@@ -158,6 +159,7 @@ private slots:
     void pngExportAndClipboard();
     void cursorPositionStatus();
     void windowLayoutPersistence();
+    void simplifiedChineseTranslation();
 };
 
 void TestEditor::createUndoRedo()
@@ -2439,6 +2441,30 @@ void TestEditor::windowLayoutPersistence()
     QVERIFY(restoredProperties && restoredNavigation);
     QVERIFY(restoredProperties->isHidden());
     QVERIFY(restoredNavigation->isFloating());
+}
+
+void TestEditor::simplifiedChineseTranslation()
+{
+    Q_INIT_RESOURCE(i18n);
+    QTranslator translator;
+    QVERIFY(translator.load(QStringLiteral(":/i18n/qds_zh_CN.qm")));
+    QApplication::installTranslator(&translator);
+    MainWindow window;
+    const QList<QAction *> menus = window.menuBar()->actions();
+    QVERIFY(menus.size() >= 4);
+    QCOMPARE(menus[0]->text(), QStringLiteral("\u6587\u4EF6(&F)"));
+    QCOMPARE(menus[1]->text(), QStringLiteral("\u7F16\u8F91(&E)"));
+    QCOMPARE(menus[2]->text(), QStringLiteral("\u89C6\u56FE(&V)"));
+    QCOMPARE(menus[3]->text(), QStringLiteral("\u5E03\u7EBF(&R)"));
+    bool hasStock = false;
+    for (QAction *action : window.findChildren<QAction *>())
+        hasStock = hasStock || action->text() == QStringLiteral("\u5B58\u91CF");
+    QVERIFY(hasStock);
+    QApplication::removeTranslator(&translator);
+
+    QFile source(QStringLiteral(QDS_ZH_CN_TS_PATH));
+    QVERIFY(source.open(QIODevice::ReadOnly));
+    QVERIFY(!source.readAll().contains("type=\"unfinished\""));
 }
 
 QTEST_MAIN(TestEditor)
