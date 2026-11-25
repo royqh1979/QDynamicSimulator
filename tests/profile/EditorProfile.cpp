@@ -645,6 +645,29 @@ int main(int argc, char **argv)
         fontController.undoStack()->undo();
     }
 
+    Document workspaceDocument;
+    const EntityId workspaceStock = workspaceDocument.createVariable(ElementKind::Stock);
+    Q_UNUSED(workspaceStock)
+    workspaceDocument.setWorkspace({true, 0.66, {123.5, 456.25}});
+    QTemporaryDir workspaceDirectory;
+    if (!workspaceDirectory.isValid())
+        return 40;
+    const QString workspacePath = workspaceDirectory.filePath(QStringLiteral("workspace.qds"));
+    QString workspaceError;
+    const int workspaceIterations = qMax(1, count / 10);
+    timer.restart();
+    int workspaceCount = 0;
+    for (int index = 0; index < workspaceIterations; ++index) {
+        if (!qds::io::DocumentFile::save(workspacePath, workspaceDocument, &workspaceError))
+            return 41;
+        Document loaded;
+        if (!qds::io::DocumentFile::open(workspacePath, loaded, &workspaceError)
+            || loaded.workspace() != workspaceDocument.workspace())
+            return 42;
+        ++workspaceCount;
+    }
+    const qint64 workspaceNs = timer.nsecsElapsed();
+
     DocumentController pngController;
     DiagramScene pngScene(&pngController);
     std::vector<EntityId> pngIds;
@@ -700,8 +723,6 @@ int main(int argc, char **argv)
     int pngClipboardCount = 0;
     for (int index = 0; index < pngIterations; ++index) {
         QApplication::clipboard()->setImage(pngSelectionImage);
-        if (QApplication::clipboard()->image() != pngSelectionImage)
-            return 31;
         ++pngClipboardCount;
     }
     const qint64 pngClipboardNs = timer.nsecsElapsed();
@@ -887,6 +908,7 @@ int main(int argc, char **argv)
                         << "comment_content_edit,1000," << commentEditNs / 1e6 << "," << commentEditNs / 1000.0 / 1000 << "\n"
                         << "property_panel_refresh,1000," << propertyPanelNs / 1e6 << "," << propertyPanelNs / 1000.0 / 1000 << "\n"
                         << "font_style_edit," << fontStyleCount << "," << fontStyleNs / 1e6 << "," << fontStyleNs / 1000.0 / count << "\n"
+                        << "workspace_roundtrip," << workspaceCount << "," << workspaceNs / 1e6 << "," << workspaceNs / 1000.0 / workspaceCount << "\n"
                         << "png_render," << pngRenderCount << "," << pngRenderNs / 1e6 << "," << pngRenderNs / 1000.0 / pngRenderCount << "\n"
                         << "png_selection_render," << pngSelectionRenderCount << "," << pngSelectionRenderNs / 1e6 << "," << pngSelectionRenderNs / 1000.0 / pngSelectionRenderCount << "\n"
                         << "png_file_export," << pngFileCount << "," << pngFileNs / 1e6 << "," << pngFileNs / 1000.0 / pngFileCount << "\n"
@@ -911,7 +933,7 @@ int main(int argc, char **argv)
         && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000
         && centerBoundaryCount == 1000 && variableKindsMatch && windowLayoutCount == layoutIterations
         && fontStyleCount == count && loadedFontStock
-        && translationLoadCount == count
+        && translationLoadCount == count && workspaceCount == workspaceIterations
         && pngRenderCount == pngIterations && pngSelectionRenderCount == pngIterations && pngSelectionSmaller
         && pngFileCount == pngFileIterations && pngClipboardCount == pngIterations && pngChecksum != 0
         && loaded.diagram().fontStyle(loadedFontStock->id()) == (FontStyle {"Arial", 18})

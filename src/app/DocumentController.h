@@ -49,6 +49,7 @@ public:
     bool reconnectFlow(qds::core::EntityId id, qds::core::EntityId from, qds::core::EntityId to);
     bool reconnectConnector(qds::core::EntityId id, qds::core::EntityId from, qds::core::EntityId to);
     void setRoute(qds::core::EntityId id, const qds::core::Route &route);
+    void setWorkspace(const qds::core::Workspace &workspace) { m_document.setWorkspace(workspace); }
     void replaceDocument(qds::core::Document document);
     ClipboardData copyElements(const std::vector<qds::core::EntityId> &ids) const;
     std::vector<qds::core::EntityId> pasteClipboard(const ClipboardData &clipboard, const QPointF &offset);

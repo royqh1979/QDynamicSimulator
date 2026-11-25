@@ -132,6 +132,7 @@ Document::Document(Document &&other) noexcept
     , m_nextId(other.m_nextId)
     , m_model(*this)
     , m_diagram(*this)
+    , m_workspace(std::move(other.m_workspace))
 {
     m_diagram.m_positions = std::move(other.m_diagram.m_positions);
     m_diagram.m_routes = std::move(other.m_diagram.m_routes);
@@ -149,6 +150,7 @@ Document &Document::operator=(Document &&other) noexcept
     m_diagram.m_positions = std::move(other.m_diagram.m_positions);
     m_diagram.m_routes = std::move(other.m_diagram.m_routes);
     m_diagram.m_fontStyles = std::move(other.m_diagram.m_fontStyles);
+    m_workspace = std::move(other.m_workspace);
     return *this;
 }
 
@@ -606,6 +608,7 @@ void Document::clear()
     m_diagram.m_positions.clear();
     m_diagram.m_routes.clear();
     m_diagram.m_fontStyles.clear();
+    m_workspace = {};
     m_nextId = 1;
 }
 

@@ -56,6 +56,22 @@ struct FontStyle {
     bool operator!=(const FontStyle &other) const { return !(*this == other); }
 };
 
+struct Workspace {
+    bool hasViewport = false;
+    double zoom = 1.0;
+    Vec2 center;
+    bool hasScrollValues = false;
+    int scrollX = 0;
+    int scrollY = 0;
+
+    bool operator==(const Workspace &other) const
+    {
+        return hasViewport == other.hasViewport && zoom == other.zoom && center == other.center
+            && hasScrollValues == other.hasScrollValues && scrollX == other.scrollX && scrollY == other.scrollY;
+    }
+    bool operator!=(const Workspace &other) const { return !(*this == other); }
+};
+
 struct ElementData {
     EntityId id = 0;
     ElementKind kind = ElementKind::Stock;
@@ -195,6 +211,8 @@ public:
     DocumentRange elements() const { return DocumentRange(m_elements); }
     const Model &model() const { return m_model; }
     const DiagramDefinition &diagram() const { return m_diagram; }
+    const Workspace &workspace() const { return m_workspace; }
+    void setWorkspace(const Workspace &workspace) { m_workspace = workspace; }
 
     EntityId createVariable(ElementKind kind, Vec2 position = {});
     EntityId createFlow(EntityId from, EntityId to);
@@ -237,6 +255,7 @@ private:
     EntityId m_nextId = 1;
     Model m_model;
     DiagramDefinition m_diagram;
+    Workspace m_workspace;
 };
 
 } // namespace qds::core

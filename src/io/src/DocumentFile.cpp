@@ -11,6 +11,7 @@
 #include <zlib.h>
 
 #include <algorithm>
+#include <cmath>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -410,7 +411,20 @@ QByteArray writeNativeXml(const core::Document &document)
         writer.writeEndElement();
     }
     writer.writeEndElement();
-    writer.writeEmptyElement(QStringLiteral("workspace"));
+    const core::Workspace &workspace = document.workspace();
+    if (workspace.hasViewport) {
+        writer.writeStartElement(QStringLiteral("workspace"));
+        writer.writeAttribute(QStringLiteral("zoom"), QString::number(workspace.zoom, 'g', 15));
+        writer.writeAttribute(QStringLiteral("center-x"), QString::number(workspace.center.x, 'g', 15));
+        writer.writeAttribute(QStringLiteral("center-y"), QString::number(workspace.center.y, 'g', 15));
+        if (workspace.hasScrollValues) {
+            writer.writeAttribute(QStringLiteral("scroll-x"), QString::number(workspace.scrollX));
+            writer.writeAttribute(QStringLiteral("scroll-y"), QString::number(workspace.scrollY));
+        }
+        writer.writeEndElement();
+    } else {
+        writer.writeEmptyElement(QStringLiteral("workspace"));
+    }
     writer.writeEndElement();
     writer.writeEndDocument();
     return output;
@@ -495,6 +509,7 @@ bool parseNativeElement(QXmlStreamReader &reader, NativeRecord &record)
 bool parseNativeXml(const QByteArray &xml, core::Document &document, QString *errorMessage)
 {
     QXmlStreamReader reader(xml);
+    core::Workspace workspace;
     std::vector<NativeRecord> records;
     std::unordered_set<quint64> uniqueUids;
     bool foundRoot = false;
@@ -509,6 +524,37 @@ bool parseNativeXml(const QByteArray &xml, core::Document &document, QString *er
         if (reader.name() == QStringLiteral("model") || reader.name() == QStringLiteral("diagram"))
             continue;
         if (reader.name() == QStringLiteral("workspace")) {
+            const QXmlStreamAttributes attributes = reader.attributes();
+            bool zoomOk = true;
+            bool xOk = true;
+            bool yOk = true;
+            bool scrollXOk = true;
+            bool scrollYOk = true;
+            if (attributes.hasAttribute(QStringLiteral("zoom"))) {
+                workspace.hasViewport = true;
+                workspace.zoom = attributes.value(QStringLiteral("zoom")).toDouble(&zoomOk);
+            }
+            if (attributes.hasAttribute(QStringLiteral("center-x"))) {
+                workspace.hasViewport = true;
+                workspace.center.x = attributes.value(QStringLiteral("center-x")).toDouble(&xOk);
+            }
+            if (attributes.hasAttribute(QStringLiteral("center-y"))) {
+                workspace.hasViewport = true;
+                workspace.center.y = attributes.value(QStringLiteral("center-y")).toDouble(&yOk);
+            }
+            if (attributes.hasAttribute(QStringLiteral("scroll-x"))) {
+                workspace.hasScrollValues = true;
+                workspace.scrollX = attributes.value(QStringLiteral("scroll-x")).toInt(&scrollXOk);
+            }
+            if (attributes.hasAttribute(QStringLiteral("scroll-y"))) {
+                workspace.hasScrollValues = true;
+                workspace.scrollY = attributes.value(QStringLiteral("scroll-y")).toInt(&scrollYOk);
+            }
+            if (!zoomOk || !xOk || !yOk || !scrollXOk || !scrollYOk || workspace.zoom <= 0.0
+                || !std::isfinite(workspace.zoom) || !std::isfinite(workspace.center.x) || !std::isfinite(workspace.center.y)) {
+                setError(errorMessage, translate("The QDS workspace is invalid."));
+                return false;
+            }
             reader.skipCurrentElement();
             continue;
         }
@@ -565,6 +611,7 @@ bool parseNativeXml(const QByteArray &xml, core::Document &document, QString *er
         }
         uids[record.uid] = nextId++;
     }
+    parsed.setWorkspace(workspace);
     document = std::move(parsed);
     return true;
 }

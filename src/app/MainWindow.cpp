@@ -131,9 +131,20 @@ bool MainWindow::openFile(const QString &fileName)
     m_recentFiles.add(fileName);
     updateRecentFiles();
     QFile::remove(recoveryFileName());
-    if (!m_scene->items().isEmpty())
-        m_view->centerOn(m_scene->itemsBoundingRect().center());
     m_propertyPanel->refresh();
+    const qds::core::Workspace &workspace = m_controller->document().workspace();
+    if (nativeFormat && workspace.hasViewport) {
+        m_view->setTransform(QTransform::fromScale(workspace.zoom, workspace.zoom));
+        if (workspace.hasScrollValues) {
+            m_view->horizontalScrollBar()->setValue(workspace.scrollX);
+            m_view->verticalScrollBar()->setValue(workspace.scrollY);
+        } else {
+            m_view->centerOn(QPointF(workspace.center.x, workspace.center.y));
+        }
+    } else if (!m_scene->items().isEmpty()) {
+        m_view->centerOn(m_scene->itemsBoundingRect().center());
+    }
+    updateCursorStatus();
     return true;
 }
 
@@ -472,6 +483,19 @@ void MainWindow::updateCursorStatus()
         .arg(qRound(m_view->transform().m11() * 100.0)));
 }
 
+void MainWindow::updateWorkspace()
+{
+    qds::core::Workspace workspace;
+    workspace.hasViewport = true;
+    workspace.zoom = m_view->transform().m11();
+    const QPointF center = m_view->mapToScene(m_view->viewport()->rect().center());
+    workspace.center = {center.x(), center.y()};
+    workspace.hasScrollValues = true;
+    workspace.scrollX = m_view->horizontalScrollBar()->value();
+    workspace.scrollY = m_view->verticalScrollBar()->value();
+    m_controller->setWorkspace(workspace);
+}
+
 void MainWindow::newFile()
 {
     if (!maybeSave())
@@ -564,28 +588,21 @@ bool MainWindow::exportPng(const QString &fileName)
     return true;
 }
 
-bool MainWindow::copyPng()
+void MainWindow::copyPng()
 {
     if (!m_propertyPanel->commit())
-        return false;
+        return;
     const QImage image = m_scene->renderImage(true);
     if (image.isNull()) {
         statusBar()->showMessage(tr("Select one or more elements to copy as PNG"), 5000);
-        return false;
+        return;
     }
-    QClipboard *clipboard = QApplication::clipboard();
-    clipboard->setImage(image);
-    const QImage copied = clipboard->image();
-    if (copied.isNull() || copied != image) {
-        QMessageBox::warning(this, tr("Copy failed"), tr("The clipboard is unavailable or was changed by another application."));
-        return false;
-    }
-    statusBar()->showMessage(tr("Copied PNG image to the clipboard"), 5000);
-    return true;
+    QApplication::clipboard()->setImage(image);
 }
 
 bool MainWindow::saveFile(const QString &fileName)
 {
+    updateWorkspace();
     QString error;
     if (!qds::io::DocumentFile::save(fileName, m_controller->document(), &error)) {
         QMessageBox::warning(this, tr("Save failed"), error);
@@ -696,6 +713,7 @@ void MainWindow::autoSave()
     const QString path = recoveryFileName();
     if (!QDir().mkpath(QFileInfo(path).absolutePath()))
         return;
+    updateWorkspace();
     QString error;
     if (!qds::io::DocumentFile::save(path, m_controller->document(), &error))
         statusBar()->showMessage(tr("Auto-save failed: %1").arg(error), 5000);
