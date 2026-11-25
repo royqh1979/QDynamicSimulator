@@ -2150,7 +2150,10 @@ void TestEditor::pngExportAndClipboard()
     auto *windowController = window.findChild<DocumentController *>();
     auto *windowScene = window.findChild<DiagramScene *>();
     QVERIFY(windowController && windowScene);
-    windowController->createVariable(ElementKind::Stock, QPointF());
+    const EntityId copiedStock = windowController->createVariable(ElementKind::Stock, QPointF());
+    windowController->createVariable(ElementKind::Stock, QPointF(1000.0, 0.0));
+    const EntityId overlappingAuxiliary = windowController->createVariable(ElementKind::Auxiliary, QPointF(65.0, 35.0));
+    windowScene->item(copiedStock)->setSelected(true);
     QVERIFY(window.findChild<QAction *>(QStringLiteral("exportPngAction")));
     QVERIFY(window.findChild<QAction *>(QStringLiteral("copyPngAction")));
     QTemporaryDir directory;
@@ -2172,7 +2175,21 @@ void TestEditor::pngExportAndClipboard()
     QVERIFY(window.copyPng());
     const QImage copied = QApplication::clipboard()->image();
     QVERIFY(!copied.isNull());
-    QCOMPARE(copied.size(), windowScene->renderImage().size());
+    QCOMPARE(copied.size(), windowScene->renderImage(true).size());
+    QVERIFY(copied.width() < windowScene->renderImage().width());
+    const auto imagePoint = [](const QImage &image, const QRectF &bounds, const QPointF &scenePosition) {
+        const QPointF local = scenePosition - bounds.topLeft();
+        return QPoint(qFloor(local.x() * image.width() / bounds.width()),
+                      qFloor(local.y() * image.height() / bounds.height()));
+    };
+    const QPointF overlappingCenter = windowScene->item(overlappingAuxiliary)->center();
+    QCOMPARE(copied.pixelColor(imagePoint(copied, windowScene->contentRect(true), overlappingCenter)),
+             diagram_palette::CanvasBackgroundColor);
+    QVERIFY(exported.pixelColor(imagePoint(exported, windowScene->contentRect(), overlappingCenter))
+            != diagram_palette::CanvasBackgroundColor);
+    windowScene->clearSelection();
+    QVERIFY(!window.copyPng());
+    QCOMPARE(QApplication::clipboard()->image(), copied);
     auto *restoreClipboard = new QMimeData;
     for (const QString &format : previousClipboard.formats())
         restoreClipboard->setData(format, previousClipboard.data(format));

@@ -167,15 +167,16 @@
 
 ## PNG 渲染、导出与剪贴板
 
-运行 `profile-editor 1000`，使用同上述静态 Release 环境。渲染夹具包含 20 个 Stock/Auxiliary 和 19 条 Connector。`png_render` 执行 100 次完整内容渲染；`png_file_export` 执行 20 次真实 PNG 写盘；`png_clipboard_copy` 执行 100 次系统剪贴板写入及完整图像读回校验，结束后恢复原剪贴板。
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。渲染夹具包含 20 个 Stock/Auxiliary 和 19 条 Connector。`png_render` 执行 100 次完整内容渲染；`png_selection_render` 执行 100 次单元素选中渲染并校验其宽度小于完整模型且选择状态恢复；`png_file_export` 执行 20 次真实 PNG 写盘；`png_clipboard_copy` 使用选中图像执行 100 次系统剪贴板写入及完整图像读回校验，结束后恢复原剪贴板。
 
 | 操作 | 数量 | 总耗时 ms | 每操作 μs |
 | --- | ---: | ---: | ---: |
-| png_render | 100 | 489.339 | 4893.39 |
-| png_file_export | 20 | 708.520 | 35426.0 |
-| png_clipboard_copy | 100 | 221.052 | 2210.52 |
+| png_render | 100 | 1911.10 | 19111.0 |
+| png_selection_render | 100 | 4.5866 | 45.866 |
+| png_file_export | 20 | 3794.72 | 189736 |
+| png_clipboard_copy | 100 | 589.474 | 5894.74 |
 
-单元测试覆盖完整内容尺寸、有效像素、无选中色、网格/选择/句柄状态恢复、真实 PNG 文件格式、剪贴板读回和恢复。offscreen 平台初始 `mimeData()` 可为空，测试保存剪贴板时显式处理，不改变生产复制路径。
+单元测试覆盖完整内容尺寸、有效像素、无选中色、网格/选择/句柄状态恢复、真实 PNG 文件格式、剪贴板读回和恢复；另将未选中 Auxiliary 放在选中 Stock 的渲染边界内，验证逐项 QImage 绘制不会带入该元素，区别于整场景裁剪。offscreen 平台初始 `mimeData()` 可为空，测试保存剪贴板时显式处理，不改变生产复制路径。
 
 ## 自定义框选更新
 

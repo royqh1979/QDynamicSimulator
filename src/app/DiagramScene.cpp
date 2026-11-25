@@ -14,6 +14,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QPainter>
+#include <QStyleOptionGraphicsItem>
 #include <QToolTip>
 #include <QtMath>
 
@@ -266,17 +267,27 @@ void DiagramScene::setGridVisible(bool visible)
     update();
 }
 
-QRectF DiagramScene::contentRect() const
+QRectF DiagramScene::contentRect(bool selectionOnly) const
 {
     QRectF bounds;
+    if (selectionOnly) {
+        const QList<QGraphicsItem *> selection = selectedItems();
+        for (const QGraphicsItem *item : selection) {
+            if (dynamic_cast<const DiagramItem *>(item))
+                bounds = bounds.united(item->sceneBoundingRect());
+        }
+        return bounds.isEmpty() ? QRectF() : bounds.adjusted(-20.0, -20.0, 20.0, 20.0);
+    }
     for (const DiagramItem *item : m_items)
         bounds = bounds.united(item->sceneBoundingRect());
     return bounds.isEmpty() ? QRectF(0.0, 0.0, 400.0, 300.0) : bounds.adjusted(-20.0, -20.0, 20.0, 20.0);
 }
 
-QImage DiagramScene::renderImage()
+QImage DiagramScene::renderImage(bool selectionOnly)
 {
-    const QRectF bounds = contentRect();
+    const QRectF bounds = contentRect(selectionOnly);
+    if (bounds.isEmpty())
+        return {};
     const double scale = std::max(0.01, std::min({2.0, 16384.0 / bounds.width(), 16384.0 / bounds.height()}));
     QImage image(qMax(1, qCeil(bounds.width() * scale)), qMax(1, qCeil(bounds.height() * scale)), QImage::Format_RGB32);
     image.fill(diagram_palette::CanvasBackgroundColor);
@@ -297,7 +308,25 @@ QImage DiagramScene::renderImage()
         QPainter painter(&image);
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setRenderHint(QPainter::TextAntialiasing);
-        render(&painter, QRectF(QPointF(0.0, 0.0), QSizeF(image.size())), bounds, Qt::IgnoreAspectRatio);
+        if (selectionOnly) {
+            painter.setWorldTransform(QTransform::fromScale(image.width() / bounds.width(), image.height() / bounds.height()), true);
+            painter.translate(-bounds.topLeft());
+            QList<QGraphicsItem *> ordered = selection;
+            std::sort(ordered.begin(), ordered.end(), [](const QGraphicsItem *left, const QGraphicsItem *right) {
+                return left->zValue() < right->zValue();
+            });
+            for (QGraphicsItem *item : ordered) {
+                painter.save();
+                painter.setWorldTransform(item->sceneTransform(), true);
+                QStyleOptionGraphicsItem option;
+                option.exposedRect = item->boundingRect();
+                option.levelOfDetail = QStyleOptionGraphicsItem::levelOfDetailFromTransform(painter.worldTransform());
+                item->paint(&painter, &option, nullptr);
+                painter.restore();
+            }
+        } else {
+            render(&painter, QRectF(QPointF(0.0, 0.0), QSizeF(image.size())), bounds, Qt::IgnoreAspectRatio);
+        }
     }
     setGridVisible(gridVisible);
     for (QGraphicsItem *item : selection)
