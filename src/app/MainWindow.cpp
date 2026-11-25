@@ -546,7 +546,11 @@ bool MainWindow::copyPng()
 {
     if (!m_propertyPanel->commit())
         return false;
-    const QImage image = m_scene->renderImage();
+    const QImage image = m_scene->renderImage(true);
+    if (image.isNull()) {
+        statusBar()->showMessage(tr("Select one or more elements to copy as PNG"), 5000);
+        return false;
+    }
     QClipboard *clipboard = QApplication::clipboard();
     clipboard->setImage(image);
     const QImage copied = clipboard->image();

@@ -595,7 +595,19 @@ int main(int argc, char **argv)
         ++pngRenderCount;
     }
     const qint64 pngRenderNs = timer.nsecsElapsed();
+    pngScene.item(pngIds.front())->setSelected(true);
+    timer.restart();
+    int pngSelectionRenderCount = 0;
+    for (int index = 0; index < pngIterations; ++index) {
+        const QImage image = pngScene.renderImage(true);
+        if (image.isNull())
+            return 34;
+        ++pngSelectionRenderCount;
+    }
+    const qint64 pngSelectionRenderNs = timer.nsecsElapsed();
+    const QImage pngSelectionImage = pngScene.renderImage(true);
     const QImage pngImage = pngScene.renderImage();
+    const bool pngSelectionSmaller = pngSelectionImage.width() < pngImage.width() && pngScene.item(pngIds.front())->isSelected();
     QTemporaryDir pngDirectory;
     if (!pngDirectory.isValid() || pngImage.isNull())
         return 29;
@@ -618,8 +630,8 @@ int main(int argc, char **argv)
     timer.restart();
     int pngClipboardCount = 0;
     for (int index = 0; index < pngIterations; ++index) {
-        QApplication::clipboard()->setImage(pngImage);
-        if (QApplication::clipboard()->image() != pngImage)
+        QApplication::clipboard()->setImage(pngSelectionImage);
+        if (QApplication::clipboard()->image() != pngSelectionImage)
             return 31;
         ++pngClipboardCount;
     }
@@ -794,6 +806,7 @@ int main(int argc, char **argv)
                         << "property_panel_refresh,1000," << propertyPanelNs / 1e6 << "," << propertyPanelNs / 1000.0 / 1000 << "\n"
                         << "font_style_edit," << fontStyleCount << "," << fontStyleNs / 1e6 << "," << fontStyleNs / 1000.0 / count << "\n"
                         << "png_render," << pngRenderCount << "," << pngRenderNs / 1e6 << "," << pngRenderNs / 1000.0 / pngRenderCount << "\n"
+                        << "png_selection_render," << pngSelectionRenderCount << "," << pngSelectionRenderNs / 1e6 << "," << pngSelectionRenderNs / 1000.0 / pngSelectionRenderCount << "\n"
                         << "png_file_export," << pngFileCount << "," << pngFileNs / 1e6 << "," << pngFileNs / 1000.0 / pngFileCount << "\n"
                         << "png_clipboard_copy," << pngClipboardCount << "," << pngClipboardNs / 1e6 << "," << pngClipboardNs / 1000.0 / pngClipboardCount << "\n"
                         << "window_layout_restore," << windowLayoutCount << "," << windowLayoutNs / 1e6 << "," << windowLayoutNs / 1000.0 / windowLayoutCount << "\n"
@@ -814,7 +827,8 @@ int main(int argc, char **argv)
         && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000
         && centerBoundaryCount == 1000 && variableKindsMatch && windowLayoutCount == layoutIterations
         && fontStyleCount == count && loadedFontStock
-        && pngRenderCount == pngIterations && pngFileCount == pngFileIterations && pngClipboardCount == pngIterations && pngChecksum != 0
+        && pngRenderCount == pngIterations && pngSelectionRenderCount == pngIterations && pngSelectionSmaller
+        && pngFileCount == pngFileIterations && pngClipboardCount == pngIterations && pngChecksum != 0
         && loaded.diagram().fontStyle(loadedFontStock->id()) == (FontStyle {"Arial", 18})
         && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic
         && !dependentArrows.empty() && dependentEndpointChecksum != 0.0

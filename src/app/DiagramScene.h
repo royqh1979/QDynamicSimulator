@@ -55,8 +55,8 @@ public:
     void distributeSelected(bool horizontal);
     void setGridVisible(bool visible);
     bool gridVisible() const { return m_gridVisible; }
-    QRectF contentRect() const;
-    QImage renderImage();
+    QRectF contentRect(bool selectionOnly = false) const;
+    QImage renderImage(bool selectionOnly = false);
     void setSnapEnabled(bool enabled);
     void setSelectedRouteMode(qds::core::RouteMode mode);
     void resetSelectedRoute();
