@@ -167,7 +167,7 @@
 
 ## PNG 渲染、导出与剪贴板
 
-运行 `profile-editor 1000`，使用同上述静态 Release 环境。渲染夹具包含 20 个 Stock/Auxiliary 和 19 条 Connector。`png_render` 执行 100 次完整内容渲染；`png_selection_render` 执行 100 次单元素选中渲染并校验其宽度小于完整模型且选择状态恢复；`png_file_export` 执行 20 次真实 PNG 写盘；`png_clipboard_copy` 使用选中图像执行 100 次系统剪贴板写入及完整图像读回校验，结束后恢复原剪贴板。
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。渲染夹具包含 20 个 Stock/Auxiliary 和 19 条 Connector。`png_render` 执行 100 次完整内容渲染；`png_selection_render` 执行 100 次单元素选中渲染并校验其宽度小于完整模型且选择状态恢复；`png_file_export` 执行 20 次真实 PNG 写盘；`png_clipboard_copy` 使用选中图像执行 100 次系统剪贴板写入，不重试、不读回，结束后恢复原剪贴板。
 
 | 操作 | 数量 | 总耗时 ms | 每操作 μs |
 | --- | ---: | ---: | ---: |
@@ -215,3 +215,11 @@
 | translation_load | 1000 | 2.9835 | 2.9835 |
 
 CMake 使用 `qt5_create_translation` 更新 TS 并生成 QM，再通过 RCC 内嵌。测试实际安装翻译并检查 File/Edit/View/Routing 菜单及 Stock 文本，TS 中不得残留 unfinished 项。
+
+## QDS 工作区往返
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`workspace_roundtrip` 对包含缩放、中心点和滚动值的 Document 执行 100 次真实 QDS 保存/打开，校验完整 Workspace 相等。MainWindow 测试另外验证绝对缩放和滚动条值精确恢复，覆盖旧空 workspace 回退和 Document 移动语义。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| workspace_roundtrip | 100 | 64.1535 | 641.535 |

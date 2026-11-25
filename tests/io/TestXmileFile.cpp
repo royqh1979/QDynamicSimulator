@@ -153,6 +153,7 @@ void TestXmileFile::nativeRoundTrip()
     route.mode = RouteMode::Bezier;
     route.controlPoints = {{0.25, 100.0}, {0.75, 120.0}};
     document.setRoute(flow, route);
+    document.setWorkspace({true, 0.66, {123.5, 456.25}});
 
     QString error;
     QVERIFY2(qds::io::DocumentFile::save(path, document, &error), qPrintable(error));
@@ -168,6 +169,9 @@ void TestXmileFile::nativeRoundTrip()
     QVERIFY(xml.contains("<model>"));
     QVERIFY(xml.contains("<diagram>"));
     QVERIFY(xml.contains("<workspace"));
+    QVERIFY(xml.contains("zoom=\"0.66\""));
+    QVERIFY(xml.contains("center-x=\"123.5\""));
+    QVERIFY(xml.contains("center-y=\"456.25\""));
     QCOMPARE(xml.count("<cloud"), 2);
     QCOMPARE(xml.count("<comment"), 2);
     QVERIFY(xml.contains("<constant"));
@@ -179,6 +183,7 @@ void TestXmileFile::nativeRoundTrip()
     bool nativeFormat = false;
     QVERIFY2(qds::io::DocumentFile::open(path, loaded, &error, &nativeFormat), qPrintable(error));
     QVERIFY(nativeFormat);
+    QCOMPARE(loaded.workspace(), (Workspace {true, 0.66, {123.5, 456.25}}));
     std::size_t modelCount = 0;
     std::size_t connectorCount = 0;
     for (const ModelElement &element : loaded.model().elements()) {

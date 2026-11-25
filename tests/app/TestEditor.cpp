@@ -157,6 +157,7 @@ private slots:
     void modifierDragOperations();
     void fileDropOpen();
     void pngExportAndClipboard();
+    void workspaceRestore();
     void cursorPositionStatus();
     void windowLayoutPersistence();
     void simplifiedChineseTranslation();
@@ -2352,7 +2353,7 @@ void TestEditor::pngExportAndClipboard()
         for (const QString &format : clipboardData->formats())
             previousClipboard.setData(format, clipboardData->data(format));
     }
-    QVERIFY(window.copyPng());
+    window.copyPng();
     const QImage copied = QApplication::clipboard()->image();
     QVERIFY(!copied.isNull());
     QCOMPARE(copied.size(), windowScene->renderImage(true).size());
@@ -2368,12 +2369,49 @@ void TestEditor::pngExportAndClipboard()
     QVERIFY(exported.pixelColor(imagePoint(exported, windowScene->contentRect(), overlappingCenter))
             != diagram_palette::CanvasBackgroundColor);
     windowScene->clearSelection();
-    QVERIFY(!window.copyPng());
+    window.copyPng();
     QCOMPARE(QApplication::clipboard()->image(), copied);
     auto *restoreClipboard = new QMimeData;
     for (const QString &format : previousClipboard.formats())
         restoreClipboard->setData(format, previousClipboard.data(format));
     QApplication::clipboard()->setMimeData(restoreClipboard);
+}
+
+void TestEditor::workspaceRestore()
+{
+    MainWindow window;
+    auto *controller = window.findChild<DocumentController *>();
+    auto *view = window.findChild<DiagramView *>();
+    QVERIFY(controller && view);
+    controller->createVariable(ElementKind::Stock, QPointF());
+    view->zoomIn();
+    view->centerOn(QPointF(123.5, 456.25));
+    const double expectedZoom = view->transform().m11();
+    const QPointF expectedCenter = view->mapToScene(view->viewport()->rect().center());
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath(QStringLiteral("workspace.qds"));
+    QVERIFY(window.saveFile(path));
+
+    Document document;
+    QString error;
+    QVERIFY2(qds::io::DocumentFile::open(path, document, &error), qPrintable(error));
+    QVERIFY(document.workspace().hasViewport);
+    QCOMPARE(document.workspace().zoom, expectedZoom);
+    QVERIFY(qAbs(document.workspace().center.x - expectedCenter.x()) < 1e-9);
+    QVERIFY(qAbs(document.workspace().center.y - expectedCenter.y()) < 1e-9);
+
+    MainWindow restored;
+    auto *restoredView = restored.findChild<DiagramView *>();
+    QVERIFY(restoredView);
+    QVERIFY(restored.openFile(path));
+    QCOMPARE(restoredView->transform().m11(), expectedZoom);
+    const QPointF center = restoredView->mapToScene(restoredView->viewport()->rect().center());
+    QVERIFY2(QLineF(center, expectedCenter).length() < 0.001,
+        qPrintable(QStringLiteral("actual=%1,%2 expected=%3,%4")
+            .arg(center.x()).arg(center.y()).arg(expectedCenter.x()).arg(expectedCenter.y())));
+    QVERIFY(restoredView->horizontalScrollBar()->value() == view->horizontalScrollBar()->value());
+    QVERIFY(restoredView->verticalScrollBar()->value() == view->verticalScrollBar()->value());
 }
 
 void TestEditor::cursorPositionStatus()

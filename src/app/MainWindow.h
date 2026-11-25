@@ -23,7 +23,8 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     bool openFile(const QString &fileName);
     bool exportPng(const QString &fileName);
-    bool copyPng();
+    void copyPng();
+    bool saveFile(const QString &fileName);
     void offerRecovery();
 
 protected:
@@ -42,7 +43,6 @@ private:
     bool saveAs();
     bool exportXmile();
     bool exportPng();
-    bool saveFile(const QString &fileName);
     bool maybeSave();
     void setCurrentFile(const QString &fileName);
     void setDirty(bool dirty);
@@ -50,6 +50,7 @@ private:
     void refreshValidation();
     void updateRecentFiles();
     void updateCursorStatus();
+    void updateWorkspace();
     void autoSave();
     QString recoveryFileName() const;
 
