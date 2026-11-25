@@ -10,16 +10,19 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QClipboard>
+#include <QDockWidget>
 #include <QElapsedTimer>
 #include <QFrame>
 #include <QGraphicsLineItem>
 #include <QGraphicsProxyWidget>
 #include <QGraphicsSceneMouseEvent>
 #include <QKeyEvent>
+#include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QScreen>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QThread>
@@ -38,6 +41,13 @@ QLineEdit *inlineNameEditor(QGraphicsScene &scene)
         }
     }
     return nullptr;
+}
+
+QImage viewportImage(DiagramView &view)
+{
+    if (QGuiApplication::platformName() == QStringLiteral("windows"))
+        return QGuiApplication::primaryScreen()->grabWindow(view.viewport()->winId()).toImage();
+    return view.grab().toImage();
 }
 
 std::size_t elementCount(const Document &document)
@@ -171,6 +181,64 @@ int main(int argc, char **argv)
     const qint64 areaResizeNs = timer.nsecsElapsed();
     QMouseEvent areaRelease(QEvent::MouseButtonRelease, QPoint(200, 200), areaView.viewport()->mapToGlobal(QPoint(200, 200)), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(areaView.viewport(), &areaRelease);
+
+    MainWindow cursorWindow;
+    auto *cursorView = cursorWindow.findChild<DiagramView *>();
+    auto *cursorLabel = cursorWindow.findChild<QLabel *>(QStringLiteral("cursorPosition"));
+    if (!cursorView || !cursorLabel)
+        return 35;
+    timer.restart();
+    int cursorStatusCount = 0;
+    for (int index = 0; index < 1000; ++index) {
+        const QPoint point(index % 640, (index * 3) % 480);
+        QMouseEvent move(QEvent::MouseMove, point, cursorView->viewport()->mapToGlobal(point), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(cursorView->viewport(), &move);
+        const QPointF scene = cursorView->mapToScene(point);
+        const QString prefix = QStringLiteral("Cursor: %1, %2")
+            .arg(QString::number(scene.x(), 'f', 1), QString::number(scene.y(), 'f', 1));
+        if (!cursorLabel->text().startsWith(prefix))
+            return 36;
+        ++cursorStatusCount;
+    }
+    const qint64 cursorStatusNs = timer.nsecsElapsed();
+
+    Document moveUndoDocument;
+    QString moveUndoError;
+    if (!qds::io::DocumentFile::open(QStringLiteral(QDS_MOVE_UNDO_QDS_PATH), moveUndoDocument, &moveUndoError))
+        return 37;
+    MainWindow moveUndoWindow;
+    const QList<QDockWidget *> moveUndoDocks = moveUndoWindow.findChildren<QDockWidget *>();
+    for (QDockWidget *dock : moveUndoDocks)
+        dock->hide();
+    DocumentController &moveUndoController = *moveUndoWindow.findChild<DocumentController *>();
+    DiagramScene &moveUndoScene = *moveUndoWindow.findChild<DiagramScene *>();
+    moveUndoController.replaceDocument(std::move(moveUndoDocument));
+    const ModelElement *moveUndoContact = moveUndoController.document().findByName("contact_infectivity");
+    DiagramItem *moveUndoItem = moveUndoScene.item(moveUndoContact->id());
+    moveUndoItem->setSelected(true);
+    DiagramView &moveUndoView = *moveUndoWindow.findChild<DiagramView *>();
+    moveUndoWindow.resize(1000, 800);
+    moveUndoView.scale(0.66, 0.66);
+    moveUndoView.centerOn(moveUndoScene.itemsBoundingRect().center());
+    moveUndoWindow.show();
+    QThread::msleep(20);
+    QApplication::processEvents();
+    const QImage moveUndoInitial = viewportImage(moveUndoView);
+    const int moveUndoIterations = qMax(1, count / 50);
+    qint64 moveUndoNs = 0;
+    int moveUndoCount = 0;
+    for (int index = 0; index < moveUndoIterations; ++index) {
+        const QPointF position = moveUndoItem->pos();
+        timer.restart();
+        moveUndoController.moveElements({{moveUndoContact->id(), position + QPointF(0.0, 400.0)}});
+        moveUndoController.undoStack()->undo();
+        QApplication::processEvents();
+        const QImage restored = viewportImage(moveUndoView);
+        moveUndoNs += timer.nsecsElapsed();
+        if (restored != moveUndoInitial)
+            return 38;
+        ++moveUndoCount;
+    }
 
     timer.restart();
     for (int index = 0; index < 1000; ++index) {
@@ -783,6 +851,8 @@ int main(int argc, char **argv)
                         << "editor_search_100," << count * 100 << "," << searchNs / 1e6 << "," << searchNs / 1000.0 / (count * 100) << "\n"
                         << "rubber_preview,1000," << previewNs / 1e6 << "," << previewNs / 1000.0 / 1000 << "\n"
                         << "rubber_band_resize,1000," << areaResizeNs / 1e6 << "," << areaResizeNs / 1000.0 / 1000 << "\n"
+                        << "cursor_status_update,1000," << cursorStatusNs / 1e6 << "," << cursorStatusNs / 1000.0 / 1000 << "\n"
+                        << "move_undo_repaint," << moveUndoCount << "," << moveUndoNs / 1e6 << "," << moveUndoNs / 1000.0 / moveUndoCount << "\n"
                         << "connection_context_menu,1000," << contextMenuNs / 1e6 << "," << contextMenuNs / 1000.0 / 1000 << "\n"
                         << "inline_rename," << inlineRenameCount << "," << inlineRenameNs / 1e6 << "," << inlineRenameNs / 1000.0 / count << "\n"
                         << "connector_line_style,1000," << connectorStyleNs / 1e6 << "," << connectorStyleNs / 1000.0 / 1000 << "\n"
@@ -817,7 +887,8 @@ int main(int argc, char **argv)
                         << "xmile_sir_import,100," << sirImportNs / 1e6 << "," << sirImportNs / 1000.0 / 100 << "\n"
                         << "sir_dependent_route_moves,1000," << sirDependentMoveNs / 1e6 << "," << sirDependentMoveNs / 1000.0 / 1000 << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
-        && inlineRenameCount == count && areaResizeCount == 1000 && matches > 0 && guideCount == 2000 && automaticGuideCount == 2000 && automaticGroupManual
+        && inlineRenameCount == count && areaResizeCount == 1000 && cursorStatusCount == 1000
+        && moveUndoCount == moveUndoIterations && matches > 0 && guideCount == 2000 && automaticGuideCount == 2000 && automaticGroupManual
         && connectorDragGuideCount == 2000 && connectorDragStateValid
         && endpointPreviewGuideCount == 2000 && endpointPreviewHandlesValid
         && flowEndpointPreviewCount == count

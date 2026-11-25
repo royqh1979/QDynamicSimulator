@@ -7,6 +7,7 @@
 
 class QAction;
 class QCloseEvent;
+class QLabel;
 class QListWidget;
 class QMenu;
 class QTimer;
@@ -48,6 +49,7 @@ private:
     void setTool(DiagramScene::Tool tool);
     void refreshValidation();
     void updateRecentFiles();
+    void updateCursorStatus();
     void autoSave();
     QString recoveryFileName() const;
 
@@ -59,6 +61,8 @@ private:
     QMenu *m_recentMenu = nullptr;
     QAction *m_selectAction = nullptr;
     QTimer *m_autoSaveTimer = nullptr;
+    QLabel *m_cursorPosition = nullptr;
+    QPointF m_cursorScenePosition;
     RecentFiles m_recentFiles;
     QString m_fileName;
     bool m_dirty = false;

@@ -41,6 +41,7 @@ DiagramView::DiagramView(QGraphicsScene *scene, QWidget *parent)
     setAcceptDrops(true);
     viewport()->setAcceptDrops(true);
     setDragMode(NoDrag);
+    setViewportUpdateMode(FullViewportUpdate);
     setTransformationAnchor(AnchorUnderMouse);
     setResizeAnchor(AnchorViewCenter);
     m_selectionFrame = new QFrame(viewport());
@@ -66,6 +67,7 @@ void DiagramView::zoomOut()
 void DiagramView::resetZoom()
 {
     resetTransform();
+    emit viewportChanged();
 }
 
 void DiagramView::fitAll()
@@ -73,6 +75,7 @@ void DiagramView::fitAll()
     const QRectF bounds = scene()->itemsBoundingRect();
     if (!bounds.isEmpty())
         fitInView(bounds.adjusted(-50.0, -50.0, 50.0, 50.0), Qt::KeepAspectRatio);
+    emit viewportChanged();
 }
 
 void DiagramView::fitSelection()
@@ -85,6 +88,7 @@ void DiagramView::fitSelection()
         fitInView(bounds.adjusted(-50.0, -50.0, 50.0, 50.0), Qt::KeepAspectRatio);
     else
         fitAll();
+    emit viewportChanged();
 }
 
 void DiagramView::wheelEvent(QWheelEvent *event)
@@ -121,6 +125,7 @@ void DiagramView::mousePressEvent(QMouseEvent *event)
 
 void DiagramView::mouseMoveEvent(QMouseEvent *event)
 {
+    emit cursorScenePositionChanged(mapToScene(event->pos()));
     if (m_panning) {
         const QPoint delta = event->pos() - m_lastPanPosition;
         horizontalScrollBar()->setValue(horizontalScrollBar()->value() - delta.x());
@@ -235,4 +240,5 @@ void DiagramView::zoomBy(double factor)
     if (targetScale < 0.1 || targetScale > 5.0)
         return;
     scale(factor, factor);
+    emit viewportChanged();
 }

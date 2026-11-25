@@ -19,6 +19,8 @@ public:
 
 signals:
     void fileOpenRequested(const QString &fileName);
+    void cursorScenePositionChanged(const QPointF &position);
+    void viewportChanged();
 
 protected:
     void wheelEvent(QWheelEvent *event) override;

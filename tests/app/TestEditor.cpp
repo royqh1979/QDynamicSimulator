@@ -30,6 +30,8 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPaintEvent>
+#include <QScreen>
+#include <QScrollBar>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -80,6 +82,13 @@ QLineEdit *inlineNameEditor(QGraphicsScene &scene)
     return proxy ? qobject_cast<QLineEdit *>(proxy->widget()) : nullptr;
 }
 
+QImage viewportImage(DiagramView &view)
+{
+    if (QGuiApplication::platformName() == QStringLiteral("windows"))
+        return QGuiApplication::primaryScreen()->grabWindow(view.viewport()->winId()).toImage();
+    return view.grab().toImage();
+}
+
 int itemColorCount(const QImage &image, DiagramView &view, const QGraphicsItem *item, const QColor &color)
 {
     const QRect area = view.mapFromScene(item->sceneBoundingRect()).boundingRect().intersected(image.rect());
@@ -103,6 +112,9 @@ private slots:
     void propertyPanelWidget();
     void fontStyleUndoRedo();
     void moveUndoRedo();
+    void undoRedoCanvasRepaint();
+    void directConnectorMoveUndoRepaint();
+    void multipleFlowConnectorsMoveUndoRepaint();
     void flowAndCascadeRestore();
     void routeUndoRedo();
     void replaceDocumentResetsScene();
@@ -144,6 +156,7 @@ private slots:
     void modifierDragOperations();
     void fileDropOpen();
     void pngExportAndClipboard();
+    void cursorPositionStatus();
     void windowLayoutPersistence();
 };
 
@@ -392,6 +405,158 @@ void TestEditor::moveUndoRedo()
     QCOMPARE(scene.item(second)->pos(), QPointF(10.0, 10.0));
     controller.undoStack()->redo();
     QCOMPARE(scene.item(first)->pos(), QPointF(50.0, 60.0));
+}
+
+void TestEditor::undoRedoCanvasRepaint()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    scene.setGridVisible(false);
+    const EntityId sourceStock = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId oldTarget = controller.createVariable(ElementKind::Stock, QPointF(400.0, 0.0));
+    const EntityId newTarget = controller.createVariable(ElementKind::Stock, QPointF(400.0, 400.0));
+    const EntityId flow = controller.createFlow(sourceStock, oldTarget);
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(200.0, 300.0));
+    controller.createConnector(auxiliary, flow);
+    scene.item(auxiliary)->setSelected(true);
+    DiagramView view(&scene);
+    view.resize(900, 800);
+    view.centerOn(QPointF(100.0, 150.0));
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    QTest::qWait(20);
+    const QImage initial = view.grab().toImage();
+
+    controller.moveElements({{auxiliary, QPointF(200.0, 600.0)}});
+    QTest::qWait(20);
+    controller.undoStack()->undo();
+    QTest::qWait(20);
+    QCOMPARE(view.grab().toImage(), initial);
+    controller.undoStack()->redo();
+    QTest::qWait(20);
+    controller.undoStack()->undo();
+    QTest::qWait(20);
+    QCOMPARE(view.grab().toImage(), initial);
+
+    QVERIFY(controller.reconnectFlow(flow, sourceStock, newTarget));
+    QTest::qWait(20);
+    controller.undoStack()->undo();
+    QTest::qWait(20);
+    QCOMPARE(view.grab().toImage(), initial);
+    controller.undoStack()->redo();
+    QTest::qWait(20);
+    controller.undoStack()->undo();
+    QTest::qWait(20);
+    QCOMPARE(view.grab().toImage(), initial);
+
+    controller.removeElements({sourceStock});
+    QTest::qWait(20);
+    controller.undoStack()->undo();
+    QTest::qWait(20);
+    QCOMPARE(view.grab().toImage(), initial);
+    controller.undoStack()->redo();
+    QTest::qWait(20);
+    controller.undoStack()->undo();
+    QTest::qWait(20);
+    QCOMPARE(view.grab().toImage(), initial);
+}
+
+void TestEditor::directConnectorMoveUndoRepaint()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    scene.setGridVisible(false);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(200.0, 300.0));
+    controller.createConnector(stock, auxiliary);
+    DiagramItem *auxiliaryItem = scene.item(auxiliary);
+    auxiliaryItem->setSelected(true);
+    DiagramView view(&scene);
+    view.resize(900, 800);
+    view.centerOn(QPointF(100.0, 150.0));
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    QTest::qWait(20);
+    const QImage initial = view.grab().toImage();
+    auto sendMouse = [&view](QEvent::Type type, const QPoint &point, Qt::MouseButton button, Qt::MouseButtons buttons) {
+        QMouseEvent event(type, point, view.viewport()->mapToGlobal(point), button, buttons, Qt::NoModifier);
+        QApplication::sendEvent(view.viewport(), &event);
+    };
+    sendMouse(QEvent::MouseButtonPress, view.mapFromScene(auxiliaryItem->center()), Qt::LeftButton, Qt::LeftButton);
+    sendMouse(QEvent::MouseMove, view.mapFromScene(QPointF(200.0, 600.0)), Qt::NoButton, Qt::LeftButton);
+    sendMouse(QEvent::MouseButtonRelease, view.mapFromScene(QPointF(200.0, 600.0)), Qt::LeftButton, Qt::NoButton);
+    QTest::qWait(20);
+    controller.undoStack()->undo();
+    QTest::qWait(20);
+    QCOMPARE(view.grab().toImage(), initial);
+    controller.undoStack()->redo();
+    QTest::qWait(20);
+    controller.undoStack()->undo();
+    QTest::qWait(20);
+    QCOMPARE(view.grab().toImage(), initial);
+}
+
+void TestEditor::multipleFlowConnectorsMoveUndoRepaint()
+{
+    Document document;
+    QString error;
+    QVERIFY2(qds::io::DocumentFile::open(QStringLiteral(QDS_MOVE_UNDO_QDS_PATH), document, &error), qPrintable(error));
+    MainWindow window;
+    DocumentController &controller = *window.findChild<DocumentController *>();
+    DiagramScene &scene = *window.findChild<DiagramScene *>();
+    controller.replaceDocument(std::move(document));
+    const ModelElement *contact = controller.document().findByName("contact_infectivity");
+    const ModelElement *succumbing = controller.document().findByName("succumbing");
+    QVERIFY(contact && succumbing);
+    ArrowItem *contactArrow = nullptr;
+    for (const ViewElement &element : controller.document().diagram().elements()) {
+        if (element.kind() != ElementKind::Connector)
+            continue;
+        const auto &connector = static_cast<const Connector &>(element);
+        if (connector.from == contact->id() && connector.to == succumbing->id())
+            contactArrow = dynamic_cast<ArrowItem *>(scene.item(connector.id()));
+    }
+    QVERIFY(contactArrow);
+    DiagramItem *contactItem = scene.item(contact->id());
+    contactItem->setSelected(true);
+    DiagramView &view = *window.findChild<DiagramView *>();
+    const QList<QDockWidget *> docks = window.findChildren<QDockWidget *>();
+    for (QDockWidget *dock : docks)
+        dock->hide();
+    window.resize(1000, 800);
+    view.scale(0.66, 0.66);
+    view.centerOn(scene.itemsBoundingRect().center());
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    QTest::qWait(20);
+    const QImage initial = viewportImage(view);
+    const QPointF initialPosition = contactItem->pos();
+    auto sendMouse = [&view](QEvent::Type type, const QPoint &point, Qt::MouseButton button, Qt::MouseButtons buttons) {
+        QMouseEvent event(type, point, view.viewport()->mapToGlobal(point), button, buttons, Qt::NoModifier);
+        QApplication::sendEvent(view.viewport(), &event);
+    };
+    const QPointF destination = contactItem->center() + QPointF(0.0, 400.0);
+    sendMouse(QEvent::MouseButtonPress, view.mapFromScene(contactItem->center()), Qt::LeftButton, Qt::LeftButton);
+    for (int step = 1; step <= 4; ++step) {
+        sendMouse(QEvent::MouseMove, view.mapFromScene(initialPosition + QPointF(0.0, step * 100.0)), Qt::NoButton, Qt::LeftButton);
+        QTest::qWait(5);
+    }
+    sendMouse(QEvent::MouseButtonRelease, view.mapFromScene(destination), Qt::LeftButton, Qt::NoButton);
+    QVERIFY(contactItem->pos().y() > initialPosition.y() + 300.0);
+    const QRectF movedArrowPaintBounds = contactArrow->geometryPath().boundingRect().adjusted(-4.0, -4.0, 4.0, 4.0);
+    PaintRegionRecorder recorder;
+    view.viewport()->installEventFilter(&recorder);
+    QTest::qWait(20);
+    controller.undoStack()->undo();
+    QTest::qWait(20);
+    QCOMPARE(viewportImage(view), initial);
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        const QRect movedViewBounds = view.mapFromScene(movedArrowPaintBounds).boundingRect();
+        QVERIFY2(recorder.region.contains(movedViewBounds),
+            qPrintable(QStringLiteral("moved=%1,%2 %3x%4 viewport=%5x%6")
+                .arg(movedViewBounds.x()).arg(movedViewBounds.y()).arg(movedViewBounds.width()).arg(movedViewBounds.height())
+                .arg(view.viewport()->width()).arg(view.viewport()->height())));
+    }
 }
 
 void TestEditor::flowAndCascadeRestore()
@@ -2207,6 +2372,33 @@ void TestEditor::pngExportAndClipboard()
     for (const QString &format : previousClipboard.formats())
         restoreClipboard->setData(format, previousClipboard.data(format));
     QApplication::clipboard()->setMimeData(restoreClipboard);
+}
+
+void TestEditor::cursorPositionStatus()
+{
+    MainWindow window;
+    auto *view = window.findChild<DiagramView *>();
+    auto *label = window.findChild<QLabel *>(QStringLiteral("cursorPosition"));
+    QVERIFY(view && label);
+    QVERIFY(label->text().contains(QStringLiteral("Zoom: 100%")));
+    auto expectedText = [&view](const QPointF &cursor) {
+        const QPointF origin = view->mapToScene(0, 0);
+        return QStringLiteral("Cursor: %1, %2  View: %3, %4  Zoom: %5%")
+            .arg(QString::number(cursor.x(), 'f', 1), QString::number(cursor.y(), 'f', 1),
+                 QString::number(origin.x(), 'f', 1), QString::number(origin.y(), 'f', 1))
+            .arg(qRound(view->transform().m11() * 100.0));
+    };
+    const QPoint point(123, 234);
+    QMouseEvent move(QEvent::MouseMove, point, view->viewport()->mapToGlobal(point), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(view->viewport(), &move);
+    const QPointF sceneCursor = view->mapToScene(point);
+    QCOMPARE(label->text(), expectedText(sceneCursor));
+    view->zoomIn();
+    QCOMPARE(label->text(), expectedText(sceneCursor));
+    view->resetZoom();
+    QCOMPARE(label->text(), expectedText(sceneCursor));
+    view->horizontalScrollBar()->setValue(view->horizontalScrollBar()->value() + 20);
+    QCOMPARE(label->text(), expectedText(sceneCursor));
 }
 
 void TestEditor::windowLayoutPersistence()
