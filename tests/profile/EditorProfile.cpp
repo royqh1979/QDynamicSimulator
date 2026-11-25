@@ -298,6 +298,28 @@ int main(int argc, char **argv)
         flowTargetController.undoStack()->undo();
     }
 
+    const QPoint highlightStart = flowTargetView.mapFromScene(flowTargetScene.item(flowTargetSource)->center());
+    QMouseEvent highlightPress(QEvent::MouseButtonPress, highlightStart, flowTargetView.viewport()->mapToGlobal(highlightStart), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(flowTargetView.viewport(), &highlightPress);
+    qint64 endpointTargetHighlightNs = 0;
+    int endpointTargetHighlightCount = 0;
+    for (int index = 0; index < count; ++index) {
+        const int state = index % 3;
+        const QPointF targetPosition = state == 0 ? flowTargetScene.item(flowTargetFlow)->center()
+            : state == 1 ? flowTargetScene.item(flowTargetStock)->center() : QPointF(100.0, 250.0);
+        const QPoint end = flowTargetView.mapFromScene(targetPosition);
+        timer.restart();
+        QMouseEvent move(QEvent::MouseMove, end, flowTargetView.viewport()->mapToGlobal(end), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(flowTargetView.viewport(), &move);
+        endpointTargetHighlightNs += timer.nsecsElapsed();
+        const bool flowHighlighted = flowTargetScene.item(flowTargetFlow)->isEndpointTargetHighlighted();
+        const bool stockHighlighted = flowTargetScene.item(flowTargetStock)->isEndpointTargetHighlighted();
+        if (flowHighlighted != (state == 0) || stockHighlighted != (state == 1))
+            return 19;
+        ++endpointTargetHighlightCount;
+    }
+    flowTargetScene.setTool(DiagramScene::Tool::Select);
+
     timer.restart();
     int singleSelectionGuideCount = 0;
     for (int index = 0; index < 1000; ++index) {
@@ -526,6 +548,7 @@ int main(int argc, char **argv)
                         << "connector_drag_selection,1000," << connectorDragStateNs / 1e6 << "," << connectorDragStateNs / 1000.0 / 1000 << "\n"
                         << "endpoint_preview_cancel,1000," << endpointPreviewNs / 1e6 << "," << endpointPreviewNs / 1000.0 / 1000 << "\n"
                         << "connector_create_to_flow," << connectorToFlowCount << "," << connectorToFlowNs / 1e6 << "," << connectorToFlowNs / 1000.0 / count << "\n"
+                        << "endpoint_target_highlight," << endpointTargetHighlightCount << "," << endpointTargetHighlightNs / 1e6 << "," << endpointTargetHighlightNs / 1000.0 / count << "\n"
                         << "bezier_guide_single_selection,1000," << guideSelectionNs / 1e6 << "," << guideSelectionNs / 1000.0 / 1000 << "\n"
                         << "flow_valve_geometry,1000," << valveNs / 1e6 << "," << valveNs / 1000.0 / 1000 << "\n"
                         << "flow_pipeline_geometry,1000," << pipelineNs / 1e6 << "," << pipelineNs / 1000.0 / 1000 << "\n"
@@ -546,7 +569,7 @@ int main(int argc, char **argv)
         && matches > 0 && guideCount == 2000 && automaticGuideCount == 2000 && automaticGroupManual
         && connectorDragGuideCount == 2000 && connectorDragStateValid
         && endpointPreviewGuideCount == 2000 && endpointPreviewHandlesValid
-        && connectorToFlowCount == count
+        && connectorToFlowCount == count && endpointTargetHighlightCount == count
         && singleSelectionGuideCount == 1000 && valveCount == 2000
         && lineStyleChecksum == 3000 && automaticPointCount > 0 && automaticFlagsValid
         && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000

@@ -114,3 +114,13 @@
 | connector_create_to_flow | 1000 | 21.5640 | 21.5640 |
 
 编辑器回归同时覆盖 Connect 工具创建、端点句柄重连到 Flow、空白取消、Arrow 不可作为端点、undo/redo，以及 QDS 和 XMILE 往返后的 from/to。
+
+## 端点命中高亮
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`endpoint_target_highlight` 在一次真实 Connect 拖动中循环移动鼠标到 Flow、Stock 和空白，计时覆盖场景命中、目标切换及 Item 高亮状态更新；每轮断言只有当前目标处于高亮状态。坐标映射、初始按下和最终工具切换不计时。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| endpoint_target_highlight | 1000 | 5.7478 | 5.7478 |
+
+单元测试使用真实 DiagramView 验证普通实体和 Flow 的橙色虚线像素、蓝色选中态的区别、目标切换、空白清除、释放/取消及重绘一致性；颜色断言与绘制代码共同引用 `DiagramPalette.h`，避免测试依赖重复字面值。

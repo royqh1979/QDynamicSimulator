@@ -1,4 +1,5 @@
 #include "DiagramItems.h"
+#include "DiagramPalette.h"
 #include "DiagramScene.h"
 #include "DiagramView.h"
 #include "DocumentController.h"
@@ -39,6 +40,17 @@ public:
     using EntityPalette::mimeData;
 };
 
+int itemColorCount(const QImage &image, DiagramView &view, const DiagramItem *item, const QColor &color)
+{
+    const QRect area = view.mapFromScene(item->sceneBoundingRect()).boundingRect().intersected(image.rect());
+    int count = 0;
+    for (int y = area.top(); y <= area.bottom(); ++y) {
+        for (int x = area.left(); x <= area.right(); ++x)
+            count += image.pixelColor(x, y) == color ? 1 : 0;
+    }
+    return count;
+}
+
 class TestEditor : public QObject
 {
     Q_OBJECT
@@ -69,6 +81,7 @@ private slots:
     void boundaryEndpoints();
     void sirCanvasConnections();
     void endpointHandleReconnect();
+    void endpointTargetHighlight();
     void connectorMoveRepaint();
     void connectorDragSelectionRepaint();
     void rubberBandReverseRepaint();
@@ -908,6 +921,9 @@ void TestEditor::endpointHandleReconnect()
             .arg(targetHandle->pos().x()).arg(targetHandle->pos().y())
             .arg(destination.x()).arg(destination.y())));
     QVERIFY(arrow->previewing());
+    QVERIFY(scene.item(targetStock)->isEndpointTargetHighlighted());
+    QVERIFY(!scene.item(targetStock)->isSelected());
+    QVERIFY(!scene.item(flow)->isEndpointTargetHighlighted());
     QVERIFY(arrow->controlGuides().isEmpty());
     for (QGraphicsItem *item : scene.items()) {
         const auto *handle = qgraphicsitem_cast<ControlPointHandle *>(item);
@@ -921,6 +937,7 @@ void TestEditor::endpointHandleReconnect()
     QMouseEvent release(QEvent::MouseButtonRelease, end, view.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &release);
     QVERIFY(!arrow->previewing());
+    QVERIFY(!scene.item(targetStock)->isEndpointTargetHighlighted());
     QTest::qWait(20);
     const QImage reconnected = view.grab().toImage();
     view.viewport()->repaint();
@@ -939,9 +956,13 @@ void TestEditor::endpointHandleReconnect()
     QApplication::sendEvent(view.viewport(), &invalidPress);
     QMouseEvent invalidMove(QEvent::MouseMove, invalidEnd, view.viewport()->mapToGlobal(invalidEnd), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &invalidMove);
+    QVERIFY(!scene.item(targetStock)->isEndpointTargetHighlighted());
+    QVERIFY(!scene.item(flow)->isEndpointTargetHighlighted());
     QMouseEvent invalidRelease(QEvent::MouseButtonRelease, invalidEnd, view.viewport()->mapToGlobal(invalidEnd), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &invalidRelease);
     QVERIFY(!arrow->previewing());
+    QVERIFY(!scene.item(targetStock)->isEndpointTargetHighlighted());
+    QVERIFY(!scene.item(flow)->isEndpointTargetHighlighted());
     QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, flow);
     int restoredControlHandles = 0;
     for (QGraphicsItem *item : scene.items()) {
@@ -967,13 +988,81 @@ void TestEditor::endpointHandleReconnect()
     QApplication::sendEvent(view.viewport(), &flowPress);
     QMouseEvent flowMove(QEvent::MouseMove, flowEnd, view.viewport()->mapToGlobal(flowEnd), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &flowMove);
+    QVERIFY(scene.item(flow)->isEndpointTargetHighlighted());
+    QVERIFY(!scene.item(flow)->isSelected());
+    QVERIFY(!scene.item(targetStock)->isEndpointTargetHighlighted());
     QMouseEvent flowRelease(QEvent::MouseButtonRelease, flowEnd, view.viewport()->mapToGlobal(flowEnd), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &flowRelease);
+    QVERIFY(!scene.item(flow)->isEndpointTargetHighlighted());
     QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, flow);
     controller.undoStack()->undo();
     QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, targetStock);
     controller.undoStack()->redo();
     QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, flow);
+}
+
+void TestEditor::endpointTargetHighlight()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    scene.setGridVisible(false);
+    const EntityId source = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId first = controller.createVariable(ElementKind::Auxiliary, QPointF(300.0, 0.0));
+    const EntityId second = controller.createVariable(ElementKind::Stock, QPointF(300.0, 300.0));
+    DiagramItem *sourceItem = scene.item(source);
+    DiagramItem *firstItem = scene.item(first);
+    DiagramItem *secondItem = scene.item(second);
+
+    DiagramView view(&scene);
+    view.resize(900, 700);
+    view.centerOn(QPointF(150.0, 100.0));
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    scene.setTool(DiagramScene::Tool::Connect);
+    auto moveTo = [&view](const QPointF &scenePosition) {
+        const QPoint point = view.mapFromScene(scenePosition);
+        QMouseEvent move(QEvent::MouseMove, point, view.viewport()->mapToGlobal(point), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(view.viewport(), &move);
+    };
+
+    const QPoint start = view.mapFromScene(sourceItem->center());
+    QMouseEvent press(QEvent::MouseButtonPress, start, view.viewport()->mapToGlobal(start), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &press);
+    moveTo(firstItem->center());
+    QVERIFY(firstItem->isEndpointTargetHighlighted());
+    QVERIFY(!firstItem->isSelected());
+    QVERIFY(sourceItem->isSelected());
+    QVERIFY(!sourceItem->isEndpointTargetHighlighted());
+    QVERIFY(!secondItem->isEndpointTargetHighlighted());
+    QTest::qWait(20);
+    const QImage highlighted = view.grab().toImage();
+    QVERIFY(itemColorCount(highlighted, view, firstItem, diagram_palette::EndpointTargetColor) > 0);
+
+    moveTo(secondItem->center());
+    QVERIFY(!firstItem->isEndpointTargetHighlighted());
+    QVERIFY(secondItem->isEndpointTargetHighlighted());
+    QVERIFY(!secondItem->isSelected());
+    moveTo(QPointF(100.0, 250.0));
+    QVERIFY(!firstItem->isEndpointTargetHighlighted());
+    QVERIFY(!secondItem->isEndpointTargetHighlighted());
+    QTest::qWait(20);
+    const QImage cleared = view.grab().toImage();
+    view.viewport()->repaint();
+    QCOMPARE(cleared, view.grab().toImage());
+
+    moveTo(firstItem->center());
+    const QPoint end = view.mapFromScene(firstItem->center());
+    QMouseEvent release(QEvent::MouseButtonRelease, end, view.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &release);
+    QVERIFY(!firstItem->isEndpointTargetHighlighted());
+    QVERIFY(!secondItem->isEndpointTargetHighlighted());
+
+    scene.clearSelection();
+    firstItem->setSelected(true);
+    QTest::qWait(20);
+    const QImage selected = view.grab().toImage();
+    QCOMPARE(itemColorCount(selected, view, firstItem, diagram_palette::EndpointTargetColor), 0);
+    QVERIFY(itemColorCount(selected, view, firstItem, diagram_palette::SelectionColor) > 0);
 }
 
 void TestEditor::connectorMoveRepaint()
@@ -1380,8 +1469,14 @@ void TestEditor::connectToolTargetsFlow()
     QApplication::sendEvent(view.viewport(), &press);
     QMouseEvent move(QEvent::MouseMove, end, view.viewport()->mapToGlobal(end), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &move);
+    QVERIFY(flowItem->isEndpointTargetHighlighted());
+    QVERIFY(!flowItem->isSelected());
+    QTest::qWait(20);
+    const QImage highlighted = view.grab().toImage();
+    QVERIFY(itemColorCount(highlighted, view, flowItem, diagram_palette::EndpointTargetColor) > 0);
     QMouseEvent release(QEvent::MouseButtonRelease, end, view.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &release);
+    QVERIFY(!flowItem->isEndpointTargetHighlighted());
 
     const std::vector<EntityId> selection = scene.selectedElementIds();
     QCOMPARE(selection.size(), std::size_t(1));

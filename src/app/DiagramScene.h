@@ -81,6 +81,7 @@ private:
     void finishControlPoint(qds::core::EntityId id, int index, const QPointF &position);
     void removeControlPoint(qds::core::EntityId id, int index);
     void updateAutomaticRoute(RoutedItem *item);
+    void setEndpointTarget(DiagramItem *target);
     void cancelRubberLine();
     void cancelEndpointPreview();
 
@@ -91,6 +92,7 @@ private:
     QPointF m_connectionStart;
     QGraphicsLineItem *m_rubberLine = nullptr;
     QPointer<RoutedItem> m_endpointPreviewItem;
+    QPointer<DiagramItem> m_endpointTarget;
     QList<ControlPointHandle *> m_controlHandles;
     ObstacleIndex m_obstacles;
     OrthogonalRouter m_router;

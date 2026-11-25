@@ -1,6 +1,7 @@
 add_library(qds-editor STATIC
     DiagramItems.cpp
     DiagramItems.h
+    DiagramPalette.h
     DiagramScene.cpp
     DiagramScene.h
     DiagramView.cpp
