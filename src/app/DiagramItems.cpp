@@ -138,29 +138,33 @@ QRectF VariableItem::boundingRect() const
     return QRectF(-65.0, -32.0, 130.0, 72.0);
 }
 
+QRectF VariableItem::labelRect() const
+{
+    if (m_kind == qds::core::ElementKind::Stock)
+        return QRectF(-60.0, -25.0, 120.0, 50.0).adjusted(5.0, 0.0, -5.0, 0.0);
+    if (m_kind == qds::core::ElementKind::Auxiliary)
+        return QRectF(-45.0, -25.0, 90.0, 50.0).adjusted(5.0, 0.0, -5.0, 0.0);
+    if (m_kind == qds::core::ElementKind::Constant)
+        return QRectF(-40.0, -15.0, 80.0, 30.0);
+    return QRectF(-50.0, -25.0, 100.0, 50.0).adjusted(5.0, 0.0, -5.0, 0.0);
+}
+
 void VariableItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
 {
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setPen(outlinePen(diagram_palette::EntityOutlineColor, 1.4, 2.0));
     painter->setBrush(diagram_palette::EntityFillColor);
 
-    QRectF textRect;
+    const QRectF textRect = labelRect();
     if (m_kind == qds::core::ElementKind::Stock) {
-        const QRectF stockRect(-60.0, -25.0, 120.0, 50.0);
-        painter->drawRect(stockRect);
-        textRect = stockRect.adjusted(5.0, 0.0, -5.0, 0.0);
+        painter->drawRect(QRectF(-60.0, -25.0, 120.0, 50.0));
     } else if (m_kind == qds::core::ElementKind::Auxiliary) {
-        const QRectF auxiliaryRect(-45.0, -25.0, 90.0, 50.0);
-        painter->drawEllipse(auxiliaryRect);
-        textRect = auxiliaryRect.adjusted(5.0, 0.0, -5.0, 0.0);
+        painter->drawEllipse(QRectF(-45.0, -25.0, 90.0, 50.0));
     } else if (m_kind == qds::core::ElementKind::Constant) {
         const QPolygonF diamond({QPointF(0.0, -28.0), QPointF(50.0, 0.0), QPointF(0.0, 28.0), QPointF(-50.0, 0.0)});
         painter->drawPolygon(diamond);
-        textRect = QRectF(-40.0, -15.0, 80.0, 30.0);
     } else {
-        const QRectF rect(-50.0, -25.0, 100.0, 50.0);
-        painter->drawRoundedRect(rect, 8.0, 8.0);
-        textRect = rect.adjusted(5.0, 0.0, -5.0, 0.0);
+        painter->drawRoundedRect(QRectF(-50.0, -25.0, 100.0, 50.0), 8.0, 8.0);
     }
 
     painter->setPen(diagram_palette::EntityTextColor);
