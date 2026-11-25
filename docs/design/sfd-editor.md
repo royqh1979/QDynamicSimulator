@@ -101,7 +101,7 @@
 
 ### 3.5 选择与编辑操作
 
-- 单选、框选、多选、全选、反选和取消选择。
+- 单选、框选、多选、全选、反选和取消选择。框选不使用 Qt 原生 QRubberBand：DiagramView 在 viewport 上显示透明穿透的 QFrame，并调用 `setSelectionArea()` 保持 Replace/Add 选择语义；每次移动合并旧/新矩形精确更新，释放后隐藏，避免 Windows 样式或高频反向拖动留下轨迹。选区颜色来自 DiagramPalette，中键/空格平移和 RoutedItem 控制句柄行为不变。
 - 单元素及多元素移动。
 - 复制、剪切、粘贴及跨模型粘贴。
 - 重复创建 Duplicate。

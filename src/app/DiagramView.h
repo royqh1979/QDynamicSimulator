@@ -2,6 +2,8 @@
 
 #include <QGraphicsView>
 
+class QFrame;
+
 class DiagramView : public QGraphicsView
 {
     Q_OBJECT
@@ -31,8 +33,15 @@ protected:
 
 private:
     void zoomBy(double factor);
+    void updateSelection(const QPoint &position);
+    void finishSelection();
 
     bool m_panning = false;
     bool m_spacePressed = false;
     QPoint m_lastPanPosition;
+    QFrame *m_selectionFrame = nullptr;
+    QPoint m_selectionStart;
+    QRect m_rubberBandRect;
+    Qt::ItemSelectionOperation m_selectionOperation = Qt::ReplaceSelection;
+    bool m_areaSelecting = false;
 };

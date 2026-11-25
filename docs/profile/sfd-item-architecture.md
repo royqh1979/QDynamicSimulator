@@ -176,3 +176,13 @@
 | png_clipboard_copy | 100 | 221.052 | 2210.52 |
 
 单元测试覆盖完整内容尺寸、有效像素、无选中色、网格/选择/句柄状态恢复、真实 PNG 文件格式、剪贴板读回和恢复。offscreen 平台初始 `mimeData()` 可为空，测试保存剪贴板时显式处理，不改变生产复制路径。
+
+## 自定义框选更新
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`rubber_band_resize` 通过真实 View 在最大选区和缩小选区之间反复移动，覆盖自定义 QFrame 几何更新、旧/新区域 update 和 `setSelectionArea()`；每轮校验归一化后的选区矩形。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| rubber_band_resize | 1000 | 1.2199 | 1.2199 |
+
+回归使用 MainWindow 中央 View 和显式 button/buttons 鼠标事件，检查反向缩小、完整旧选区 Paint（Windows 插件）、帧图像与全量重绘一致以及释放后隐藏。offscreen 对子 Widget 的 Paint 区域合成方式不同，因此仅对 Windows 插件断言完整区域，offscreen 仍执行同一几何和像素场景。

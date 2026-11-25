@@ -1,14 +1,17 @@
 #include "DiagramView.h"
 
 #include "DiagramScene.h"
+#include "DiagramPalette.h"
 #include "EntityPalette.h"
 
 #include <QDragEnterEvent>
+#include <QFrame>
 #include <QFileInfo>
 #include <QGraphicsItem>
 #include <QMimeData>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QPainterPath>
 #include <QScrollBar>
 #include <QWheelEvent>
 #include <QUrl>
@@ -37,9 +40,17 @@ DiagramView::DiagramView(QGraphicsScene *scene, QWidget *parent)
     setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
     setAcceptDrops(true);
     viewport()->setAcceptDrops(true);
-    setDragMode(RubberBandDrag);
+    setDragMode(NoDrag);
     setTransformationAnchor(AnchorUnderMouse);
     setResizeAnchor(AnchorViewCenter);
+    m_selectionFrame = new QFrame(viewport());
+    m_selectionFrame->setObjectName(QStringLiteral("selectionFrame"));
+    m_selectionFrame->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_selectionFrame->setAttribute(Qt::WA_StyledBackground);
+    const QColor color = diagram_palette::SelectionColor;
+    m_selectionFrame->setStyleSheet(QStringLiteral("QFrame { border: 2px dashed %1; background-color: rgba(%2, %3, %4, 40); }")
+        .arg(color.name()).arg(color.red()).arg(color.green()).arg(color.blue()));
+    m_selectionFrame->hide();
 }
 
 void DiagramView::zoomIn()
@@ -91,6 +102,20 @@ void DiagramView::mousePressEvent(QMouseEvent *event)
         event->accept();
         return;
     }
+    if (event->button() == Qt::LeftButton) {
+        auto *diagram = qobject_cast<DiagramScene *>(scene());
+        const QGraphicsItem *pressedItem = diagram ? diagram->itemAt(mapToScene(event->pos()), QTransform()) : nullptr;
+        if (diagram && diagram->tool() == DiagramScene::Tool::Select
+            && (!pressedItem || dynamic_cast<const RoutedItem *>(pressedItem))) {
+            m_areaSelecting = true;
+            m_selectionStart = event->pos();
+            m_rubberBandRect = QRect();
+            m_selectionOperation = event->modifiers() & Qt::ControlModifier ? Qt::AddToSelection : Qt::ReplaceSelection;
+            if (m_selectionOperation == Qt::ReplaceSelection)
+                scene()->clearSelection();
+            m_selectionFrame->hide();
+        }
+    }
     QGraphicsView::mousePressEvent(event);
 }
 
@@ -104,6 +129,11 @@ void DiagramView::mouseMoveEvent(QMouseEvent *event)
         event->accept();
         return;
     }
+    if (m_areaSelecting) {
+        updateSelection(event->pos());
+        event->accept();
+        return;
+    }
     QGraphicsView::mouseMoveEvent(event);
 }
 
@@ -114,6 +144,10 @@ void DiagramView::mouseReleaseEvent(QMouseEvent *event)
         viewport()->unsetCursor();
         event->accept();
         return;
+    }
+    if (m_areaSelecting && event->button() == Qt::LeftButton) {
+        updateSelection(event->pos());
+        finishSelection();
     }
     QGraphicsView::mouseReleaseEvent(event);
 }
@@ -169,6 +203,30 @@ void DiagramView::dropEvent(QDropEvent *event)
     if (diagram)
         diagram->createElementAt(kind, mapToScene(event->pos()));
     event->acceptProposedAction();
+}
+
+void DiagramView::updateSelection(const QPoint &position)
+{
+    const QRect rect = QRect(m_selectionStart, position).normalized();
+    const QRect dirty = m_rubberBandRect.united(rect).adjusted(-2, -2, 2, 2);
+    m_rubberBandRect = rect;
+    m_selectionFrame->setGeometry(rect);
+    if (!m_selectionFrame->isVisible())
+        m_selectionFrame->show();
+    m_selectionFrame->raise();
+    viewport()->update(dirty);
+    QPainterPath selectionArea;
+    selectionArea.addPolygon(mapToScene(rect));
+    selectionArea.closeSubpath();
+    scene()->setSelectionArea(selectionArea, m_selectionOperation, Qt::IntersectsItemShape, viewportTransform());
+}
+
+void DiagramView::finishSelection()
+{
+    m_areaSelecting = false;
+    m_selectionFrame->hide();
+    viewport()->update(m_rubberBandRect.adjusted(-2, -2, 2, 2));
+    m_rubberBandRect = QRect();
 }
 
 void DiagramView::zoomBy(double factor)
