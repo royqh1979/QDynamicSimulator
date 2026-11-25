@@ -48,6 +48,14 @@ struct Route {
 
 Route defaultConnectorRoute();
 
+struct FontStyle {
+    std::string family;
+    int pointSize = 0;
+
+    bool operator==(const FontStyle &other) const { return family == other.family && pointSize == other.pointSize; }
+    bool operator!=(const FontStyle &other) const { return !(*this == other); }
+};
+
 struct ElementData {
     EntityId id = 0;
     ElementKind kind = ElementKind::Stock;
@@ -61,13 +69,14 @@ struct ElementData {
     EntityId to = 0;
     Vec2 position;
     Route route;
+    FontStyle font;
 
     bool operator==(const ElementData &other) const
     {
         return id == other.id && kind == other.kind && displayName == other.displayName && equation == other.equation
             && unit == other.unit && comment == other.comment && content == other.content
             && flowEndpoints == other.flowEndpoints && from == other.from && to == other.to
-            && position == other.position && route == other.route;
+            && position == other.position && route == other.route && font == other.font;
     }
 };
 
@@ -157,14 +166,17 @@ public:
     ViewRange elements() const;
     Vec2 position(EntityId id) const;
     Route route(EntityId id) const;
+    FontStyle fontStyle(EntityId id) const;
     const std::unordered_map<EntityId, Vec2> &positions() const { return m_positions; }
     const std::unordered_map<EntityId, Route> &routes() const { return m_routes; }
+    const std::unordered_map<EntityId, FontStyle> &fontStyles() const { return m_fontStyles; }
 
 private:
     friend class Document;
     const Document &m_document;
     std::unordered_map<EntityId, Vec2> m_positions;
     std::unordered_map<EntityId, Route> m_routes;
+    std::unordered_map<EntityId, FontStyle> m_fontStyles;
 };
 
 class Document
@@ -202,6 +214,7 @@ public:
     bool setComment(EntityId id, const std::string &comment);
     bool setCommentContent(EntityId id, const std::string &content);
     bool setPosition(EntityId id, Vec2 position);
+    bool setFontStyle(EntityId id, const FontStyle &font);
     bool reconnectFlow(EntityId id, EntityId from, EntityId to);
     bool reconnectConnector(EntityId id, EntityId from, EntityId to);
     bool setRoute(EntityId id, const Route &route);

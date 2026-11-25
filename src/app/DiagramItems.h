@@ -2,6 +2,7 @@
 
 #include <qds/core/Document.h>
 
+#include <QFont>
 #include <QGraphicsObject>
 #include <QPen>
 
@@ -21,6 +22,8 @@ public:
     virtual QPointF boundaryPointToward(const QPointF &target) const;
     void setEndpointTargetHighlighted(bool highlighted);
     bool isEndpointTargetHighlighted() const { return m_endpointTargetHighlighted; }
+    void setFontStyle(const qds::core::FontStyle &font);
+    QFont labelFont() const { return m_labelFont; }
 
 signals:
     void positionChanged(qds::core::EntityId id, const QPointF &position);
@@ -34,6 +37,7 @@ protected:
 
 private:
     bool m_endpointTargetHighlighted = false;
+    QFont m_labelFont;
 };
 
 class VariableItem : public DiagramItem

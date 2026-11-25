@@ -92,6 +92,19 @@ void DiagramItem::setEndpointTargetHighlighted(bool highlighted)
     update();
 }
 
+void DiagramItem::setFontStyle(const qds::core::FontStyle &style)
+{
+    QFont font;
+    if (!style.family.empty())
+        font.setFamily(QString::fromStdString(style.family));
+    if (style.pointSize > 0)
+        font.setPointSize(style.pointSize);
+    if (m_labelFont == font)
+        return;
+    m_labelFont = font;
+    update();
+}
+
 QPen DiagramItem::outlinePen(const QColor &normalColor, qreal normalWidth, qreal selectedWidth, Qt::PenStyle normalStyle) const
 {
     if (m_endpointTargetHighlighted) {
@@ -152,6 +165,7 @@ QRectF VariableItem::labelRect() const
 void VariableItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
 {
     painter->setRenderHint(QPainter::Antialiasing);
+    painter->setFont(labelFont());
     painter->setPen(outlinePen(diagram_palette::EntityOutlineColor, 1.4, 2.0));
     painter->setBrush(diagram_palette::EntityFillColor);
 
@@ -232,6 +246,7 @@ QRectF ViewObjectItem::boundingRect() const
 void ViewObjectItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
 {
     painter->setRenderHint(QPainter::Antialiasing);
+    painter->setFont(labelFont());
     const Qt::PenStyle normalStyle = m_kind == qds::core::ElementKind::Cloud ? Qt::DashLine : Qt::SolidLine;
     painter->setPen(outlinePen(diagram_palette::EntityOutlineColor, 1.4, 2.0, normalStyle));
     painter->setBrush(diagram_palette::EntityFillColor);
@@ -628,6 +643,7 @@ QRectF FlowItem::labelRect() const
 
 void FlowItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
+    painter->setFont(labelFont());
     RoutedItem::paint(painter, option, widget);
     painter->setBrush(diagram_palette::EntityFillColor);
     for (const QPolygonF &polygon : valvePolygons())

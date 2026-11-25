@@ -130,6 +130,7 @@
 - 错误定位到对应变量或方程位置。
 - Lookup 表函数数据及图形化编辑。
 - 属性修改立即反映到画布，并纳入撤销/重做。
+- Stock、Auxiliary、Constant、Data、Flow 和 Comment 支持逐元素字体族和字号。属性面板提供 Font/Size，DiagramDefinition 保存纯 C++ `FontStyle{family, pointSize}`，空值继承应用默认字体；实际变化通过 ElementData/ChangeSet 撤销、复制和恢复，QDS 以 `font-family`/`font-size` 保存，XMILE 不扩展专有字体语义。内联名称编辑器使用同一字体。
 
 ### 3.7 XMILE 与布局保存
 

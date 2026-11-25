@@ -351,6 +351,14 @@ void writeNativeRoute(QXmlStreamWriter &writer, const core::Route &route)
     }
 }
 
+void writeNativeFont(QXmlStreamWriter &writer, const core::FontStyle &font)
+{
+    if (!font.family.empty())
+        writer.writeAttribute(QStringLiteral("font-family"), QString::fromStdString(font.family));
+    if (font.pointSize > 0)
+        writer.writeAttribute(QStringLiteral("font-size"), QString::number(font.pointSize));
+}
+
 QByteArray writeNativeXml(const core::Document &document)
 {
     QByteArray output;
@@ -364,6 +372,7 @@ QByteArray writeNativeXml(const core::Document &document)
         writer.writeStartElement(nativeKindTag(element.kind()));
         writer.writeAttribute(QStringLiteral("uid"), QString::number(element.id()));
         writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(element.displayName));
+        writeNativeFont(writer, document.diagram().fontStyle(element.id()));
         const core::Vec2 position = document.diagram().position(element.id());
         writer.writeAttribute(QStringLiteral("x"), QString::number(position.x, 'g', 15));
         writer.writeAttribute(QStringLiteral("y"), QString::number(position.y, 'g', 15));
@@ -386,6 +395,7 @@ QByteArray writeNativeXml(const core::Document &document)
     for (const core::ViewElement &element : document.diagram().elements()) {
         writer.writeStartElement(nativeKindTag(element.kind()));
         writer.writeAttribute(QStringLiteral("uid"), QString::number(element.id()));
+        writeNativeFont(writer, document.diagram().fontStyle(element.id()));
         const core::Vec2 position = document.diagram().position(element.id());
         writer.writeAttribute(QStringLiteral("x"), QString::number(position.x, 'g', 15));
         writer.writeAttribute(QStringLiteral("y"), QString::number(position.y, 'g', 15));
@@ -428,6 +438,13 @@ bool parseNativeElement(QXmlStreamReader &reader, NativeRecord &record)
     if (!uidOk || record.uid == 0 || !xOk || !yOk)
         return false;
     record.data.displayName = attributes.value(QStringLiteral("name")).toString().toStdString();
+    record.data.font.family = attributes.value(QStringLiteral("font-family")).toString().toStdString();
+    if (attributes.hasAttribute(QStringLiteral("font-size"))) {
+        bool fontSizeOk = false;
+        record.data.font.pointSize = attributes.value(QStringLiteral("font-size")).toInt(&fontSizeOk);
+        if (!fontSizeOk || record.data.font.pointSize <= 0)
+            return false;
+    }
     const quint64 from = attributes.value(QStringLiteral("from")).toULongLong();
     const quint64 to = attributes.value(QStringLiteral("to")).toULongLong();
     record.data.flowEndpoints = {from, to};

@@ -528,6 +528,25 @@ int main(int argc, char **argv)
         propertyPanel.refresh();
     const qint64 propertyPanelNs = timer.nsecsElapsed();
 
+    DocumentController fontController;
+    DiagramScene fontScene(&fontController);
+    const EntityId fontStock = fontController.createVariable(ElementKind::Stock, QPointF());
+    qint64 fontStyleNs = 0;
+    int fontStyleCount = 0;
+    for (int index = 0; index < count; ++index) {
+        const QFont font = index % 2 == 0 ? QFont(QStringLiteral("Arial"), 18) : QFont(QStringLiteral("Times New Roman"), 16);
+        timer.restart();
+        fontController.setFontStyle(fontStock, font);
+        fontStyleNs += timer.nsecsElapsed();
+        const FontStyle expected {font.family().toStdString(), font.pointSize()};
+        if (fontController.document().diagram().fontStyle(fontStock) != expected
+            || fontScene.item(fontStock)->labelFont().family() != font.family()
+            || fontScene.item(fontStock)->labelFont().pointSize() != font.pointSize())
+            return 28;
+        ++fontStyleCount;
+        fontController.undoStack()->undo();
+    }
+
     QTemporaryDir layoutDirectory;
     if (!layoutDirectory.isValid())
         return 25;
@@ -565,6 +584,7 @@ int main(int argc, char **argv)
         return 3;
     const QString path = directory.filePath(QStringLiteral("profile.qds"));
     QString error;
+    controller.setFontStyle(ids.front(), QFont(QStringLiteral("Arial"), 18));
     timer.restart();
     if (!qds::io::DocumentFile::save(path, controller.document(), &error))
         return 4;
@@ -575,6 +595,7 @@ int main(int argc, char **argv)
     if (!qds::io::DocumentFile::open(path, loaded, &error))
         return 5;
     const qint64 loadNs = timer.nsecsElapsed();
+    const ModelElement *loadedFontStock = loaded.findByName("Stock1");
 
     const QString xmilePath = directory.filePath(QStringLiteral("profile.xmile"));
     timer.restart();
@@ -688,6 +709,7 @@ int main(int argc, char **argv)
                         << "blank_flow_create_undo_redo,1000," << blankFlowNs / 1e6 << "," << blankFlowNs / 1000.0 / 1000 << "\n"
                         << "comment_content_edit,1000," << commentEditNs / 1e6 << "," << commentEditNs / 1000.0 / 1000 << "\n"
                         << "property_panel_refresh,1000," << propertyPanelNs / 1e6 << "," << propertyPanelNs / 1000.0 / 1000 << "\n"
+                        << "font_style_edit," << fontStyleCount << "," << fontStyleNs / 1e6 << "," << fontStyleNs / 1000.0 / count << "\n"
                         << "window_layout_restore," << windowLayoutCount << "," << windowLayoutNs / 1e6 << "," << windowLayoutNs / 1000.0 / windowLayoutCount << "\n"
                         << "qds_save," << count << "," << saveNs / 1e6 << "," << saveNs / 1000.0 / count << "\n"
                         << "qds_open," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n"
@@ -705,6 +727,8 @@ int main(int argc, char **argv)
         && lineStyleChecksum == 3000 && automaticPointCount > 0 && automaticFlagsValid
         && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000
         && centerBoundaryCount == 1000 && variableKindsMatch && windowLayoutCount == layoutIterations
+        && fontStyleCount == count && loadedFontStock
+        && loaded.diagram().fontStyle(loadedFontStock->id()) == (FontStyle {"Arial", 18})
         && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic
         && !dependentArrows.empty() && dependentEndpointChecksum != 0.0
         && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();

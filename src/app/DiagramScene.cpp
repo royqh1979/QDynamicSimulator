@@ -579,6 +579,7 @@ void DiagramScene::applyChangeNotification(const ChangeNotification &notificatio
             arrow->setRoute(m_controller->document().diagram().route(id));
             updateAutomaticRoute(arrow);
         }
+        item->setFontStyle(m_controller->document().diagram().fontStyle(id));
         updateDependentRoutes(id);
     }
     syncControlPoints();
@@ -606,6 +607,7 @@ DiagramItem *DiagramScene::createCanvasItem(EntityId id)
     } else {
         item = new ViewObjectItem(*static_cast<const ViewElement *>(element), position);
     }
+    item->setFontStyle(m_controller->document().diagram().fontStyle(id));
     addItem(item);
     m_items.insert(id, item);
     if (!dynamic_cast<RoutedItem *>(item)) {
@@ -833,6 +835,7 @@ void DiagramScene::beginInlineRename(DiagramItem *item)
     auto *proxy = new QGraphicsProxyWidget;
     auto *editor = new QLineEdit;
     editor->setObjectName(QStringLiteral("inlineNameEditor"));
+    editor->setFont(item->labelFont());
     editor->setText(QString::fromStdString(model->displayName));
     editor->resize(editorRect.size().toSize());
     proxy->setWidget(editor);
