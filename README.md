@@ -25,7 +25,7 @@ QDynamicSimulator 是一款跨平台系统动力学建模与仿真软件。项�
 
 - CMake 3.16 或更高版本
 - 支持 C++17 的编译器
-- Qt 5.12 或更高版本（Widgets、Svg 模块）
+- Qt 5.12 或更高版本（Widgets、Svg、LinguistTools 模块）
 
 ## 构建
 
@@ -37,6 +37,8 @@ cmake --build R:/build-qdynamic-simulator-qt5-release --parallel
 ```
 
 如 CMake 无法自动找到 Qt，请在配置时通过 `CMAKE_PREFIX_PATH` 指定 Qt 安装目录。测试模型使用 SDXorg/test-models 子模块，首次检出或 CI 中执行 `git submodule update --init 3rdparty/test-models`。
+
+构建会通过 `qt5_create_translation` 更新 `translations/qds_zh_CN.ts` 并生成 QM，随后内嵌为 `:/i18n/qds_zh_CN.qm`。系统语言为中文时自动加载简体中文界面，其它语言保留英文；无需额外安装 QM 文件。
 
 ## 测试
 
@@ -50,6 +52,7 @@ src/
 ├── core/                独立于 UI 的纯 C++ 核心库
 └── io/                  基于 QtCore 的 XMILE/ZIP 读写
 docs/design/             架构与模块设计文档
+translations/            Qt Linguist TS 源文件，QM 在构建目录生成并内嵌
 3rdparty/test-models/    SDXorg 测试模型子模块
 .github/workflows/       跨平台 CI
 ```

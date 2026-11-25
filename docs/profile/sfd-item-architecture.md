@@ -205,3 +205,13 @@
 | move_undo_repaint | 20 | 212.507 | 10625.4 |
 
 对照测试表明 `grab()` 会重新渲染 Widget，可能掩盖 backing store 残影；Minimal/BoundingRect 模式仍可能出现旧 Connector，而 FullViewportUpdate 能恢复一致画面。该策略只重绘视口，不增加 Document 或 Route 计算。
+
+## 简体中文翻译加载
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`translation_load` 每轮从内嵌资源创建 QTranslator 并加载 `:/i18n/qds_zh_CN.qm`，覆盖 QM 查找和解析。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| translation_load | 1000 | 2.9835 | 2.9835 |
+
+CMake 使用 `qt5_create_translation` 更新 TS 并生成 QM，再通过 RCC 内嵌。测试实际安装翻译并检查 File/Edit/View/Routing 菜单及 Stock 文本，TS 中不得残留 unfinished 项。
