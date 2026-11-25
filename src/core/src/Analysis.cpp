@@ -104,6 +104,11 @@ void resolveNode(const Document &document, ModelAnalysis &result, ElementAnalysi
     if (auto *range = dynamic_cast<RangeNode *>(node)) {
         resolveNode(document, result, owner, range->begin.get());
         resolveNode(document, result, owner, range->end.get());
+        return;
+    }
+    if (auto *literal = dynamic_cast<ArrayLiteralNode *>(node)) {
+        for (const auto &value : literal->values)
+            resolveNode(document, result, owner, value.get());
     }
 }
 

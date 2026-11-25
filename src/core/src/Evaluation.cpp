@@ -111,6 +111,8 @@ public:
         case FormulaNodeKind::Range:
         case FormulaNodeKind::DimensionPosition:
             return failure(node, "Subscript component requires an array subscript");
+        case FormulaNodeKind::ArrayLiteral:
+            return arrayLiteral(*static_cast<const ArrayLiteralNode *>(node));
         }
         return failure(node, "Unknown formula node");
     }
@@ -533,6 +535,46 @@ private:
         if (elementCount(output.shape) != output.values.size())
             return failure(&node, "Invalid array slice");
         return success(std::move(output));
+    }
+
+    EvaluationResult arrayLiteral(const ArrayLiteralNode &node)
+    {
+        if (m_context.scope.dimensions.empty())
+            return failure(&node, "Array literal requires output dimensions");
+        std::vector<std::size_t> shape;
+        for (const std::string &name : m_context.scope.dimensions) {
+            const Dimension *dimension = m_context.readDimension ? m_context.readDimension(name) : nullptr;
+            if (!dimension)
+                return failure(&node, "Unknown output dimension: " + name);
+            shape.push_back(dimension->elements.size());
+        }
+        const std::size_t count = elementCount(shape);
+        if (node.values.size() != count)
+            return failure(&node, "Array literal size does not match output dimensions");
+        std::vector<double> values;
+        values.reserve(count);
+        for (const auto &item : node.values) {
+            EvaluationResult value = evaluate(item.get());
+            if (!value.value)
+                return value;
+            const auto *scalar = std::get_if<double>(&*value.value);
+            if (!scalar)
+                return failure(item.get(), "Array literal items must be scalar");
+            values.push_back(*scalar);
+        }
+        if (!m_context.scope.indices.empty()) {
+            if (m_context.scope.indices.size() != shape.size())
+                return failure(&node, "Array literal scope does not match output dimensions");
+            const std::vector<std::size_t> steps = strides(shape);
+            std::size_t flat = 0;
+            for (std::size_t index = 0; index < shape.size(); ++index) {
+                if (m_context.scope.indices[index] >= shape[index])
+                    return success(0.0);
+                flat += m_context.scope.indices[index] * steps[index];
+            }
+            return success(values[flat]);
+        }
+        return success(ArrayValue {m_context.scope.dimensions, shape, std::move(values)});
     }
 
     EvaluationResult reduce(const CallNode &node, const Value &input)
