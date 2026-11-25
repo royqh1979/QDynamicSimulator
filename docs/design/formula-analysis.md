@@ -115,11 +115,12 @@ struct SubscriptNode : FormulaNode {
 
 ```cpp
 struct FunctionSignature {
-    std::string nameKey;
     std::size_t minArguments = 0;
     std::size_t maxArguments = 0;
     FunctionCategory category;
 };
+
+const FunctionSignature *findFunctionSignature(const std::string &nameKey);
 ```
 
 注册表覆盖 XMILE 3.5 全部内置函数的名称和参数个数，包括数学、统计、延迟、测试输入、时间及其它函数。分析阶段可识别全部签名，求值阶段复用同一注册表绑定实现，避免函数列表散落。
@@ -156,7 +157,46 @@ DependencyGraph 的边统一为 **dependency → dependent**，表示必须先�
 
 `validateDocument()` 改为调用 ModelAnalysis，不再保留现有逐字符公式扫描和平行括号检查。不得在旧实现与新 AST 解析器之间维护两套公式语义。
 
-## 8. 测试与性能
+## 8. 标量求值与共享函数注册表
+
+函数签名集中在 `Function.h/.cpp`，Analysis 和 Evaluator 都通过 `findFunctionSignature()` 查询同一份名称、参数个数和分类。无参数内置函数也由签名派生，不再维护独立名称集合。注册表只描述语义，不保存求值状态。
+
+`Evaluation.h/.cpp` 提供不依赖 Document/Qt 的同步标量求值：
+
+```cpp
+using VariableReader = std::function<std::optional<double>(EntityId)>;
+
+struct EvaluationContext {
+    double time = 0.0;
+    double dt = 1.0;
+    double startTime = 0.0;
+    double stopTime = 0.0;
+    VariableReader readVariable;
+};
+
+struct EvaluationResult {
+    std::optional<double> value;
+    std::string error;
+    SourceSpan errorSpan;
+};
+
+EvaluationResult evaluateFormula(const FormulaNode *node, const EvaluationContext &context);
+```
+
+变量通过已解析的 `ReferenceNode.entityId` 和 `readVariable` 读取；ID 未解析、读取器缺失或变量无值均返回带源码位置的错误，不以零代替。Result 不持有 AST 或 Context 指针，调用方继续拥有输入对象。
+
+本阶段支持：
+
+- 数字、变量引用、正负号、NOT、四则运算、乘方和 Knuth floored modulus。按 XMILE 3.2.3，公式只有实数一种数据类型，当前统一使用 double；要求整数的位置后续按数值约束检查，不另设整数表达式类型。
+- 比较、等式、AND/OR，按 XMILE 3.3 让逻辑结果严格为 0 或 1，非零值视为 true。
+- IF THEN ELSE 与 `if_then_else`；AND、OR 和条件表达式只读取需要求值的分支。
+- TIME、DT、STARTTIME、STOPTIME、PI、INF，以及 ABS、ARCCOS、ARCSIN、ARCTAN、COS、EXP、INT、LN、LOG10、LOG、MAX、MIN、SIN、SQRT、TAN。
+
+数学函数使用 C++ 标准库的 double 语义；除零和定义域错误不替换为零，允许按 IEEE 754 产生 Inf/NaN。MAX/MIN 的单参数形式对标量返回参数本身，双参数形式返回较大/较小值。
+
+随机数、延迟、平滑、预测、测试输入、INIT/PREVIOUS/SELF、Lookup、命名模型、数组函数、下标和转置仍返回明确的未支持错误。它们需要随机状态、历史状态、图形函数或容器语义，不在本阶段伪造实现。后续仿真运行器复用 EvaluationContext 提供时间和变量存储，不在 Evaluator 内隐藏全局状态。
+
+## 9. 测试与性能
 
 ### 单元测试
 
@@ -164,16 +204,17 @@ DependencyGraph 的边统一为 **dependency → dependent**，表示必须先�
 - 每个优先级的 AST 形状，重点覆盖 `a^b^c`、`-x^2`、MOD、比较/等式、AND/OR。
 - IF THEN ELSE、嵌套调用、空方程、非法输入及 SourceSpan。
 - 引用收集、结构使用、公式引用使用、依赖环、Stock/Flow 不误判。
+- 已解析变量读取、实数与 0/1 逻辑值、负数 MOD、时间常量、数学函数、条件短路、Inf/NaN、变量缺失和未支持语义。
 - 现有 SIR、中文名称、重名检查及整个 Validation UI 回归。
 - 修改解析器时开启 `QDS_ENABLE_XMILE_CORPUS_TESTS`，验证全部 SDXorg XMILE 文件；不支持结构明确分类，不静默跳过。
 
 ### 可重复 profile
 
-建立 `profile-formula`：固定生成标量公式，分别测量 lex/parse、符号解析、依赖图构建和总分析时间，报告数量、总耗时和单公式耗时。至少覆盖 1000 个不同复杂度公式，并验证 AST 节点数、引用数和图边数，避免编译器优化掉工作。
+建立 `profile-formula`：固定生成标量公式，分别测量 lex/parse、完整模型符号与依赖分析、就绪 AST 求值，报告数量、总耗时和单公式耗时。至少覆盖 1000 个不同复杂度公式，并验证 AST 节点数、引用数、图边数、求值结果数和校验和，避免编译器优化掉工作。
 
 首个基线不预设未经验证的性能指标；后续优化必须比较同环境结果，不提前引入缓存、字符串池或派生索引。
 
-## 9. 分阶段实施
+## 10. 分阶段实施
 
 1. **标量 AST**：Lexer、Pratt Parser、SourceSpan、基础节点和错误恢复，附完整测试和 profile。
 2. **符号与依赖分析**：函数注册表、nameKey 解析、EquationDependency/StructuralUse、替换现有 validateDocument。

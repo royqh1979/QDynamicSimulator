@@ -1,42 +1,15 @@
 #include <qds/core/Analysis.h>
 
+#include <qds/core/Function.h>
+
 #include <algorithm>
 #include <functional>
-#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
 namespace qds::core {
 namespace {
-
-using Arguments = std::pair<std::size_t, std::size_t>;
-
-const std::unordered_map<std::string, Arguments> &functionSignatures()
-{
-    static const std::unordered_map<std::string, Arguments> signatures {
-        {"abs", {1, 1}}, {"arccos", {1, 1}}, {"arcsin", {1, 1}}, {"arctan", {1, 1}},
-        {"cos", {1, 1}}, {"exp", {1, 1}}, {"inf", {0, 0}}, {"int", {1, 1}},
-        {"ln", {1, 1}}, {"log10", {1, 1}}, {"max", {1, 2}}, {"min", {1, 2}},
-        {"pi", {0, 0}}, {"sin", {1, 1}}, {"sqrt", {1, 1}}, {"tan", {1, 1}},
-        {"exprnd", {1, 2}}, {"lognormal", {2, 3}}, {"normal", {2, 3}}, {"poisson", {1, 2}},
-        {"random", {2, 3}}, {"delay", {2, 3}}, {"delay1", {2, 3}}, {"delay3", {2, 3}},
-        {"delayn", {3, 4}}, {"forcst", {3, 4}}, {"smth1", {2, 3}}, {"smth3", {2, 3}},
-        {"smthn", {3, 4}}, {"trend", {2, 3}}, {"pulse", {2, 3}}, {"ramp", {2, 2}},
-        {"step", {2, 2}}, {"dt", {0, 0}}, {"starttime", {0, 0}}, {"stoptime", {0, 0}},
-        {"time", {0, 0}}, {"init", {1, 1}}, {"previous", {2, 2}}, {"self", {0, 0}},
-        {"mean", {1, 1}}, {"rank", {2, 3}}, {"size", {1, 1}}, {"stddev", {1, 1}},
-        {"sum", {1, 1}}, {"if_then_else", {3, 3}},
-        {"log", {1, 1}}, {"integr", {2, 3}}, {"smooth", {2, 3}}, {"lookup", {1, 2}}
-    };
-    return signatures;
-}
-
-const std::unordered_set<std::string> &noArgumentFunctions()
-{
-    static const std::unordered_set<std::string> names {"inf", "pi", "dt", "starttime", "stoptime", "time", "self"};
-    return names;
-}
 
 void addIssue(ModelAnalysis &result, EntityId id, IssueSeverity severity, std::string message, std::string code, SourceSpan span)
 {
@@ -57,7 +30,8 @@ void resolveNode(const Document &document, ModelAnalysis &result, ElementAnalysi
     if (!node)
         return;
     if (auto *reference = dynamic_cast<ReferenceNode *>(node)) {
-        if (noArgumentFunctions().count(reference->nameKey))
+        if (const FunctionSignature *signature = findFunctionSignature(reference->nameKey);
+            signature && signature->minArguments == 0 && signature->maxArguments == 0)
             return;
         if (const ModelElement *model = document.model().findByName(reference->nameKey)) {
             reference->entityId = model->id();
@@ -78,10 +52,9 @@ void resolveNode(const Document &document, ModelAnalysis &result, ElementAnalysi
         return;
     }
     if (auto *call = dynamic_cast<CallNode *>(node)) {
-        const auto signature = functionSignatures().find(call->nameKey);
-        if (signature != functionSignatures().end()) {
-            const auto [minimum, maximum] = signature->second;
-            if (call->arguments.size() < minimum || call->arguments.size() > maximum) {
+        const FunctionSignature *signature = findFunctionSignature(call->nameKey);
+        if (signature) {
+            if (call->arguments.size() < signature->minArguments || call->arguments.size() > signature->maxArguments) {
                 addIssue(result, owner.id, IssueSeverity::Error,
                     "Invalid argument count for function: " + call->nameKey, "invalid-arity", call->span);
             }

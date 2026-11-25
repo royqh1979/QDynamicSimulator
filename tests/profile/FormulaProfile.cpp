@@ -1,5 +1,9 @@
 #include <qds/core/Analysis.h>
+#include <qds/core/Evaluation.h>
 #include <qds/core/Formula.h>
+
+#include <cmath>
+#include <unordered_map>
 
 #include <QElapsedTimer>
 #include <QString>
@@ -66,6 +70,34 @@ int main(int argc, char **argv)
     }
     if (referenceCount != static_cast<std::size_t>(count) * 6 || dependencyCount != referenceCount)
         return 6;
+
+    std::unordered_map<EntityId, double> values;
+    for (const ModelElement &entry : document.model().elements())
+        values[entry.id()] = static_cast<double>(entry.id() % 17) - 8.0;
+    EvaluationContext context;
+    context.time = 4.5;
+    context.dt = 0.25;
+    context.readVariable = [&values](EntityId id) -> std::optional<double> {
+        const auto found = values.find(id);
+        return found == values.end() ? std::nullopt : std::optional<double>(found->second);
+    };
+    timer.restart();
+    double evaluationChecksum = 0.0;
+    int evaluationCount = 0;
+    for (const ElementAnalysis &entry : modelAnalysis.elements) {
+        if (!entry.formula.ast)
+            continue;
+        const EvaluationResult evaluated = evaluateFormula(entry.formula.ast.get(), context);
+        if (!evaluated.value) {
+            QTextStream(stderr) << "Formula evaluation failed: " << QString::fromStdString(evaluated.error) << "\n";
+            return 7;
+        }
+        evaluationChecksum += *evaluated.value;
+        ++evaluationCount;
+    }
+    const qint64 evaluationNs = timer.nsecsElapsed();
+    if (evaluationCount != count || !std::isfinite(evaluationChecksum))
+        return 8;
     QTextStream(stdout) << "operation,count,total_ms,per_formula_us\n"
                         << "formula_analyze," << count << "," << elapsedNs / 1e6 << ","
                         << elapsedNs / 1000.0 / count << "\n"
@@ -73,6 +105,9 @@ int main(int argc, char **argv)
                         << "document_analysis," << count << "," << documentNs / 1e6 << ","
                         << documentNs / 1000.0 / count << "\n"
                         << "formula_references," << referenceCount << ",\n"
-                        << "formula_dependencies," << dependencyCount << ",\n";
+                        << "formula_dependencies," << dependencyCount << ",\n"
+                        << "formula_evaluate," << evaluationCount << "," << evaluationNs / 1e6 << ","
+                        << evaluationNs / 1000.0 / evaluationCount << "\n"
+                        << "evaluation_checksum," << evaluationChecksum << ",\n";
     return 0;
 }
