@@ -257,6 +257,8 @@ Connector 的端点合法性由 Document 聚合层统一校验，create、restor
 
 画布连接工具与端点句柄共用 `connectionEndpointAt()` 命中规则：按场景叠放顺序选择普通实体或 FlowItem，排除 ArrowItem 和控制句柄；普通实体拖动仍使用独立的 `nodeAt()`，不因 Flow 可连接而改变 RoutedItem 的选择/框选行为。命中只产生候选 EntityId，具体组合仍交由 Document 校验，Cloud、Comment→Comment、重复连接等非法操作不会创建命令。橡皮线和路径布局都以端点的 `center()` 为参考，因此 Flow 作为源或目标时使用阀门中心而不是 Item 的 `pos()`。
 
+连接创建和端点重连拖动期间，Scene 用独立 `m_endpointTarget` 跟踪当前命中项。DiagramItem 的 endpoint-target 状态与 `isSelected()` 无关：选中保持蓝色实线，命中提示使用橙色虚线，Flow 的管线和阀门采用同一提示。命中变化只调用 Item `update()`，不修改选择集合或 Document；移到空白、切换目标、释放、右键/工具切换取消及文档重置时清除。`DiagramPalette.h` 集中保存选中、命中、实体、路径、文字、句柄和画布颜色常量，后续引入参数化主题时只替换这一入口，不在各绘制函数散布颜色字面值。
+
 ### 4.2.1 Flow 实体与路径
 
 Flow 是 ModelElement，直接持有 FlowEndpoints，不是 Connector：

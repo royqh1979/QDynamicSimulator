@@ -1,4 +1,5 @@
 #include "DiagramItems.h"
+#include "DiagramPalette.h"
 
 #include <QFontMetrics>
 #include <QGraphicsScene>
@@ -83,6 +84,25 @@ QPointF DiagramItem::boundaryPointToward(const QPointF &target) const
     return center() + delta * std::min(xScale, yScale);
 }
 
+void DiagramItem::setEndpointTargetHighlighted(bool highlighted)
+{
+    if (m_endpointTargetHighlighted == highlighted)
+        return;
+    m_endpointTargetHighlighted = highlighted;
+    update();
+}
+
+QPen DiagramItem::outlinePen(const QColor &normalColor, qreal normalWidth, qreal selectedWidth, Qt::PenStyle normalStyle) const
+{
+    if (m_endpointTargetHighlighted) {
+        QPen pen(diagram_palette::EndpointTargetColor, 3.0, Qt::DashLine);
+        pen.setCosmetic(true);
+        return pen;
+    }
+    return QPen(isSelected() ? diagram_palette::SelectionColor : normalColor,
+        isSelected() ? selectedWidth : normalWidth, normalStyle);
+}
+
 QVariant DiagramItem::itemChange(GraphicsItemChange change, const QVariant &value)
 {
     if (change == ItemPositionHasChanged && scene() && (flags() & ItemIsMovable))
@@ -121,9 +141,8 @@ QRectF VariableItem::boundingRect() const
 void VariableItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
 {
     painter->setRenderHint(QPainter::Antialiasing);
-    QPen pen(isSelected() ? QColor(35, 120, 210) : QColor(45, 55, 65), isSelected() ? 2.0 : 1.4);
-    painter->setPen(pen);
-    painter->setBrush(Qt::white);
+    painter->setPen(outlinePen(diagram_palette::EntityOutlineColor, 1.4, 2.0));
+    painter->setBrush(diagram_palette::EntityFillColor);
 
     QRectF textRect;
     if (m_kind == qds::core::ElementKind::Stock) {
@@ -144,7 +163,7 @@ void VariableItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QW
         textRect = rect.adjusted(5.0, 0.0, -5.0, 0.0);
     }
 
-    painter->setPen(QColor(25, 30, 35));
+    painter->setPen(diagram_palette::EntityTextColor);
     const QString label = painter->fontMetrics().elidedText(m_name, Qt::ElideRight, static_cast<int>(textRect.width()));
     painter->drawText(textRect, Qt::AlignCenter, label);
 }
@@ -209,20 +228,18 @@ QRectF ViewObjectItem::boundingRect() const
 void ViewObjectItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
 {
     painter->setRenderHint(QPainter::Antialiasing);
-    const QColor color = isSelected() ? QColor(35, 120, 210) : QColor(45, 55, 65);
-    QPen pen(color, isSelected() ? 2.0 : 1.4);
-    painter->setPen(pen);
-    painter->setBrush(Qt::white);
+    const Qt::PenStyle normalStyle = m_kind == qds::core::ElementKind::Cloud ? Qt::DashLine : Qt::SolidLine;
+    painter->setPen(outlinePen(diagram_palette::EntityOutlineColor, 1.4, 2.0, normalStyle));
+    painter->setBrush(diagram_palette::EntityFillColor);
     QRectF textRect(-60.0, -25.0, 120.0, 50.0);
     if (m_kind == qds::core::ElementKind::Cloud) {
-        painter->setPen(QPen(color, pen.width(), Qt::DashLine));
         painter->drawEllipse(QRectF(-45.0, -25.0, 90.0, 50.0));
         textRect = QRectF(-60.0, 28.0, 120.0, 24.0);
     } else {
-        painter->setBrush(QColor(255, 250, 205));
+        painter->setBrush(diagram_palette::CommentFillColor);
         painter->drawRect(textRect);
     }
-    painter->setPen(QColor(25, 30, 35));
+    painter->setPen(diagram_palette::EntityTextColor);
     painter->drawText(textRect, Qt::AlignCenter,
                       painter->fontMetrics().elidedText(m_text, Qt::ElideRight, static_cast<int>(textRect.width())));
 }
@@ -292,17 +309,17 @@ void RoutedItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWid
     painter->setRenderHint(QPainter::Antialiasing);
     const QVector<QLineF> guides = controlGuides();
     if (!guides.isEmpty()) {
-        QPen guidePen(QColor(70, 95, 120), 2.0, Qt::DashLine);
+        QPen guidePen(diagram_palette::ControlGuideColor, 2.0, Qt::DashLine);
         guidePen.setCosmetic(true);
         painter->setPen(guidePen);
         for (const QLineF &guide : guides)
             painter->drawLine(guide);
     }
-    const QColor color = isSelected() ? QColor(35, 120, 210) : QColor(45, 100, 160);
-    painter->setPen(QPen(color, isSelected() ? 3.4 : 2.4));
+    const QPen pen = outlinePen(diagram_palette::FlowOutlineColor, 2.4, 3.4);
+    painter->setPen(pen);
+    painter->setBrush(pen.color());
     for (const QPainterPath &path : linePaths())
         painter->drawPath(path);
-    painter->setBrush(color);
     const QPolygonF arrow = arrowHead();
     if (!arrow.isEmpty())
         painter->drawPolygon(arrow);
@@ -529,16 +546,16 @@ void ArrowItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
     painter->setRenderHint(QPainter::Antialiasing);
     const QVector<QLineF> guides = controlGuides();
     if (!guides.isEmpty()) {
-        QPen guidePen(QColor(70, 95, 120), 2.0, Qt::DashLine);
+        QPen guidePen(diagram_palette::ControlGuideColor, 2.0, Qt::DashLine);
         guidePen.setCosmetic(true);
         painter->setPen(guidePen);
         for (const QLineF &guide : guides)
             painter->drawLine(guide);
     }
-    const QColor color = isSelected() ? QColor(35, 120, 210) : QColor(75, 85, 95);
-    painter->setPen(QPen(color, isSelected() ? 2.4 : 1.4, lineStyle()));
+    const QPen pen = outlinePen(diagram_palette::ArrowOutlineColor, 1.4, 2.4, lineStyle());
+    painter->setPen(pen);
     painter->drawPath(geometryPath());
-    painter->setBrush(color);
+    painter->setBrush(pen.color());
     const QPolygonF arrow = arrowHead();
     if (!arrow.isEmpty())
         painter->drawPolygon(arrow);
@@ -606,12 +623,12 @@ QRectF FlowItem::labelRect() const
 void FlowItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
     RoutedItem::paint(painter, option, widget);
-    painter->setBrush(Qt::white);
+    painter->setBrush(diagram_palette::EntityFillColor);
     for (const QPolygonF &polygon : valvePolygons())
         painter->drawPolygon(polygon);
     const QPainterPath path = geometryPath();
     if (!path.isEmpty()) {
-        painter->setPen(QColor(25, 30, 35));
+        painter->setPen(diagram_palette::EntityTextColor);
         const QRectF textRect = labelRect();
         painter->drawText(textRect, Qt::AlignCenter, painter->fontMetrics().elidedText(m_name, Qt::ElideRight, 120));
     }
@@ -674,8 +691,8 @@ QRectF ControlPointHandle::boundingRect() const
 void ControlPointHandle::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
 {
     painter->setRenderHint(QPainter::Antialiasing);
-    const QColor color = m_role == Role::ControlPoint ? QColor(35, 120, 210)
-        : m_role == Role::Source ? QColor(50, 160, 90) : QColor(210, 100, 45);
+    const QColor color = m_role == Role::ControlPoint ? diagram_palette::SelectionColor
+        : m_role == Role::Source ? diagram_palette::SourceHandleColor : diagram_palette::TargetHandleColor;
     painter->setPen(QPen(Qt::white, 1.5));
     painter->setBrush(color);
     painter->drawEllipse(QRectF(-5.0, -5.0, 10.0, 10.0));

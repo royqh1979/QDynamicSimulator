@@ -1,4 +1,5 @@
 #include "DiagramScene.h"
+#include "DiagramPalette.h"
 
 #include "DocumentController.h"
 
@@ -349,7 +350,7 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
         if (item)
             item->setSelected(true);
         m_rubberLine = new QGraphicsLineItem(QLineF(m_connectionStart, event->scenePos()));
-        m_rubberLine->setPen(QPen(QColor(35, 120, 210), 2.0, Qt::DashLine));
+        m_rubberLine->setPen(QPen(diagram_palette::SelectionColor, 2.0, Qt::DashLine));
         m_rubberLine->setZValue(20.0);
         addItem(m_rubberLine);
         event->accept();
@@ -387,6 +388,8 @@ void DiagramScene::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
     if (m_rubberLine) {
         DiagramItem *source = m_items.value(m_connectionSource);
         m_rubberLine->setLine(QLineF(source ? source->center() : m_connectionStart, event->scenePos()));
+        DiagramItem *target = connectionEndpointAt(*this, event->scenePos());
+        setEndpointTarget(target && target->id() != m_connectionSource ? target : nullptr);
         event->accept();
         return;
     }
@@ -517,6 +520,7 @@ void DiagramScene::applyChangeNotification(const ChangeNotification &notificatio
         m_obstacles.clear();
         m_rubberLine = nullptr;
         m_endpointPreviewItem.clear();
+        m_endpointTarget.clear();
         clear();
         m_items.clear();
         m_connectionSource = 0;
@@ -692,6 +696,7 @@ void DiagramScene::previewControlPoint(EntityId id, int index, const QPointF &po
             return;
         m_endpointPreviewItem = item;
         m_endpointPreviewItem->previewEndpoint(index, position);
+        setEndpointTarget(connectionEndpointAt(*this, position));
         syncControlPoints();
         return;
     }
@@ -756,8 +761,20 @@ void DiagramScene::removeControlPoint(EntityId id, int index)
     m_controller->setRoute(id, route);
 }
 
+void DiagramScene::setEndpointTarget(DiagramItem *target)
+{
+    if (m_endpointTarget == target)
+        return;
+    if (m_endpointTarget)
+        m_endpointTarget->setEndpointTargetHighlighted(false);
+    m_endpointTarget = target;
+    if (m_endpointTarget)
+        m_endpointTarget->setEndpointTargetHighlighted(true);
+}
+
 void DiagramScene::cancelRubberLine()
 {
+    setEndpointTarget(nullptr);
     if (!m_rubberLine)
         return;
     removeItem(m_rubberLine);
@@ -767,6 +784,7 @@ void DiagramScene::cancelRubberLine()
 
 void DiagramScene::cancelEndpointPreview()
 {
+    setEndpointTarget(nullptr);
     if (m_endpointPreviewItem)
         m_endpointPreviewItem->clearEndpointPreview();
     m_endpointPreviewItem.clear();
@@ -851,10 +869,10 @@ void DiagramScene::finishMove(EntityId id, const QPointF &position, Qt::Keyboard
 
 void DiagramScene::drawBackground(QPainter *painter, const QRectF &rect)
 {
-    painter->fillRect(rect, QColor(250, 250, 250));
+    painter->fillRect(rect, diagram_palette::CanvasBackgroundColor);
     if (!m_gridVisible)
         return;
-    painter->setPen(QPen(QColor(225, 225, 225), 0.0));
+    painter->setPen(QPen(diagram_palette::GridColor, 0.0));
     const double left = qFloor(rect.left() / m_gridSize) * m_gridSize;
     const double top = qFloor(rect.top() / m_gridSize) * m_gridSize;
     for (double x = left; x < rect.right(); x += m_gridSize)

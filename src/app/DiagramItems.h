@@ -3,6 +3,7 @@
 #include <qds/core/Document.h>
 
 #include <QGraphicsObject>
+#include <QPen>
 
 class DiagramItem : public QGraphicsObject
 {
@@ -17,14 +18,21 @@ public:
     virtual qds::core::EntityId id() const = 0;
     virtual QPointF center() const { return pos(); }
     virtual QPointF boundaryPointToward(const QPointF &target) const;
+    void setEndpointTargetHighlighted(bool highlighted);
+    bool isEndpointTargetHighlighted() const { return m_endpointTargetHighlighted; }
 
 signals:
     void positionChanged(qds::core::EntityId id, const QPointF &position);
     void moveFinished(qds::core::EntityId id, const QPointF &position, Qt::KeyboardModifiers modifiers);
 
 protected:
+    QPen outlinePen(const QColor &normalColor, qreal normalWidth, qreal selectedWidth,
+        Qt::PenStyle normalStyle = Qt::SolidLine) const;
     QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
+
+private:
+    bool m_endpointTargetHighlighted = false;
 };
 
 class VariableItem : public DiagramItem
