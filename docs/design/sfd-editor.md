@@ -117,7 +117,7 @@
 ### 3.6 属性与方程编辑
 
 - 属性编辑由独立 `PropertyPanel` Widget 承担，直接依赖 DocumentController/DiagramScene，不依赖 MainWindow；MainWindow 仅负责停靠和保存时调用 commit。名称、方程、单位和说明编辑；选中 Comment 时切换为 Content，正文修改通过 ChangeSet 撤销/重做并同步画布及 XMILE text_box。
-- 双击 Stock、Auxiliary、Constant、Data 或 Flow 打开画布内联名称编辑器，编辑器放在公共 `labelRect()` 对应的场景位置；Enter 通过同一 `renameElement()` ChangeSet 提交，Esc 或切换工具取消，空名称/重名保留编辑状态且不生成命令。Arrow 双击仍用于增加控制点。名称、方程、单位和说明均纳入 undo/redo，属性面板逐项提交的测试覆盖完整恢复顺序。
+- 双击 Stock、Auxiliary、Constant、Data 或 Flow 打开画布内联名称编辑器，编辑器放在公共 `labelRect()` 对应的场景位置并适当扩大；使用 2 像素选中色边框、4 像素圆角和内边距，颜色来自 DiagramPalette，字体与对应 Item 一致。Enter 通过同一 `renameElement()` ChangeSet 提交，Esc 或切换工具取消，空名称/重名保留编辑状态且不生成命令。Arrow 双击仍用于增加控制点。名称、方程、单位和说明均纳入 undo/redo，属性面板逐项提交的测试覆盖完整恢复顺序。
 - commit 先读取全部输入值再执行修改，避免首个 ChangeNotification 刷新输入框时覆盖其他待提交字段。
 - 存量初值及净流入/净流出关系查看。
 - 流量和辅助变量方程编辑。
