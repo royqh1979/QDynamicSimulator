@@ -4,6 +4,12 @@ add_executable(profile-core
 target_link_libraries(profile-core PRIVATE QDS::Core Qt5::Core)
 add_dependencies(all-profile-targets profile-core)
 
+add_executable(profile-formula
+    FormulaProfile.cpp
+)
+target_link_libraries(profile-formula PRIVATE QDS::Core Qt5::Core)
+add_dependencies(all-profile-targets profile-formula)
+
 add_executable(profile-editor
     EditorProfile.cpp
 )
