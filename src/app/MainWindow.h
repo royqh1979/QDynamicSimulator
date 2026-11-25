@@ -21,6 +21,8 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     bool openFile(const QString &fileName);
+    bool exportPng(const QString &fileName);
+    bool copyPng();
     void offerRecovery();
 
 protected:
@@ -38,6 +40,7 @@ private:
     bool save();
     bool saveAs();
     bool exportXmile();
+    bool exportPng();
     bool saveFile(const QString &fileName);
     bool maybeSave();
     void setCurrentFile(const QString &fileName);

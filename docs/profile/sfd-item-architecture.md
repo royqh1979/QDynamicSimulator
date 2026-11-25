@@ -164,3 +164,15 @@
 | font_style_edit | 1000 | 1.5564 | 1.5564 |
 
 单元测试覆盖核心 FontStyle、非法对象、负字号、capture/restore、Document 移动、属性面板、undo/redo、复制粘贴、QDS 往返和默认字体恢复。字体只进入原生 QDS；XMILE 行为不变。
+
+## PNG 渲染、导出与剪贴板
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。渲染夹具包含 20 个 Stock/Auxiliary 和 19 条 Connector。`png_render` 执行 100 次完整内容渲染；`png_file_export` 执行 20 次真实 PNG 写盘；`png_clipboard_copy` 执行 100 次系统剪贴板写入及完整图像读回校验，结束后恢复原剪贴板。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| png_render | 100 | 489.339 | 4893.39 |
+| png_file_export | 20 | 708.520 | 35426.0 |
+| png_clipboard_copy | 100 | 221.052 | 2210.52 |
+
+单元测试覆盖完整内容尺寸、有效像素、无选中色、网格/选择/句柄状态恢复、真实 PNG 文件格式、剪贴板读回和恢复。offscreen 平台初始 `mimeData()` 可为空，测试保存剪贴板时显式处理，不改变生产复制路径。
