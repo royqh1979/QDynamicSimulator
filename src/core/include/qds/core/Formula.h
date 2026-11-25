@@ -26,7 +26,10 @@ enum class FormulaNodeKind {
     Binary,
     Call,
     Conditional,
-    Subscript
+    Subscript,
+    Wildcard,
+    Range,
+    DimensionPosition
 };
 
 struct FormulaNode {
@@ -137,6 +140,33 @@ struct SubscriptNode final : FormulaNode {
     }
     std::unique_ptr<FormulaNode> target;
     std::vector<std::unique_ptr<FormulaNode>> indices;
+};
+
+struct WildcardNode final : FormulaNode {
+    explicit WildcardNode(SourceSpan nodeSpan)
+        : FormulaNode(FormulaNodeKind::Wildcard, nodeSpan)
+    {
+    }
+};
+
+struct RangeNode final : FormulaNode {
+    RangeNode(std::unique_ptr<FormulaNode> first, std::unique_ptr<FormulaNode> last, SourceSpan nodeSpan)
+        : FormulaNode(FormulaNodeKind::Range, nodeSpan)
+        , begin(std::move(first))
+        , end(std::move(last))
+    {
+    }
+    std::unique_ptr<FormulaNode> begin;
+    std::unique_ptr<FormulaNode> end;
+};
+
+struct DimensionPositionNode final : FormulaNode {
+    DimensionPositionNode(std::size_t dimensionPosition, SourceSpan nodeSpan)
+        : FormulaNode(FormulaNodeKind::DimensionPosition, nodeSpan)
+        , position(dimensionPosition)
+    {
+    }
+    std::size_t position;
 };
 
 struct FormulaIssue {

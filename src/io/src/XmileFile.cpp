@@ -48,6 +48,45 @@ QString referenceName(const QString &text)
     return result;
 }
 
+QStringList splitSubscripts(const QString &text)
+{
+    QStringList result;
+    QString current;
+    bool quoted = false;
+    bool escaped = false;
+    for (const QChar character : text) {
+        if (escaped) {
+            current.append(character);
+            escaped = false;
+            continue;
+        }
+        if (character == '\\' && quoted) {
+            current.append(character);
+            escaped = true;
+            continue;
+        }
+        if (character == '"')
+            quoted = !quoted;
+        if (character == ',' && !quoted) {
+            result.append(current.trimmed());
+            current.clear();
+        } else {
+            current.append(character);
+        }
+    }
+    result.append(current.trimmed());
+    return result;
+}
+
+QString quotedIdentifier(const std::string &name)
+{
+    QString value = QString::fromStdString(name);
+    value.replace('\\', "\\\\");
+    value.replace('"', "\\\"");
+    value.replace('\n', "\\n");
+    return '"' + value + '"';
+}
+
 QString variableTag(core::ElementKind kind)
 {
     switch (kind) {
@@ -83,6 +122,53 @@ const core::ModelElement *findElementByName(const core::Document &document, cons
     return document.model().findByName(name);
 }
 
+void writeXmileDimensions(QXmlStreamWriter &writer, const core::Document &document)
+{
+    if (document.dimensions().empty())
+        return;
+    writer.writeStartElement(QStringLiteral("dimensions"));
+    for (const core::Dimension &dimension : document.dimensions()) {
+        writer.writeStartElement(QStringLiteral("dim"));
+        writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(dimension.displayName));
+        if (dimension.elements.front().nameKey.empty()) {
+            writer.writeAttribute(QStringLiteral("size"), QString::number(dimension.elements.size()));
+        } else {
+            for (const core::DimensionElement &element : dimension.elements) {
+                writer.writeStartElement(QStringLiteral("elem"));
+                writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(element.displayName));
+                writer.writeEndElement();
+            }
+        }
+        writer.writeEndElement();
+    }
+    writer.writeEndElement();
+}
+
+void writeXmileArrayDefinition(QXmlStreamWriter &writer, const core::Document &document, const core::ModelElement &element)
+{
+    if (element.dimensions.empty())
+        return;
+    writer.writeStartElement(QStringLiteral("dimensions"));
+    for (const std::string &name : element.dimensions) {
+        writer.writeStartElement(QStringLiteral("dim"));
+        writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(document.findDimension(name)->displayName));
+        writer.writeEndElement();
+    }
+    writer.writeEndElement();
+    for (const core::ArrayElementEquation &entry : element.elementEquations) {
+        writer.writeStartElement(QStringLiteral("element"));
+        QStringList indices;
+        for (std::size_t position = 0; position < entry.indices.size(); ++position) {
+            const core::Dimension *dimension = document.findDimension(element.dimensions[position]);
+            const core::DimensionElement &index = dimension->elements[entry.indices[position]];
+            indices.append(index.nameKey.empty() ? QString::number(entry.indices[position] + 1) : quotedIdentifier(index.displayName));
+        }
+        writer.writeAttribute(QStringLiteral("subscript"), indices.join(','));
+        writer.writeTextElement(QStringLiteral("eqn"), QString::fromStdString(entry.equation));
+        writer.writeEndElement();
+    }
+}
+
 QByteArray writeXml(const core::Document &document)
 {
     const core::Model &model = document.model();
@@ -103,11 +189,24 @@ QByteArray writeXml(const core::Document &document)
     writer.writeTextElement(QStringLiteral("product"), QStringLiteral("QDynamicSimulator"));
     writer.writeEndElement();
 
+    if (!document.dimensions().empty()) {
+        std::size_t maximumDimensions = 0;
+        for (const core::ModelElement &element : model.elements())
+            maximumDimensions = std::max(maximumDimensions, element.dimensions.size());
+        writer.writeStartElement(QStringLiteral("options"));
+        writer.writeStartElement(QStringLiteral("uses_arrays"));
+        writer.writeAttribute(QStringLiteral("maximum_dimensions"), QString::number(maximumDimensions));
+        writer.writeEndElement();
+        writer.writeEndElement();
+    }
+
     writer.writeStartElement(QStringLiteral("sim_specs"));
     writer.writeTextElement(QStringLiteral("start"), QStringLiteral("0"));
     writer.writeTextElement(QStringLiteral("stop"), QStringLiteral("100"));
     writer.writeTextElement(QStringLiteral("dt"), QStringLiteral("0.25"));
     writer.writeEndElement();
+
+    writeXmileDimensions(writer, document);
 
     writer.writeStartElement(QStringLiteral("model"));
     writer.writeStartElement(QStringLiteral("variables"));
@@ -115,9 +214,11 @@ QByteArray writeXml(const core::Document &document)
         const QString name = QString::fromStdString(variable.displayName);
         writer.writeStartElement(variableTag(variable.kind()));
         writer.writeAttribute(QStringLiteral("name"), name);
-        writer.writeTextElement(
-            QStringLiteral("eqn"),
-            variable.equation.empty() ? QStringLiteral("0") : QString::fromStdString(variable.equation));
+        writeXmileArrayDefinition(writer, document, variable);
+        if (variable.elementEquations.empty())
+            writer.writeTextElement(
+                QStringLiteral("eqn"),
+                variable.equation.empty() ? QStringLiteral("0") : QString::fromStdString(variable.equation));
         if (!variable.unit.empty())
             writer.writeTextElement(QStringLiteral("units"), QString::fromStdString(variable.unit));
         if (!variable.comment.empty())
@@ -227,6 +328,95 @@ struct PendingFlowLayout {
     bool hasValveCenter = false;
 };
 
+bool parseXmileDimensions(QXmlStreamReader &reader, core::Document &document, QString *errorMessage)
+{
+    while (reader.readNext() != QXmlStreamReader::Invalid) {
+        if (reader.isEndElement() && reader.name() == QStringLiteral("dimensions"))
+            return true;
+        if (!reader.isStartElement() || reader.name() != QStringLiteral("dim"))
+            continue;
+        const QString name = reader.attributes().value(QStringLiteral("name")).toString();
+        bool sizeOk = false;
+        const int size = reader.attributes().value(QStringLiteral("size")).toInt(&sizeOk);
+        QStringList elements;
+        while (reader.readNext() != QXmlStreamReader::Invalid) {
+            if (reader.isEndElement() && reader.name() == QStringLiteral("dim"))
+                break;
+            if (reader.isStartElement() && reader.name() == QStringLiteral("elem")) {
+                elements.append(reader.attributes().value(QStringLiteral("name")).toString());
+                reader.skipCurrentElement();
+            }
+        }
+        bool valid = false;
+        if (elements.isEmpty() && sizeOk && size > 0) {
+            valid = document.defineDimension(name.toStdString(), static_cast<std::size_t>(size));
+        } else if (!elements.isEmpty() && !sizeOk) {
+            std::vector<std::string> names;
+            for (const QString &element : elements)
+                names.push_back(element.toStdString());
+            valid = document.defineDimension(name.toStdString(), names);
+        }
+        if (!valid) {
+            setError(errorMessage, translate("The XMILE dimensions are invalid or conflict with a variable."));
+            return false;
+        }
+    }
+    return false;
+}
+
+bool parseXmileVariableDimensions(QXmlStreamReader &reader, std::vector<std::string> &dimensions)
+{
+    while (reader.readNext() != QXmlStreamReader::Invalid) {
+        if (reader.isEndElement() && reader.name() == QStringLiteral("dimensions"))
+            return !dimensions.empty();
+        if (reader.isStartElement() && reader.name() == QStringLiteral("dim")) {
+            dimensions.push_back(reader.attributes().value(QStringLiteral("name")).toString().toStdString());
+            reader.skipCurrentElement();
+        }
+    }
+    return false;
+}
+
+bool parseXmileArrayElement(QXmlStreamReader &reader, const core::Document &document,
+    const std::vector<std::string> &dimensions, core::ArrayElementEquation &entry)
+{
+    const QStringList indices = splitSubscripts(reader.attributes().value(QStringLiteral("subscript")).toString());
+    if (indices.size() != static_cast<int>(dimensions.size()))
+        return false;
+    for (int position = 0; position < indices.size(); ++position) {
+        const core::Dimension *dimension = document.findDimension(dimensions[position]);
+        if (!dimension)
+            return false;
+        bool numeric = false;
+        const int number = indices[position].toInt(&numeric);
+        if (numeric) {
+            if (number <= 0 || static_cast<std::size_t>(number) > dimension->elements.size())
+                return false;
+            entry.indices.push_back(static_cast<std::size_t>(number - 1));
+            continue;
+        }
+        const std::string name = referenceName(indices[position]).toStdString();
+        const core::DimensionElement *element = dimension->findElement(name);
+        if (!element)
+            return false;
+        entry.indices.push_back(static_cast<std::size_t>(element - dimension->elements.data()));
+    }
+    bool foundEquation = false;
+    while (reader.readNext() != QXmlStreamReader::Invalid) {
+        if (reader.isEndElement() && reader.name() == QStringLiteral("element"))
+            return foundEquation;
+        if (reader.isStartElement() && reader.name() == QStringLiteral("eqn")) {
+            if (foundEquation)
+                return false;
+            entry.equation = reader.readElementText().trimmed().toStdString();
+            foundEquation = true;
+        } else if (reader.isStartElement()) {
+            reader.skipCurrentElement();
+        }
+    }
+    return false;
+}
+
 bool parseVariable(
     QXmlStreamReader &reader,
     core::Document &model,
@@ -263,7 +453,19 @@ bool parseVariable(
         const QString child = reader.name().toString();
         if (child == QStringLiteral("eqn"))
             variable.equation = reader.readElementText().trimmed().toStdString();
-        else if (child == QStringLiteral("units"))
+        else if (child == QStringLiteral("dimensions")) {
+            if (!parseXmileVariableDimensions(reader, variable.dimensions)) {
+                setError(errorMessage, translate("An array variable has invalid dimensions: %1").arg(name));
+                return false;
+            }
+        } else if (child == QStringLiteral("element")) {
+            core::ArrayElementEquation entry;
+            if (!parseXmileArrayElement(reader, model, variable.dimensions, entry)) {
+                setError(errorMessage, translate("An array element is invalid: %1").arg(name));
+                return false;
+            }
+            variable.elementEquations.push_back(std::move(entry));
+        } else if (child == QStringLiteral("units"))
             variable.unit = reader.readElementText().trimmed().toStdString();
         else if (child == QStringLiteral("doc"))
             variable.comment = reader.readElementText().toStdString();
@@ -273,6 +475,22 @@ bool parseVariable(
             outflows.append(referenceName(reader.readElementText()));
         else
             reader.skipCurrentElement();
+    }
+
+    if (!variable.elementEquations.empty()) {
+        std::size_t expected = 1;
+        for (const std::string &dimension : variable.dimensions) {
+            const core::Dimension *definition = model.findDimension(dimension);
+            if (!definition) {
+                setError(errorMessage, translate("An array references an undefined dimension: %1").arg(name));
+                return false;
+            }
+            expected *= definition->elements.size();
+        }
+        if (variable.elementEquations.size() != expected || !variable.equation.empty()) {
+            setError(errorMessage, translate("A non-apply-to-all array is incomplete: %1").arg(name));
+            return false;
+        }
     }
 
     if (variable.kind == core::ElementKind::Flow) {
@@ -604,6 +822,9 @@ bool parseXml(
         const QString tag = reader.name().toString();
         if (tag == QStringLiteral("xmile")) {
             foundRoot = true;
+        } else if (tag == QStringLiteral("dimensions")) {
+            if (!parseXmileDimensions(reader, parsed, errorMessage))
+                return false;
         } else if (tag == QStringLiteral("model")) {
             if (foundModel) {
                 setError(errorMessage, translate("Multiple XMILE models are not supported."));

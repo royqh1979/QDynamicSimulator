@@ -98,6 +98,40 @@ int main(int argc, char **argv)
     const qint64 evaluationNs = timer.nsecsElapsed();
     if (evaluationCount != count || !std::isfinite(evaluationChecksum))
         return 8;
+
+    Document arrays;
+    arrays.defineDimension("Location", {"Boston", "Chicago"});
+    arrays.defineDimension("N", 3);
+    for (int index = 0; index < count; ++index) {
+        const EntityId input = arrays.createVariable(ElementKind::Auxiliary);
+        const EntityId array = arrays.createVariable(ElementKind::Auxiliary);
+        const std::string inputName = "Input" + std::to_string(index);
+        if (!arrays.rename(input, inputName) || !arrays.rename(array, "Array" + std::to_string(index))
+            || !arrays.setDimensions(array, {"Location", "N"}))
+            return 9;
+        for (std::size_t location = 0; location < 2; ++location) {
+            for (std::size_t n = 0; n < 3; ++n)
+                arrays.setElementEquation(array, {location, n}, inputName + " * 2");
+        }
+    }
+    timer.restart();
+    const ModelAnalysis arrayAnalysis = analyzeDocument(arrays);
+    const qint64 arrayNs = timer.nsecsElapsed();
+    std::size_t arrayFormulaCount = 0;
+    std::size_t arrayReferenceCount = 0;
+    for (const ElementAnalysis &entry : arrayAnalysis.elements) {
+        arrayFormulaCount += entry.elementFormulas.size();
+        arrayReferenceCount += entry.references.size();
+    }
+    for (const ModelIssue &issue : arrayAnalysis.issues) {
+        if (issue.severity == IssueSeverity::Error) {
+            QTextStream(stderr) << "Array analysis failed: " << QString::fromStdString(issue.message) << "\n";
+            return 10;
+        }
+    }
+    if (arrayFormulaCount != static_cast<std::size_t>(count) * 6
+        || arrayReferenceCount != static_cast<std::size_t>(count))
+        return 11;
     QTextStream(stdout) << "operation,count,total_ms,per_formula_us\n"
                         << "formula_analyze," << count << "," << elapsedNs / 1e6 << ","
                         << elapsedNs / 1000.0 / count << "\n"
@@ -108,6 +142,9 @@ int main(int argc, char **argv)
                         << "formula_dependencies," << dependencyCount << ",\n"
                         << "formula_evaluate," << evaluationCount << "," << evaluationNs / 1e6 << ","
                         << evaluationNs / 1000.0 / evaluationCount << "\n"
-                        << "evaluation_checksum," << evaluationChecksum << ",\n";
+                        << "evaluation_checksum," << evaluationChecksum << ",\n"
+                        << "array_analysis," << arrayFormulaCount << "," << arrayNs / 1e6 << ","
+                        << arrayNs / 1000.0 / arrayFormulaCount << "\n"
+                        << "array_references," << arrayReferenceCount << ",\n";
     return 0;
 }

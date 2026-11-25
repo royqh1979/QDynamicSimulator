@@ -196,7 +196,46 @@ EvaluationResult evaluateFormula(const FormulaNode *node, const EvaluationContex
 
 随机数、延迟、平滑、预测、测试输入、INIT/PREVIOUS/SELF、Lookup、命名模型、数组函数、下标和转置仍返回明确的未支持错误。它们需要随机状态、历史状态、图形函数或容器语义，不在本阶段伪造实现。后续仿真运行器复用 EvaluationContext 提供时间和变量存储，不在 Evaluator 内隐藏全局状态。
 
-## 9. 测试与性能
+## 9. 数组模型、语法与分析
+
+数组阶段先建立权威模型和持久化，再实现数组值求值；本阶段不把下标、通配或转置伪装成标量运算。
+
+### 9.1 维度与数组变量
+
+Document 拥有文档级 `Dimension` 值对象。维度具有 displayName、全局唯一 nameKey 和有序 `DimensionElement` 列表；numbered dimension 的元素保存 1 起始的显示序号和空 nameKey，named dimension 保存唯一的元素 displayName/nameKey。维度不是 ModelElement，不分配 EntityId，也不生成画布 Item。
+
+维度通过统一 `m_dimensionIndex` 查找，与变量名称相互排斥；不同维度可以复用元素名，同一维度内不可重名。数组 ModelElement 保存有序维度 nameKey，允许同一维度重复出现以支持后续转置。维度一旦定义暂不提供删除或重命名，避免提前引入引用迁移复杂度。
+
+```cpp
+struct ArrayElementEquation {
+    std::vector<std::size_t> indices; // 每个维度的零基下标
+    std::string equation;
+};
+
+// ModelElement 新增：
+std::vector<std::string> dimensions;
+std::vector<ArrayElementEquation> elementEquations;
+```
+
+Apply-to-All 数组只使用 `equation`；non-Apply-to-All 数组只使用 `elementEquations`。下标按维度顺序保存零基整数，不保存显示名称，因此维度元素重命名不会使持久下标失效。编辑过程允许逐元素方程暂不完整，Validation 报告缺失/重复；XMILE 导入要求完整覆盖。`setEquation()` 与逐元素方程互斥，修改维度会清空旧逐元素方程。Capture/Apply/Restore 和重命名公式引用更新同时覆盖两类方程。
+
+### 9.2 下标 AST
+
+新增 `WildcardNode`、`RangeNode` 和 `DimensionPositionNode`，不把 `*`、`:`、`@n` 编码成伪函数或特殊 Reference。SubscriptNode 的每个 index 可以是普通表达式或以上节点；Range 两端仍是表达式。Lexer 增加 `:` 和 `@`，Parser 只在下标位置接受通配、区间和维度位置，其它位置继续报语法错误。已有 `Location.Boston` 保留为带点的 ReferenceNode nameKey。
+
+### 9.3 符号与依赖分析
+
+Resolver 依次区分模型变量、维度、下标上下文中对应维度的元素，以及 `Dimension.Element` 限定元素。维度/元素引用不生成 EntityId 依赖，模型变量引用继续生成依赖。Wildcard 和 DimensionPosition 不生成引用，Range 递归解析两端。
+
+`ElementAnalysis` 增加带零基下标的逐元素 FormulaAnalysis；元素级 `references` 是所有方程引用的并集，结构使用检查覆盖全部公式。DependencyGraph 仍是变量级图，不能精确表达不同数组元素之间的执行顺序。本阶段遇到含数组变量的候选环时不报告 `algebraic-cycle`，避免把 `A[Dim-1]` 等合法递推误报为自环；元素级依赖与执行排序在数组求值阶段单独设计，不声称变量级图可完成数组调度。
+
+数组函数仍只检查签名；下标、通配、区间、维度位置和转置的求值继续返回明确未支持错误，待下一阶段引入带维度信息的 ArrayValue 后统一实现。部分 Vensim 语料在 eqn 中使用逗号数组初始化列表，该厂商扩展本阶段保留原文并给出语法诊断，归入后续兼容方言工作，不误标为 XMILE 标准表达式。
+
+### 9.4 持久化
+
+QDS 在 model 前保存完整维度定义，每个变量保存维度引用及零基加一的逐元素下标。XMILE 使用标准 `<dimensions>/<dim>/<elem>`，numbered dimension 使用 size；变量逐元素方程使用 `<element subscript="..."><eqn>...`。导出 Apply-to-All 与 non-Apply-to-All 时分别写总体 eqn 或 element，不复制平行表示。数组下标中的命名元素按 XMILE 标识符规则转义。
+
+## 10. 测试与性能
 
 ### 单元测试
 
@@ -205,6 +244,7 @@ EvaluationResult evaluateFormula(const FormulaNode *node, const EvaluationContex
 - IF THEN ELSE、嵌套调用、空方程、非法输入及 SourceSpan。
 - 引用收集、结构使用、公式引用使用、依赖环、Stock/Flow 不误判。
 - 已解析变量读取、实数与 0/1 逻辑值、负数 MOD、时间常量、数学函数、条件短路、Inf/NaN、变量缺失和未支持语义。
+- numbered/named 维度、名称冲突、下标范围与重复检查、Wildcard/Range/@ AST、维度元素解析、逐元素依赖、Capture/Restore 及 QDS/XMILE 往返。
 - 现有 SIR、中文名称、重名检查及整个 Validation UI 回归。
 - 修改解析器时开启 `QDS_ENABLE_XMILE_CORPUS_TESTS`，验证全部 SDXorg XMILE 文件；不支持结构明确分类，不静默跳过。
 
@@ -214,12 +254,13 @@ EvaluationResult evaluateFormula(const FormulaNode *node, const EvaluationContex
 
 首个基线不预设未经验证的性能指标；后续优化必须比较同环境结果，不提前引入缓存、字符串池或派生索引。
 
-## 10. 分阶段实施
+## 11. 分阶段实施
 
 1. **标量 AST**：Lexer、Pratt Parser、SourceSpan、基础节点和错误恢复，附完整测试和 profile。
 2. **符号与依赖分析**：函数注册表、nameKey 解析、EquationDependency/StructuralUse、替换现有 validateDocument。
 3. **求值准备**：复用 AST 和函数注册表实现标量求值、TIME/常量/基本运算及确定性测试。
-4. **数组与高级语义**：Subscript、通配、转置、容器和 Apply-to-All，先补模型表示再实现求值。
-5. **宏与兼容方言**：命名模型、厂商命名空间和 Vensim 差异，逐项引用权威资料，不凭经验补语法。
+4. **数组模型与分析**：Dimension、Apply-to-All/逐元素方程、Subscript、通配、区间、@ AST、符号依赖和 QDS/XMILE 持久化。
+5. **数组与高级求值**：带维度信息的 ArrayValue、下标/切片、转置、Apply-to-All 广播、数组函数及元素级执行排序。
+6. **宏与兼容方言**：命名模型、厂商命名空间和 Vensim 差异，逐项引用权威资料，不凭经验补语法。
 
 每个阶段独立完成功能实现、单元测试、profile、Release 后 Debug 全量回归和审核，不把后续求值或数组工作提前混入首阶段。

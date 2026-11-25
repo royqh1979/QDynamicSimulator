@@ -34,6 +34,7 @@ private slots:
         QStringList invalidFiles;
         QStringList unsupportedFiles;
         int corpusFormulaCount = 0;
+        int invalidArrayModels = 0;
         for (const QString &path : files) {
             QFile file(path);
             QVERIFY(file.open(QIODevice::ReadOnly));
@@ -58,6 +59,11 @@ private slots:
                 continue;
             }
             if (!imported && error.contains("Invalid XMILE XML")) {
+                invalidFiles.append(path);
+                continue;
+            }
+            if (!imported && error == QStringLiteral("An array element is invalid: mixed assembly")) {
+                ++invalidArrayModels;
                 invalidFiles.append(path);
                 continue;
             }
@@ -103,17 +109,22 @@ private slots:
                 }
                 failures.append(path + ": isolated element " + QString::number(element.id()));
             }
-            for (const ModelElement &element : document.model().elements()) {
-                if (element.equation.empty())
-                    continue;
+            const auto checkFormula = [&corpusFormulaCount](const std::string &equation) {
+                if (equation.empty())
+                    return;
                 ++corpusFormulaCount;
-                FormulaAnalysis analysis = analyzeFormula(element.equation);
+                FormulaAnalysis analysis = analyzeFormula(equation);
                 if (analysis.ast)
                     QVERIFY(formulaNodeCount(analysis.ast.get()) > 0);
                 for (const FormulaIssue &issue : analysis.issues) {
                     QVERIFY(issue.span.begin <= issue.span.end);
-                    QVERIFY(issue.span.end <= element.equation.size());
+                    QVERIFY(issue.span.end <= equation.size());
                 }
+            };
+            for (const ModelElement &element : document.model().elements()) {
+                checkFormula(element.equation);
+                for (const ArrayElementEquation &entry : element.elementEquations)
+                    checkFormula(entry.equation);
             }
             for (const auto &entry : document.diagram().routes()) {
                 const auto &points = entry.second.controlPoints;
@@ -133,6 +144,7 @@ private slots:
         if (!unsupportedFiles.isEmpty())
             qInfo("Unsupported model structures rejected without partial import: %s", qPrintable(unsupportedFiles.join(", ")));
         QVERIFY(corpusFormulaCount > 0);
+        QCOMPARE(invalidArrayModels, 1);
         QVERIFY2(failures.isEmpty(), qPrintable(failures.join('\n')));
     }
 };

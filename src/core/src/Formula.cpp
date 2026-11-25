@@ -1,5 +1,6 @@
 #include <qds/core/Formula.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <limits>
@@ -37,7 +38,9 @@ enum class TokenType {
     Then,
     Else,
     Apostrophe,
-    Dot
+    Dot,
+    Colon,
+    At
 };
 
 struct Token {
@@ -115,6 +118,8 @@ public:
         case '=': return simple(TokenType::Equal);
         case '\'': return simple(TokenType::Apostrophe);
         case '.': return simple(TokenType::Dot);
+        case ':': return simple(TokenType::Colon);
+        case '@': return simple(TokenType::At);
         case '<':
             if (m_position < m_input.size() && m_input[m_position] == '=') {
                 ++m_position;
@@ -346,7 +351,7 @@ private:
             std::vector<std::unique_ptr<FormulaNode>> indices;
             if (m_current.type != TokenType::RightBracket) {
                 while (true) {
-                    auto index = expression(0);
+                    auto index = subscriptExpression();
                     if (!index)
                         break;
                     indices.push_back(std::move(index));
@@ -363,6 +368,40 @@ private:
                 SourceSpan {target->span.begin, m_current.span.begin});
         }
         return target;
+    }
+
+    std::unique_ptr<FormulaNode> subscriptExpression()
+    {
+        if (m_current.type == TokenType::Star) {
+            const Token wildcard = consume();
+            return std::make_unique<WildcardNode>(wildcard.span);
+        }
+        if (m_current.type == TokenType::At) {
+            const Token at = consume();
+            if (m_current.type != TokenType::Number) {
+                fail("Expected dimension position");
+                return nullptr;
+            }
+            const Token number = consume();
+            const bool digits = !number.text.empty()
+                && std::all_of(number.text.begin(), number.text.end(), [](unsigned char c) { return std::isdigit(c); });
+            const unsigned long long position = digits ? std::strtoull(number.text.c_str(), nullptr, 10) : 0;
+            if (position == 0) {
+                fail("Dimension position must be a positive integer");
+                return nullptr;
+            }
+            return std::make_unique<DimensionPositionNode>(static_cast<std::size_t>(position),
+                SourceSpan {at.span.begin, number.span.end});
+        }
+        auto begin = expression(0);
+        if (!begin || m_current.type != TokenType::Colon)
+            return begin;
+        consume();
+        auto end = expression(0);
+        if (!end)
+            return begin;
+        const SourceSpan span {begin->span.begin, end->span.end};
+        return std::make_unique<RangeNode>(std::move(begin), std::move(end), span);
     }
 
     std::unique_ptr<FormulaNode> primary()
@@ -474,6 +513,8 @@ std::size_t formulaNodeCount(const FormulaNode *node)
         count += formulaNodeCount(subscript->target.get());
         for (const auto &index : subscript->indices)
             count += formulaNodeCount(index.get());
+    } else if (const auto *range = dynamic_cast<const RangeNode *>(node)) {
+        count += formulaNodeCount(range->begin.get()) + formulaNodeCount(range->end.get());
     }
     return count;
 }

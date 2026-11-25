@@ -360,6 +360,50 @@ void writeNativeFont(QXmlStreamWriter &writer, const core::FontStyle &font)
         writer.writeAttribute(QStringLiteral("font-size"), QString::number(font.pointSize));
 }
 
+void writeNativeDimensions(QXmlStreamWriter &writer, const core::Document &document)
+{
+    if (document.dimensions().empty())
+        return;
+    writer.writeStartElement(QStringLiteral("dimensions"));
+    for (const core::Dimension &dimension : document.dimensions()) {
+        writer.writeStartElement(QStringLiteral("dim"));
+        writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(dimension.displayName));
+        if (dimension.elements.front().nameKey.empty()) {
+            writer.writeAttribute(QStringLiteral("size"), QString::number(dimension.elements.size()));
+        } else {
+            for (const core::DimensionElement &element : dimension.elements) {
+                writer.writeStartElement(QStringLiteral("elem"));
+                writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(element.displayName));
+                writer.writeEndElement();
+            }
+        }
+        writer.writeEndElement();
+    }
+    writer.writeEndElement();
+}
+
+void writeNativeArrayDefinition(QXmlStreamWriter &writer, const core::Document &document, const core::ModelElement &element)
+{
+    if (element.dimensions.empty())
+        return;
+    writer.writeStartElement(QStringLiteral("dimensions"));
+    for (const std::string &name : element.dimensions) {
+        writer.writeStartElement(QStringLiteral("dim"));
+        writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(document.findDimension(name)->displayName));
+        writer.writeEndElement();
+    }
+    writer.writeEndElement();
+    for (const core::ArrayElementEquation &entry : element.elementEquations) {
+        writer.writeStartElement(QStringLiteral("element"));
+        QStringList indices;
+        for (std::size_t index : entry.indices)
+            indices.append(QString::number(index + 1));
+        writer.writeAttribute(QStringLiteral("subscript"), indices.join(','));
+        writer.writeTextElement(QStringLiteral("eqn"), QString::fromStdString(entry.equation));
+        writer.writeEndElement();
+    }
+}
+
 QByteArray writeNativeXml(const core::Document &document)
 {
     QByteArray output;
@@ -368,6 +412,7 @@ QByteArray writeNativeXml(const core::Document &document)
     writer.writeStartDocument();
     writer.writeStartElement(QStringLiteral("qds-document"));
     writer.writeAttribute(QStringLiteral("version"), QStringLiteral("1"));
+    writeNativeDimensions(writer, document);
     writer.writeStartElement(QStringLiteral("model"));
     for (const core::ModelElement &element : document.model().elements()) {
         writer.writeStartElement(nativeKindTag(element.kind()));
@@ -383,7 +428,9 @@ QByteArray writeNativeXml(const core::Document &document)
             writer.writeAttribute(QStringLiteral("to"), QString::number(flow.endpoints.to));
             writeNativeRoute(writer, document.diagram().route(element.id()));
         }
-        writer.writeTextElement(QStringLiteral("eqn"), QString::fromStdString(element.equation));
+        writeNativeArrayDefinition(writer, document, element);
+        if (element.elementEquations.empty())
+            writer.writeTextElement(QStringLiteral("eqn"), QString::fromStdString(element.equation));
         if (!element.unit.empty())
             writer.writeTextElement(QStringLiteral("units"), QString::fromStdString(element.unit));
         if (!element.comment.empty())
@@ -434,6 +481,85 @@ struct NativeRecord {
     quint64 uid = 0;
     core::ElementData data;
 };
+
+bool parseNativeDimensions(QXmlStreamReader &reader, core::Document &document)
+{
+    while (reader.readNext() != QXmlStreamReader::Invalid) {
+        if (reader.isEndElement() && reader.name() == QStringLiteral("dimensions"))
+            return true;
+        if (!reader.isStartElement() || reader.name() != QStringLiteral("dim")) {
+            continue;
+        }
+        const QString name = reader.attributes().value(QStringLiteral("name")).toString();
+        bool sizeOk = false;
+        const int size = reader.attributes().value(QStringLiteral("size")).toInt(&sizeOk);
+        QStringList elements;
+        bool invalid = false;
+        while (reader.readNext() != QXmlStreamReader::Invalid) {
+            if (reader.isEndElement() && reader.name() == QStringLiteral("dim"))
+                break;
+            if (reader.isStartElement() && reader.name() == QStringLiteral("elem")) {
+                elements.append(reader.attributes().value(QStringLiteral("name")).toString());
+                reader.skipCurrentElement();
+            }
+        }
+        if (elements.isEmpty()) {
+            if (sizeOk && size > 0)
+                invalid = !document.defineDimension(name.toStdString(), static_cast<std::size_t>(size));
+            else
+                invalid = true;
+        } else {
+            std::vector<std::string> names;
+            for (const QString &element : elements)
+                names.push_back(element.toStdString());
+            invalid = sizeOk || !document.defineDimension(name.toStdString(), names);
+        }
+        if (invalid)
+            return false;
+    }
+    return false;
+}
+
+bool parseNativeVariableDimensions(QXmlStreamReader &reader, std::vector<std::string> &dimensions)
+{
+    while (reader.readNext() != QXmlStreamReader::Invalid) {
+        if (reader.isEndElement() && reader.name() == QStringLiteral("dimensions"))
+            return !dimensions.empty();
+        if (reader.isStartElement() && reader.name() == QStringLiteral("dim")) {
+            dimensions.push_back(reader.attributes().value(QStringLiteral("name")).toString().toStdString());
+            reader.skipCurrentElement();
+        }
+    }
+    return false;
+}
+
+bool parseNativeArrayElement(QXmlStreamReader &reader, core::ArrayElementEquation &entry)
+{
+    const QStringList indices = reader.attributes().value(QStringLiteral("subscript")).toString().split(',');
+    if (indices.isEmpty())
+        return false;
+    for (const QString &text : indices) {
+        bool ok = false;
+        const int index = text.toInt(&ok);
+        if (!ok || index <= 0)
+            return false;
+        entry.indices.push_back(static_cast<std::size_t>(index - 1));
+    }
+    bool foundEquation = false;
+    while (reader.readNext() != QXmlStreamReader::Invalid) {
+        if (reader.isEndElement() && reader.name() == QStringLiteral("element"))
+            return foundEquation;
+        if (reader.isStartElement() && reader.name() == QStringLiteral("eqn")) {
+            if (foundEquation)
+                return false;
+            entry.equation = reader.readElementText().toStdString();
+            foundEquation = true;
+        } else if (reader.isStartElement()) {
+            reader.skipCurrentElement();
+        }
+    }
+    return false;
+}
 
 bool parseNativeElement(QXmlStreamReader &reader, NativeRecord &record)
 {
@@ -487,7 +613,15 @@ bool parseNativeElement(QXmlStreamReader &reader, NativeRecord &record)
         const QString child = reader.name().toString();
         if (child == QStringLiteral("eqn"))
             record.data.equation = reader.readElementText().toStdString();
-        else if (child == QStringLiteral("units"))
+        else if (child == QStringLiteral("dimensions")) {
+            if (!parseNativeVariableDimensions(reader, record.data.dimensions))
+                return false;
+        } else if (child == QStringLiteral("element")) {
+            core::ArrayElementEquation entry;
+            if (!parseNativeArrayElement(reader, entry))
+                return false;
+            record.data.elementEquations.push_back(std::move(entry));
+        } else if (child == QStringLiteral("units"))
             record.data.unit = reader.readElementText().toStdString();
         else if (child == QStringLiteral("doc"))
             record.data.comment = reader.readElementText().toStdString();
@@ -509,6 +643,7 @@ bool parseNativeElement(QXmlStreamReader &reader, NativeRecord &record)
 bool parseNativeXml(const QByteArray &xml, core::Document &document, QString *errorMessage)
 {
     QXmlStreamReader reader(xml);
+    core::Document parsed;
     core::Workspace workspace;
     std::vector<NativeRecord> records;
     std::unordered_set<quint64> uniqueUids;
@@ -523,6 +658,13 @@ bool parseNativeXml(const QByteArray &xml, core::Document &document, QString *er
         }
         if (reader.name() == QStringLiteral("model") || reader.name() == QStringLiteral("diagram"))
             continue;
+        if (reader.name() == QStringLiteral("dimensions")) {
+            if (!parseNativeDimensions(reader, parsed)) {
+                setError(errorMessage, translate("The QDS dimensions are invalid."));
+                return false;
+            }
+            continue;
+        }
         if (reader.name() == QStringLiteral("workspace")) {
             const QXmlStreamAttributes attributes = reader.attributes();
             bool zoomOk = true;
@@ -576,7 +718,6 @@ bool parseNativeXml(const QByteArray &xml, core::Document &document, QString *er
         return false;
     }
 
-    core::Document parsed;
     UidMap uids;
     core::EntityId nextId = 1;
     for (const NativeRecord &record : records) {
