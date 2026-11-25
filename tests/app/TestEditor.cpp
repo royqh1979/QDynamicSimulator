@@ -63,18 +63,24 @@ public:
     using EntityPalette::mimeData;
 };
 
-QLineEdit *inlineNameEditor(QGraphicsScene &scene)
+QGraphicsProxyWidget *inlineNameEditorProxy(QGraphicsScene &scene)
 {
     for (QGraphicsItem *item : scene.items()) {
         if (auto *proxy = qgraphicsitem_cast<QGraphicsProxyWidget *>(item)) {
             if (auto *editor = qobject_cast<QLineEdit *>(proxy->widget()); editor && editor->objectName() == QStringLiteral("inlineNameEditor"))
-                return editor;
+                return proxy;
         }
     }
     return nullptr;
 }
 
-int itemColorCount(const QImage &image, DiagramView &view, const DiagramItem *item, const QColor &color)
+QLineEdit *inlineNameEditor(QGraphicsScene &scene)
+{
+    QGraphicsProxyWidget *proxy = inlineNameEditorProxy(scene);
+    return proxy ? qobject_cast<QLineEdit *>(proxy->widget()) : nullptr;
+}
+
+int itemColorCount(const QImage &image, DiagramView &view, const QGraphicsItem *item, const QColor &color)
 {
     const QRect area = view.mapFromScene(item->sceneBoundingRect()).boundingRect().intersected(image.rect());
     int count = 0;
@@ -199,6 +205,13 @@ void TestEditor::inlineRenameUndoRedo()
     QLineEdit *editor = inlineNameEditor(scene);
     QVERIFY(editor);
     QCOMPARE(editor->text(), QStringLiteral("Stock1"));
+    QVERIFY(editor->styleSheet().contains(QStringLiteral("border: 2px solid")));
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        QTest::qWait(20);
+        QGraphicsProxyWidget *proxy = inlineNameEditorProxy(scene);
+        QVERIFY(proxy);
+        QVERIFY(itemColorCount(view.grab().toImage(), view, proxy, diagram_palette::SelectionColor) > 0);
+    }
     editor->setText(QStringLiteral("Population"));
     QTest::keyClick(editor, Qt::Key_Return);
     QVERIFY(!inlineNameEditor(scene));

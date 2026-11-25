@@ -906,11 +906,13 @@ void DiagramScene::beginInlineRename(DiagramItem *item)
     if (!model || item->labelRect().isEmpty())
         return;
     finishInlineRename(true);
-    const QRectF editorRect = item->mapToScene(item->labelRect()).boundingRect();
+    const QRectF editorRect = item->mapToScene(item->labelRect()).boundingRect().adjusted(-2.0, -2.0, 2.0, 2.0);
     auto *proxy = new QGraphicsProxyWidget;
     auto *editor = new QLineEdit;
     editor->setObjectName(QStringLiteral("inlineNameEditor"));
     editor->setFont(item->labelFont());
+    editor->setStyleSheet(QStringLiteral("QLineEdit { border: 2px solid %1; border-radius: 4px; padding: 2px 4px; background: %2; color: %3; }")
+        .arg(diagram_palette::SelectionColor.name(), diagram_palette::EntityFillColor.name(), diagram_palette::EntityTextColor.name()));
     editor->setText(QString::fromStdString(model->displayName));
     editor->resize(editorRect.size().toSize());
     proxy->setWidget(editor);
