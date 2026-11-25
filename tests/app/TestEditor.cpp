@@ -15,6 +15,7 @@
 
 #include <QDropEvent>
 #include <QFile>
+#include <QGraphicsProxyWidget>
 #include <QGraphicsSceneContextMenuEvent>
 #include <QGraphicsSceneMouseEvent>
 #include <QLabel>
@@ -40,6 +41,17 @@ public:
     using EntityPalette::mimeData;
 };
 
+QLineEdit *inlineNameEditor(QGraphicsScene &scene)
+{
+    for (QGraphicsItem *item : scene.items()) {
+        if (auto *proxy = qgraphicsitem_cast<QGraphicsProxyWidget *>(item)) {
+            if (auto *editor = qobject_cast<QLineEdit *>(proxy->widget()); editor && editor->objectName() == QStringLiteral("inlineNameEditor"))
+                return editor;
+        }
+    }
+    return nullptr;
+}
+
 int itemColorCount(const QImage &image, DiagramView &view, const DiagramItem *item, const QColor &color)
 {
     const QRect area = view.mapFromScene(item->sceneBoundingRect()).boundingRect().intersected(image.rect());
@@ -58,6 +70,7 @@ class TestEditor : public QObject
 private slots:
     void createUndoRedo();
     void renameAndEquationUndo();
+    void inlineRenameUndoRedo();
     void commentContentEditing();
     void propertyPanelWidget();
     void moveUndoRedo();
@@ -143,6 +156,62 @@ void TestEditor::renameAndEquationUndo()
     QVERIFY(!controller.renameElement(id, QString()));
 }
 
+void TestEditor::inlineRenameUndoRedo()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    controller.createVariable(ElementKind::Auxiliary, QPointF(0.0, 200.0));
+    const EntityId cloud = controller.createCloud(QPointF(400.0, 0.0));
+    const EntityId flow = controller.createFlow(stock, cloud);
+    DiagramView view(&scene);
+    view.resize(800, 600);
+    view.centerOn(QPointF(200.0, 0.0));
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+    QTest::mouseDClick(view.viewport(), Qt::LeftButton, Qt::NoModifier, view.mapFromScene(scene.item(stock)->center()));
+    QLineEdit *editor = inlineNameEditor(scene);
+    QVERIFY(editor);
+    QCOMPARE(editor->text(), QStringLiteral("Stock1"));
+    editor->setText(QStringLiteral("Population"));
+    QTest::keyClick(editor, Qt::Key_Return);
+    QVERIFY(!inlineNameEditor(scene));
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName, std::string("Population"));
+    QCOMPARE(dynamic_cast<VariableItem *>(scene.item(stock))->name(), QStringLiteral("Population"));
+    controller.undoStack()->undo();
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName, std::string("Stock1"));
+    controller.undoStack()->redo();
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName, std::string("Population"));
+
+    QTest::mouseDClick(view.viewport(), Qt::LeftButton, Qt::NoModifier, view.mapFromScene(scene.item(stock)->center()));
+    editor = inlineNameEditor(scene);
+    QVERIFY(editor);
+    const int commands = controller.undoStack()->count();
+    editor->setText(QStringLiteral("Auxiliary1"));
+    QTest::keyClick(editor, Qt::Key_Return);
+    QCOMPARE(inlineNameEditor(scene), editor);
+    QCOMPARE(controller.undoStack()->count(), commands);
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName, std::string("Population"));
+    editor->setText(QStringLiteral("Cancelled"));
+    QTest::keyClick(editor, Qt::Key_Escape);
+    QVERIFY(!inlineNameEditor(scene));
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName, std::string("Population"));
+
+    QTest::mouseDClick(view.viewport(), Qt::LeftButton, Qt::NoModifier, view.mapFromScene(scene.item(flow)->center()));
+    editor = inlineNameEditor(scene);
+    QVERIFY(editor);
+    QCOMPARE(editor->text(), QStringLiteral("Flow1"));
+    editor->setText(QStringLiteral("Infection"));
+    QTest::keyClick(editor, Qt::Key_Return);
+    QVERIFY(!inlineNameEditor(scene));
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(flow))->displayName, std::string("Infection"));
+    controller.undoStack()->undo();
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(flow))->displayName, std::string("Flow1"));
+    controller.undoStack()->redo();
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(flow))->displayName, std::string("Infection"));
+}
+
 void TestEditor::commentContentEditing()
 {
     DocumentController controller;
@@ -196,6 +265,23 @@ void TestEditor::propertyPanelWidget()
     QCOMPARE(model->displayName, std::string("Population"));
     QCOMPARE(model->equation, std::string("100"));
     QCOMPARE(model->unit, std::string("people"));
+    QCOMPARE(model->comment, std::string("Population stock"));
+    QCOMPARE(controller.undoStack()->count(), 5);
+    controller.undoStack()->undo();
+    QCOMPARE(model->comment, std::string());
+    controller.undoStack()->undo();
+    QCOMPARE(model->unit, std::string());
+    controller.undoStack()->undo();
+    QCOMPARE(model->equation, std::string());
+    controller.undoStack()->undo();
+    QCOMPARE(model->displayName, std::string("Stock1"));
+    controller.undoStack()->redo();
+    QCOMPARE(model->displayName, std::string("Population"));
+    controller.undoStack()->redo();
+    QCOMPARE(model->equation, std::string("100"));
+    controller.undoStack()->redo();
+    QCOMPARE(model->unit, std::string("people"));
+    controller.undoStack()->redo();
     QCOMPARE(model->comment, std::string("Population stock"));
     scene.clearSelection();
     QVERIFY(!name->isEnabled() && !equation->isEnabled() && !unit->isEnabled() && !comment->isEnabled());

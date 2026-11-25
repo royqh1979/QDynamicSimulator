@@ -10,7 +10,10 @@
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QGraphicsLineItem>
+#include <QGraphicsProxyWidget>
 #include <QGraphicsSceneMouseEvent>
+#include <QKeyEvent>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QTemporaryDir>
@@ -19,6 +22,17 @@
 #include <vector>
 
 using namespace qds::core;
+
+QLineEdit *inlineNameEditor(QGraphicsScene &scene)
+{
+    for (QGraphicsItem *item : scene.items()) {
+        if (auto *proxy = qgraphicsitem_cast<QGraphicsProxyWidget *>(item)) {
+            if (auto *editor = qobject_cast<QLineEdit *>(proxy->widget()); editor && editor->objectName() == QStringLiteral("inlineNameEditor"))
+                return editor;
+        }
+    }
+    return nullptr;
+}
 
 std::size_t elementCount(const Document &document)
 {
@@ -138,6 +152,39 @@ int main(int argc, char **argv)
         }
     }
     const qint64 contextMenuNs = timer.nsecsElapsed();
+
+    DocumentController renameController;
+    DiagramScene renameScene(&renameController);
+    const EntityId renameStock = renameController.createVariable(ElementKind::Stock, QPointF());
+    DiagramView renameView(&renameScene);
+    renameView.resize(640, 480);
+    renameView.centerOn(QPointF());
+    qint64 inlineRenameNs = 0;
+    int inlineRenameCount = 0;
+    for (int index = 0; index < count; ++index) {
+        const QPoint point = renameView.mapFromScene(renameScene.item(renameStock)->center());
+        timer.restart();
+        QMouseEvent press(QEvent::MouseButtonPress, point, renameView.viewport()->mapToGlobal(point), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(renameView.viewport(), &press);
+        QMouseEvent firstRelease(QEvent::MouseButtonRelease, point, renameView.viewport()->mapToGlobal(point), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(renameView.viewport(), &firstRelease);
+        QMouseEvent doubleClick(QEvent::MouseButtonDblClick, point, renameView.viewport()->mapToGlobal(point), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(renameView.viewport(), &doubleClick);
+        QMouseEvent secondRelease(QEvent::MouseButtonRelease, point, renameView.viewport()->mapToGlobal(point), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(renameView.viewport(), &secondRelease);
+        QLineEdit *editor = inlineNameEditor(renameScene);
+        if (!editor)
+            return 22;
+        editor->setText(QStringLiteral("Population"));
+        QKeyEvent enterPress(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+        QApplication::sendEvent(editor, &enterPress);
+        inlineRenameNs += timer.nsecsElapsed();
+        const auto *model = dynamic_cast<const ModelElement *>(renameController.document().find(renameStock));
+        if (!model || model->displayName != "Population" || inlineNameEditor(renameScene))
+            return 23;
+        ++inlineRenameCount;
+        renameController.undoStack()->undo();
+    }
 
     DocumentController guideController;
     DiagramScene guideScene(&guideController);
@@ -586,6 +633,7 @@ int main(int argc, char **argv)
                         << "editor_search_100," << count * 100 << "," << searchNs / 1e6 << "," << searchNs / 1000.0 / (count * 100) << "\n"
                         << "rubber_preview,1000," << previewNs / 1e6 << "," << previewNs / 1000.0 / 1000 << "\n"
                         << "connection_context_menu,1000," << contextMenuNs / 1e6 << "," << contextMenuNs / 1000.0 / 1000 << "\n"
+                        << "inline_rename," << inlineRenameCount << "," << inlineRenameNs / 1e6 << "," << inlineRenameNs / 1000.0 / count << "\n"
                         << "connector_line_style,1000," << connectorStyleNs / 1e6 << "," << connectorStyleNs / 1000.0 / 1000 << "\n"
                         << "orthogonal_auto_route,1000," << automaticRouteNs / 1e6 << "," << automaticRouteNs / 1000.0 / 1000 << "\n"
                         << "bezier_control_guide_updates,1000," << bezierGuideNs / 1e6 << "," << bezierGuideNs / 1000.0 / 1000 << "\n"
@@ -612,7 +660,7 @@ int main(int argc, char **argv)
                         << "xmile_sir_import,100," << sirImportNs / 1e6 << "," << sirImportNs / 1000.0 / 100 << "\n"
                         << "sir_dependent_route_moves,1000," << sirDependentMoveNs / 1e6 << "," << sirDependentMoveNs / 1000.0 / 1000 << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
-        && matches > 0 && guideCount == 2000 && automaticGuideCount == 2000 && automaticGroupManual
+        && inlineRenameCount == count && matches > 0 && guideCount == 2000 && automaticGuideCount == 2000 && automaticGroupManual
         && connectorDragGuideCount == 2000 && connectorDragStateValid
         && endpointPreviewGuideCount == 2000 && endpointPreviewHandlesValid
         && flowEndpointPreviewCount == count

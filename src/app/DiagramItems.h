@@ -17,6 +17,7 @@ public:
 
     virtual qds::core::EntityId id() const = 0;
     virtual QPointF center() const { return pos(); }
+    virtual QRectF labelRect() const { return {}; }
     virtual QPointF boundaryPointToward(const QPointF &target) const;
     void setEndpointTargetHighlighted(bool highlighted);
     bool isEndpointTargetHighlighted() const { return m_endpointTargetHighlighted; }
@@ -49,6 +50,7 @@ public:
     qds::core::EntityId id() const override { return m_id; }
     QString name() const { return m_name; }
     qds::core::ElementKind elementKind() const { return m_kind; }
+    QRectF labelRect() const override;
     QPointF boundaryPointToward(const QPointF &target) const override;
     void refresh(const qds::core::ModelElement &variable, const QPointF &position);
 
@@ -156,7 +158,7 @@ public:
 
     int type() const override;
     QRectF boundingRect() const override;
-    QRectF labelRect() const;
+    QRectF labelRect() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     qds::core::EntityId id() const override { return m_id; }
     QPointF center() const override;

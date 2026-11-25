@@ -12,6 +12,7 @@
 
 class DocumentController;
 class QGraphicsLineItem;
+class QGraphicsProxyWidget;
 
 class DiagramScene : public QGraphicsScene
 {
@@ -61,6 +62,7 @@ public:
     DiagramItem *item(qds::core::EntityId id) const;
 
 protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
     void mouseMoveEvent(QGraphicsSceneMouseEvent *event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
@@ -82,6 +84,8 @@ private:
     void removeControlPoint(qds::core::EntityId id, int index);
     void updateAutomaticRoute(RoutedItem *item);
     void setEndpointTarget(DiagramItem *target);
+    void beginInlineRename(DiagramItem *item);
+    void finishInlineRename(bool commit);
     void cancelRubberLine();
     void cancelEndpointPreview();
 
@@ -93,6 +97,8 @@ private:
     QGraphicsLineItem *m_rubberLine = nullptr;
     QPointer<RoutedItem> m_endpointPreviewItem;
     QPointer<DiagramItem> m_endpointTarget;
+    QPointer<QGraphicsProxyWidget> m_inlineNameEditor;
+    qds::core::EntityId m_inlineNameId = 0;
     QList<ControlPointHandle *> m_controlHandles;
     ObstacleIndex m_obstacles;
     OrthogonalRouter m_router;

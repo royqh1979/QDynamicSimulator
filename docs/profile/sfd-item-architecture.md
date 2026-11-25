@@ -134,3 +134,13 @@
 | flow_endpoint_preview_dependents | 1000 | 47.1443 | 47.1443 |
 
 回归测试直接收集 `QGraphicsScene::changed`，要求 Flow 预览覆盖依赖 Arrow 的旧/新实际绘制区域，并要求 Connector 跨越原 Stock 释放后覆盖完整预览边界；另比较连续拖动后的画面与强制全量重绘，防止只验证最终模型而遗漏像素残影。
+
+## 内联名称编辑
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`inline_rename` 每轮通过真实 View 双击 Stock、创建 QGraphicsProxyWidget 内联编辑器、输入名称并按 Enter 提交，再于计时外 undo 恢复。计时包含编辑器创建、场景交互、ChangeSet 和 Item 刷新，不包含撤销清理。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| inline_rename | 1000 | 1916.08 | 1916.08 |
+
+回归覆盖 Stock 和 Flow、非法重名、Esc 取消、undo/redo 以及属性面板名称/方程/单位/说明的完整恢复。内联编辑器从 Scene 移除后延迟销毁，避免在 `editingFinished` 事件栈内同步删除发送者。
