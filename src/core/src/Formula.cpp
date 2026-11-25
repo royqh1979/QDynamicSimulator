@@ -226,6 +226,21 @@ public:
         if (m_current.type == TokenType::End)
             return result;
         result.ast = expression(0);
+        if (m_current.type == TokenType::Comma && result.ast) {
+            const std::size_t begin = result.ast->span.begin;
+            std::size_t end = result.ast->span.end;
+            std::vector<std::unique_ptr<FormulaNode>> values;
+            values.push_back(std::move(result.ast));
+            while (m_current.type == TokenType::Comma) {
+                consume();
+                auto value = expression(0);
+                if (!value)
+                    break;
+                end = value->span.end;
+                values.push_back(std::move(value));
+            }
+            result.ast = std::make_unique<ArrayLiteralNode>(std::move(values), SourceSpan {begin, end});
+        }
         if (m_current.type != TokenType::End)
             fail("Unexpected token");
         result.issues = std::move(m_issues);
@@ -515,6 +530,9 @@ std::size_t formulaNodeCount(const FormulaNode *node)
             count += formulaNodeCount(index.get());
     } else if (const auto *range = dynamic_cast<const RangeNode *>(node)) {
         count += formulaNodeCount(range->begin.get()) + formulaNodeCount(range->end.get());
+    } else if (const auto *literal = dynamic_cast<const ArrayLiteralNode *>(node)) {
+        for (const auto &value : literal->values)
+            count += formulaNodeCount(value.get());
     }
     return count;
 }

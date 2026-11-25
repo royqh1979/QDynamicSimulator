@@ -181,6 +181,27 @@ int main(int argc, char **argv)
     const qint64 arrayEvaluationNs = timer.nsecsElapsed();
     if (evaluatedValueCount != static_cast<std::size_t>(count) * 6 || !std::isfinite(arrayChecksum))
         return 14;
+
+    std::vector<FormulaAnalysis> literals;
+    literals.reserve(count);
+    for (int index = 0; index < count; ++index)
+        literals.push_back(analyzeFormula("1, 2, 3, 4, 5, 6"));
+    timer.restart();
+    double literalChecksum = 0.0;
+    std::size_t literalValueCount = 0;
+    for (const FormulaAnalysis &literal : literals) {
+        const EvaluationResult evaluated = evaluateFormula(literal.ast.get(), arrayContext);
+        const ArrayValue *value = evaluated.value ? std::get_if<ArrayValue>(&*evaluated.value) : nullptr;
+        if (!value) {
+            QTextStream(stderr) << "Array literal evaluation failed: " << QString::fromStdString(evaluated.error) << "\n";
+            return 15;
+        }
+        literalValueCount += value->values.size();
+        literalChecksum = std::accumulate(value->values.begin(), value->values.end(), literalChecksum);
+    }
+    const qint64 literalNs = timer.nsecsElapsed();
+    if (literalValueCount != evaluatedValueCount || !std::isfinite(literalChecksum))
+        return 16;
     QTextStream(stdout) << "operation,count,total_ms,per_formula_us\n"
                         << "formula_analyze," << count << "," << elapsedNs / 1e6 << ","
                         << elapsedNs / 1000.0 / count << "\n"
@@ -198,6 +219,10 @@ int main(int argc, char **argv)
                         << "array_evaluate," << count << "," << arrayEvaluationNs / 1e6 << ","
                         << arrayEvaluationNs / 1000.0 / count << "\n"
                         << "array_values," << evaluatedValueCount << ",\n"
-                        << "array_evaluation_checksum," << arrayChecksum << ",\n";
+                        << "array_evaluation_checksum," << arrayChecksum << ",\n"
+                        << "array_literal_evaluate," << count << "," << literalNs / 1e6 << ","
+                        << literalNs / 1000.0 / count << "\n"
+                        << "array_literal_values," << literalValueCount << ",\n"
+                        << "array_literal_checksum," << literalChecksum << ",\n";
     return 0;
 }

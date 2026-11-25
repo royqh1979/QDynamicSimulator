@@ -90,6 +90,14 @@ void TestArrays::arraySyntax()
     QCOMPARE(position->position, std::size_t(2));
     QCOMPARE(formulaNodeCount(analysis.ast.get()), std::size_t(8));
 
+    const FormulaAnalysis literal = analyzeFormula("1, 2 + 3, 4");
+    QVERIFY2(literal.issues.empty(), "Array literal syntax must parse");
+    const auto *literalNode = dynamic_cast<const ArrayLiteralNode *>(literal.ast.get());
+    QVERIFY(literalNode);
+    QCOMPARE(literalNode->values.size(), std::size_t(3));
+    QCOMPARE(literalNode->span, (SourceSpan {0, 11}));
+    QCOMPARE(formulaNodeCount(literal.ast.get()), std::size_t(6));
+
     const FormulaAnalysis qualified = analyzeFormula("Location.Boston");
     QCOMPARE(dynamic_cast<const ReferenceNode *>(qualified.ast.get())->nameKey, std::string("location.boston"));
     QVERIFY(!analyzeFormula("A[@0]").issues.empty());

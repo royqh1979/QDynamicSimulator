@@ -23,6 +23,7 @@ private slots:
     void transposeAndBroadcast();
     void applyToAllScope();
     void arrayFunctions();
+    void arrayLiterals();
     void conditionsAndErrors();
 
 private:
@@ -159,6 +160,19 @@ void TestArrayEvaluation::arrayFunctions()
     expectScalar(evaluate("RANK(A, 1)"), 2.0);
     expectScalar(evaluate("RANK(A, 1, B)"), 4.0);
     expectScalar(evaluate("RANK(A, 0)"), 0.0);
+}
+
+void TestArrayEvaluation::arrayLiterals()
+{
+    expectArray(evaluate("1, 2, 3, 4, 5, 6"), {"location", "n"}, {3, 2}, {1, 2, 3, 4, 5, 6});
+    expectArray(evaluate("1, 2 + 3, 3, 4, 5, 6"), {"location", "n"}, {3, 2}, {1, 5, 3, 4, 5, 6});
+    context.scope.indices = {2, 1};
+    expectScalar(evaluate("1, 2, 3, 4, 5, 6"), 6.0);
+    context.scope.indices.clear();
+    QVERIFY(!evaluate("1, 2").value);
+    context.scope.dimensions.clear();
+    QVERIFY(!evaluate("1, 2, 3, 4, 5, 6").value);
+    context.scope.dimensions = {"location", "n"};
 }
 
 void TestArrayEvaluation::conditionsAndErrors()

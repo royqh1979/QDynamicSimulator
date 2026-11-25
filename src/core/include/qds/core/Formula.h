@@ -29,7 +29,8 @@ enum class FormulaNodeKind {
     Subscript,
     Wildcard,
     Range,
-    DimensionPosition
+    DimensionPosition,
+    ArrayLiteral
 };
 
 struct FormulaNode {
@@ -167,6 +168,15 @@ struct DimensionPositionNode final : FormulaNode {
     {
     }
     std::size_t position;
+};
+
+struct ArrayLiteralNode final : FormulaNode {
+    ArrayLiteralNode(std::vector<std::unique_ptr<FormulaNode>> items, SourceSpan nodeSpan)
+        : FormulaNode(FormulaNodeKind::ArrayLiteral, nodeSpan)
+        , values(std::move(items))
+    {
+    }
+    std::vector<std::unique_ptr<FormulaNode>> values;
 };
 
 struct FormulaIssue {

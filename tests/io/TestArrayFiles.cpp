@@ -1,4 +1,5 @@
 #include <qds/core/Document.h>
+#include <qds/core/Evaluation.h>
 #include <qds/io/DocumentFile.h>
 #include <qds/io/XmileFile.h>
 
@@ -94,6 +95,16 @@ void TestArrayFiles::realArrayImports()
     QVERIFY(array);
     QCOMPARE(array->dimensions, std::vector<std::string> {"dim1"});
     QCOMPARE(array->equation, std::string("1, 2, 3"));
+    const FormulaAnalysis literal = analyzeFormula(array->equation);
+    QVERIFY(literal.issues.empty());
+    QVERIFY(dynamic_cast<const ArrayLiteralNode *>(literal.ast.get()));
+    EvaluationContext context;
+    context.readDimension = [&apply](const std::string &name) { return apply.findDimension(name); };
+    context.scope.dimensions = {"dim1"};
+    const EvaluationResult evaluated = evaluateFormula(literal.ast.get(), context);
+    const auto *values = evaluated.value ? std::get_if<ArrayValue>(&*evaluated.value) : nullptr;
+    QVERIFY(values);
+    QCOMPARE(values->values, (std::vector<double> {1, 2, 3}));
 
     Document individual;
     QVERIFY2(qds::io::XmileFile::importFile(QStringLiteral(QDS_ARRAY_INDIVIDUAL_XMILE_PATH), individual, &error), qPrintable(error));
