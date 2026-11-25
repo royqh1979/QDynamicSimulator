@@ -3,6 +3,7 @@
 #include <qds/core/Formula.h>
 
 #include <cmath>
+#include <numeric>
 #include <unordered_map>
 
 #include <QElapsedTimer>
@@ -77,9 +78,9 @@ int main(int argc, char **argv)
     EvaluationContext context;
     context.time = 4.5;
     context.dt = 0.25;
-    context.readVariable = [&values](EntityId id) -> std::optional<double> {
+    context.readVariable = [&values](EntityId id) -> std::optional<Value> {
         const auto found = values.find(id);
-        return found == values.end() ? std::nullopt : std::optional<double>(found->second);
+        return found == values.end() ? std::nullopt : std::optional<Value>(found->second);
     };
     timer.restart();
     double evaluationChecksum = 0.0;
@@ -92,7 +93,7 @@ int main(int argc, char **argv)
             QTextStream(stderr) << "Formula evaluation failed: " << QString::fromStdString(evaluated.error) << "\n";
             return 7;
         }
-        evaluationChecksum += *evaluated.value;
+        evaluationChecksum += *std::get_if<double>(&*evaluated.value);
         ++evaluationCount;
     }
     const qint64 evaluationNs = timer.nsecsElapsed();
@@ -132,6 +133,54 @@ int main(int argc, char **argv)
     if (arrayFormulaCount != static_cast<std::size_t>(count) * 6
         || arrayReferenceCount != static_cast<std::size_t>(count))
         return 11;
+
+    Document evaluatedArrays;
+    evaluatedArrays.defineDimension("Location", {"Boston", "Chicago"});
+    evaluatedArrays.defineDimension("N", 3);
+    std::unordered_map<EntityId, Value> arrayValues;
+    std::vector<EntityId> evaluatedArrayIds;
+    for (int index = 0; index < count; ++index) {
+        const EntityId input = evaluatedArrays.createVariable(ElementKind::Auxiliary);
+        const EntityId array = evaluatedArrays.createVariable(ElementKind::Auxiliary);
+        const std::string inputName = "Input" + std::to_string(index);
+        const std::string arrayName = "Array" + std::to_string(index);
+        if (!evaluatedArrays.rename(input, inputName) || !evaluatedArrays.rename(array, arrayName)
+            || !evaluatedArrays.setDimensions(array, {"Location", "N"}))
+            return 12;
+        evaluatedArrays.setEquation(array, inputName + " + " + arrayName + "[Location, N]");
+        arrayValues[input] = 1.0;
+        arrayValues[array] = ArrayValue {{"location", "n"}, {2, 3}, {1, 2, 3, 4, 5, 6}};
+        evaluatedArrayIds.push_back(array);
+    }
+    const ModelAnalysis evaluatedArrayAnalysis = analyzeDocument(evaluatedArrays);
+    std::unordered_map<EntityId, const FormulaNode *> arrayFormulas;
+    for (const ElementAnalysis &entry : evaluatedArrayAnalysis.elements)
+        arrayFormulas[entry.id] = entry.formula.ast.get();
+    EvaluationContext arrayContext;
+    arrayContext.readDimension = [&evaluatedArrays](const std::string &name) {
+        return evaluatedArrays.findDimension(name);
+    };
+    arrayContext.readVariable = [&arrayValues](EntityId id) -> std::optional<Value> {
+        const auto found = arrayValues.find(id);
+        return found == arrayValues.end() ? std::nullopt : std::optional<Value>(found->second);
+    };
+    arrayContext.scope.dimensions = {"location", "n"};
+    timer.restart();
+    double arrayChecksum = 0.0;
+    std::size_t evaluatedValueCount = 0;
+    for (const EntityId id : evaluatedArrayIds) {
+        const EvaluationResult evaluated = evaluateFormula(arrayFormulas.at(id), arrayContext);
+        const ArrayValue *value = evaluated.value ? std::get_if<ArrayValue>(&*evaluated.value) : nullptr;
+        if (!value) {
+            QTextStream(stderr) << "Array evaluation failed: " << QString::fromStdString(evaluated.error) << "\n";
+            return 13;
+        }
+        evaluatedValueCount += value->values.size();
+        arrayChecksum = std::accumulate(value->values.begin(), value->values.end(), arrayChecksum);
+    }
+    const qint64 arrayEvaluationNs = timer.nsecsElapsed();
+    if (evaluatedValueCount != static_cast<std::size_t>(count) * 6 || !std::isfinite(arrayChecksum))
+        return 14;
     QTextStream(stdout) << "operation,count,total_ms,per_formula_us\n"
                         << "formula_analyze," << count << "," << elapsedNs / 1e6 << ","
                         << elapsedNs / 1000.0 / count << "\n"
@@ -145,6 +194,10 @@ int main(int argc, char **argv)
                         << "evaluation_checksum," << evaluationChecksum << ",\n"
                         << "array_analysis," << arrayFormulaCount << "," << arrayNs / 1e6 << ","
                         << arrayNs / 1000.0 / arrayFormulaCount << "\n"
-                        << "array_references," << arrayReferenceCount << ",\n";
+                        << "array_references," << arrayReferenceCount << ",\n"
+                        << "array_evaluate," << count << "," << arrayEvaluationNs / 1e6 << ","
+                        << arrayEvaluationNs / 1000.0 / count << "\n"
+                        << "array_values," << evaluatedValueCount << ",\n"
+                        << "array_evaluation_checksum," << arrayChecksum << ",\n";
     return 0;
 }

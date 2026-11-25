@@ -32,3 +32,10 @@ add_executable(test-arrays
 target_link_libraries(test-arrays PRIVATE QDS::Core Qt5::Test)
 add_test(NAME core-arrays COMMAND test-arrays)
 add_dependencies(all-test-targets test-arrays)
+
+add_executable(test-array-evaluation
+    TestArrayEvaluation.cpp
+)
+target_link_libraries(test-array-evaluation PRIVATE QDS::Core Qt5::Test)
+add_test(NAME core-array-evaluation COMMAND test-array-evaluation)
+add_dependencies(all-test-targets test-array-evaluation)

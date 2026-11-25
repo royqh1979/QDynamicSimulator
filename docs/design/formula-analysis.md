@@ -229,13 +229,62 @@ Resolver 依次区分模型变量、维度、下标上下文中对应维度的�
 
 `ElementAnalysis` 增加带零基下标的逐元素 FormulaAnalysis；元素级 `references` 是所有方程引用的并集，结构使用检查覆盖全部公式。DependencyGraph 仍是变量级图，不能精确表达不同数组元素之间的执行顺序。本阶段遇到含数组变量的候选环时不报告 `algebraic-cycle`，避免把 `A[Dim-1]` 等合法递推误报为自环；元素级依赖与执行排序在数组求值阶段单独设计，不声称变量级图可完成数组调度。
 
-数组函数仍只检查签名；下标、通配、区间、维度位置和转置的求值继续返回明确未支持错误，待下一阶段引入带维度信息的 ArrayValue 后统一实现。部分 Vensim 语料在 eqn 中使用逗号数组初始化列表，该厂商扩展本阶段保留原文并给出语法诊断，归入后续兼容方言工作，不误标为 XMILE 标准表达式。
+数组值与求值见第 10 节。部分 Vensim 语料在 eqn 中使用逗号数组初始化列表，该厂商扩展保留原文并给出语法诊断，归入后续兼容方言工作，不误标为 XMILE 标准表达式。
 
 ### 9.4 持久化
 
 QDS 在 model 前保存完整维度定义，每个变量保存维度引用及零基加一的逐元素下标。XMILE 使用标准 `<dimensions>/<dim>/<elem>`，numbered dimension 使用 size；变量逐元素方程使用 `<element subscript="..."><eqn>...`。导出 Apply-to-All 与 non-Apply-to-All 时分别写总体 eqn 或 element，不复制平行表示。数组下标中的命名元素按 XMILE 标识符规则转义。
 
-## 10. 测试与性能
+## 10. 数组值与求值
+
+### 10.1 统一值与调用上下文
+
+标量和数组共用一种求值结果，不维护数组专用 AST 或平行运算规则：
+
+```cpp
+struct ArrayValue {
+    std::vector<std::string> dimensions; // 有序维度 nameKey
+    std::vector<std::size_t> shape;
+    std::vector<double> values;          // 行主序
+};
+using Value = std::variant<double, ArrayValue>;
+using VariableReader = std::function<std::optional<Value>(EntityId)>;
+using DimensionReader = std::function<const Dimension *(const std::string &)>;
+
+struct EvaluationScope {
+    std::vector<std::string> dimensions; // 当前方程输出维度
+    std::vector<std::size_t> indices;    // 为空表示整体求值，否则为当前元素零基下标
+    EntityId self = 0;
+};
+
+struct EvaluationContext {
+    double time, dt, startTime, stopTime;
+    VariableReader readVariable;
+    DimensionReader readDimension;       // 返回对象仅需在同步调用期间存活
+    EvaluationScope scope;
+};
+using EvaluationResult = std::optional<Value> + error/errorSpan;
+```
+
+ArrayValue 的维度长度等于 shape 长度，元素数等于各维长度乘积，Document/Evaluator 在边界检查这些不变量。调用方拥有 Variable/Dimension 对象，Result 只持有值，不保存指针。标量读取器和现有调用迁移到 Value 后仍走原运算实现。
+
+### 10.2 下标、作用域与切片
+
+普通下标是 1 起始的整数实数，非整数、非有限值或越界按 XMILE 返回 0。命名元素和 `Dimension.Element` 转换为对应位置。不足的下标按尾部通配处理；全部下标为单值时返回 double，含通配/区间时返回保留所选维度的 ArrayValue，数据仍按行主序。
+
+维度名和 `@n` 依赖 EvaluationScope：指定当前元素下标时转为单值；整体求值时相当于沿该维通配，使 Apply-to-All 公式能保留输出维度。`@n` 取当前方程第 n 个输出维度。转置反转维度和 shape，并重排行主序数据，而不是只改显示。
+
+### 10.3 广播与逐元素语义
+
+标量对数组广播。数组间运算要求维度集合一致，顺序可以不同；按名称重排到输出维度，不仅按位置比较 shape。当前方程提供 scope.dimensions 时以它为输出顺序，否则采用数组操作数的维度顺序。维度集合不一致返回错误，不隐式引入 sub-range。
+
+算术、比较、逻辑、一元数学函数和双参数 MAX/MIN 逐元素执行；标量条件保持短路。数组条件的 IF/AND/OR 逐元素求值，不能沿用标量短路。数组条件分支和逻辑结果仍使用 0/1 double。
+
+单参数 MAX/MIN、SUM、MEAN、STDDEV 对切片归约为 double，STDDEV 使用总体标准差（除以 N）；SIZE 返回元素数。RANK 返回按行主序平坦位置，可选次级排序数组先按维度名对齐。整体求值可直接计算普通 Apply-to-All 数组运算；需要按当前元素归约的公式由调用方设置 scope.indices 逐点调用，后续执行器负责遍历，不在 Evaluator 内隐藏循环状态。
+
+本阶段仍不实现随机、延迟、历史状态、图形函数、队列/Conveyor、宏、命名模型和厂商数组初始化列表。元素级依赖调度沿用上一阶段的明确边界，不因数组值可求值就声称完整仿真排序已完成。
+
+## 11. 测试与性能
 
 ### 单元测试
 
@@ -245,6 +294,7 @@ QDS 在 model 前保存完整维度定义，每个变量保存维度引用及零
 - 引用收集、结构使用、公式引用使用、依赖环、Stock/Flow 不误判。
 - 已解析变量读取、实数与 0/1 逻辑值、负数 MOD、时间常量、数学函数、条件短路、Inf/NaN、变量缺失和未支持语义。
 - numbered/named 维度、名称冲突、下标范围与重复检查、Wildcard/Range/@ AST、维度元素解析、逐元素依赖、Capture/Restore 及 QDS/XMILE 往返。
+- 下标越界、命名元素、切片、转置、维度重排广播、逐元素作用域、数组条件、归约/RANK、切片内数学运算及不兼容维度错误。
 - 现有 SIR、中文名称、重名检查及整个 Validation UI 回归。
 - 修改解析器时开启 `QDS_ENABLE_XMILE_CORPUS_TESTS`，验证全部 SDXorg XMILE 文件；不支持结构明确分类，不静默跳过。
 
@@ -254,7 +304,7 @@ QDS 在 model 前保存完整维度定义，每个变量保存维度引用及零
 
 首个基线不预设未经验证的性能指标；后续优化必须比较同环境结果，不提前引入缓存、字符串池或派生索引。
 
-## 11. 分阶段实施
+## 12. 分阶段实施
 
 1. **标量 AST**：Lexer、Pratt Parser、SourceSpan、基础节点和错误恢复，附完整测试和 profile。
 2. **符号与依赖分析**：函数注册表、nameKey 解析、EquationDependency/StructuralUse、替换现有 validateDocument。
