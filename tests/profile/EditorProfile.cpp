@@ -263,6 +263,41 @@ int main(int argc, char **argv)
     }
     const qint64 endpointPreviewNs = timer.nsecsElapsed();
 
+    DocumentController flowTargetController;
+    DiagramScene flowTargetScene(&flowTargetController);
+    const EntityId flowTargetSource = flowTargetController.createVariable(ElementKind::Auxiliary, QPointF(0.0, -200.0));
+    const EntityId flowTargetStock = flowTargetController.createVariable(ElementKind::Stock, QPointF());
+    const EntityId flowTargetCloud = flowTargetController.createCloud(QPointF(400.0, 0.0));
+    const EntityId flowTargetFlow = flowTargetController.createFlow(flowTargetStock, flowTargetCloud);
+    DiagramView flowTargetView(&flowTargetScene);
+    flowTargetView.resize(800, 600);
+    flowTargetView.centerOn(QPointF(100.0, 0.0));
+    flowTargetScene.setTool(DiagramScene::Tool::Connect);
+    qint64 connectorToFlowNs = 0;
+    int connectorToFlowCount = 0;
+    for (int index = 0; index < count; ++index) {
+        const QPoint start = flowTargetView.mapFromScene(flowTargetScene.item(flowTargetSource)->center());
+        const QPoint end = flowTargetView.mapFromScene(flowTargetScene.item(flowTargetFlow)->center());
+        timer.restart();
+        QMouseEvent press(QEvent::MouseButtonPress, start, flowTargetView.viewport()->mapToGlobal(start), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(flowTargetView.viewport(), &press);
+        QMouseEvent move(QEvent::MouseMove, end, flowTargetView.viewport()->mapToGlobal(end), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(flowTargetView.viewport(), &move);
+        QMouseEvent release(QEvent::MouseButtonRelease, end, flowTargetView.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(flowTargetView.viewport(), &release);
+        connectorToFlowNs += timer.nsecsElapsed();
+        const std::vector<EntityId> selection = flowTargetScene.selectedElementIds();
+        if (selection.size() != 1)
+            return 17;
+        const auto *connector = dynamic_cast<const Connector *>(flowTargetController.document().find(selection.front()));
+        const auto *arrow = dynamic_cast<const ArrowItem *>(flowTargetScene.item(selection.front()));
+        if (!connector || !arrow || connector->from != flowTargetSource || connector->to != flowTargetFlow
+            || arrow->to() != flowTargetScene.item(flowTargetFlow))
+            return 18;
+        ++connectorToFlowCount;
+        flowTargetController.undoStack()->undo();
+    }
+
     timer.restart();
     int singleSelectionGuideCount = 0;
     for (int index = 0; index < 1000; ++index) {
@@ -490,6 +525,7 @@ int main(int argc, char **argv)
                         << "automatic_bezier_edit_reset,1000," << automaticBezierEditNs / 1e6 << "," << automaticBezierEditNs / 1000.0 / 1000 << "\n"
                         << "connector_drag_selection,1000," << connectorDragStateNs / 1e6 << "," << connectorDragStateNs / 1000.0 / 1000 << "\n"
                         << "endpoint_preview_cancel,1000," << endpointPreviewNs / 1e6 << "," << endpointPreviewNs / 1000.0 / 1000 << "\n"
+                        << "connector_create_to_flow," << connectorToFlowCount << "," << connectorToFlowNs / 1e6 << "," << connectorToFlowNs / 1000.0 / count << "\n"
                         << "bezier_guide_single_selection,1000," << guideSelectionNs / 1e6 << "," << guideSelectionNs / 1000.0 / 1000 << "\n"
                         << "flow_valve_geometry,1000," << valveNs / 1e6 << "," << valveNs / 1000.0 / 1000 << "\n"
                         << "flow_pipeline_geometry,1000," << pipelineNs / 1e6 << "," << pipelineNs / 1000.0 / 1000 << "\n"
@@ -510,6 +546,7 @@ int main(int argc, char **argv)
         && matches > 0 && guideCount == 2000 && automaticGuideCount == 2000 && automaticGroupManual
         && connectorDragGuideCount == 2000 && connectorDragStateValid
         && endpointPreviewGuideCount == 2000 && endpointPreviewHandlesValid
+        && connectorToFlowCount == count
         && singleSelectionGuideCount == 1000 && valveCount == 2000
         && lineStyleChecksum == 3000 && automaticPointCount > 0 && automaticFlagsValid
         && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000

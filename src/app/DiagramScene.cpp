@@ -43,6 +43,17 @@ DiagramItem *nodeAt(QGraphicsScene &scene, const QPointF &position)
     return nullptr;
 }
 
+DiagramItem *connectionEndpointAt(QGraphicsScene &scene, const QPointF &position)
+{
+    const QList<QGraphicsItem *> candidates = scene.items(position);
+    for (QGraphicsItem *candidate : candidates) {
+        auto *item = dynamic_cast<DiagramItem *>(candidate);
+        if (item && !dynamic_cast<ArrowItem *>(item))
+            return item;
+    }
+    return nullptr;
+}
+
 QString documentElementName(const DocumentElement &element)
 {
     if (const auto *model = dynamic_cast<const ModelElement *>(&element))
@@ -327,13 +338,13 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
     }
 
     if (event->button() == Qt::LeftButton && isRouteTool(m_tool)) {
-        DiagramItem *item = nodeAt(*this, event->scenePos());
+        DiagramItem *item = connectionEndpointAt(*this, event->scenePos());
         if (!item && m_tool != Tool::AddFlow) {
             event->accept();
             return;
         }
         m_connectionSource = item ? item->id() : 0;
-        m_connectionStart = item ? item->pos() : snapPoint(event->scenePos());
+        m_connectionStart = item ? item->center() : snapPoint(event->scenePos());
         clearSelection();
         if (item)
             item->setSelected(true);
@@ -375,7 +386,7 @@ void DiagramScene::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
 {
     if (m_rubberLine) {
         DiagramItem *source = m_items.value(m_connectionSource);
-        m_rubberLine->setLine(QLineF(source ? source->pos() : m_connectionStart, event->scenePos()));
+        m_rubberLine->setLine(QLineF(source ? source->center() : m_connectionStart, event->scenePos()));
         event->accept();
         return;
     }
@@ -396,7 +407,7 @@ void DiagramScene::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
 void DiagramScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 {
     if (m_rubberLine && event->button() == Qt::LeftButton) {
-        DiagramItem *target = nodeAt(*this, event->scenePos());
+        DiagramItem *target = connectionEndpointAt(*this, event->scenePos());
         const bool differentTarget = target && target->id() != m_connectionSource;
         EntityId created = 0;
         if (m_tool == Tool::AddFlow && (!target || differentTarget)) {
@@ -714,7 +725,7 @@ void DiagramScene::finishControlPoint(EntityId id, int index, const QPointF &pos
         return;
     }
 
-    DiagramItem *target = nodeAt(*this, position);
+    DiagramItem *target = connectionEndpointAt(*this, position);
     if (!target) {
         syncControlPoints();
         return;

@@ -255,6 +255,8 @@ ArrowItem 与 FlowItem 都保存 EntityId 并复用 RoutedItem 的路径能力�
 
 Connector 的端点合法性由 Document 聚合层统一校验，create、restore、reconnect 共用同一规则：Comment 只能作为一端 Junction，禁止 Comment→Comment。ArrowItem 在普通端点间绘制单实线，在 Comment 与另一端之间绘制虚线；该显示规则不改变 Connector 的因果或展示语义。
 
+画布连接工具与端点句柄共用 `connectionEndpointAt()` 命中规则：按场景叠放顺序选择普通实体或 FlowItem，排除 ArrowItem 和控制句柄；普通实体拖动仍使用独立的 `nodeAt()`，不因 Flow 可连接而改变 RoutedItem 的选择/框选行为。命中只产生候选 EntityId，具体组合仍交由 Document 校验，Cloud、Comment→Comment、重复连接等非法操作不会创建命令。橡皮线和路径布局都以端点的 `center()` 为参考，因此 Flow 作为源或目标时使用阀门中心而不是 Item 的 `pos()`。
+
 ### 4.2.1 Flow 实体与路径
 
 Flow 是 ModelElement，直接持有 FlowEndpoints，不是 Connector：

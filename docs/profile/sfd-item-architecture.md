@@ -104,3 +104,13 @@
 `automatic_bezier_edit_reset` 每轮恢复两个自动点、计算辅助线，再通过控制句柄位置变化预览编辑，并验证两个点成组转为手动；覆盖自动点显示和编辑路径，而非只测量几何函数。`connector_drag_selection` 通过 Scene 鼠标按下、移动和释放测量框选状态切换，校验拖动中辅助线数量为零、释放后恢复为两条且曲线保持选中；真实 Viewport 反向拖动和释放重绘由编辑器单元测试覆盖。`endpoint_preview_cancel` 使用真实 DiagramView 鼠标事件执行端点按下、空白拖动和取消，校验预览中无辅助线或中间控制句柄、取消后恢复两条辅助线；控制句柄启用 ItemIgnoresTransformations，不能用缺少 View 的 Scene 事件替代。
 
 该结果用于后续同场景回归比较。当前两级依赖刷新直接遍历 Scene 图元，不引入额外派生索引；只有后续 profile 证明需要时才调整索引结构。
+
+## Connector 指向 Flow 的端点命中
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`connector_create_to_flow` 使用真实 DiagramView 鼠标按下、拖动和释放，从 Auxiliary 创建指向 Flow 阀门中心的 Connector；每轮断言 Document 端点和 Scene Arrow 端点，再在计时外 undo 清理。计时包含端点命中、橡皮线、命令和 Scene 增量同步，不包含坐标映射、结果断言和清理。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| connector_create_to_flow | 1000 | 21.5640 | 21.5640 |
+
+编辑器回归同时覆盖 Connect 工具创建、端点句柄重连到 Flow、空白取消、Arrow 不可作为端点、undo/redo，以及 QDS 和 XMILE 往返后的 from/to。
