@@ -43,6 +43,17 @@ DiagramItem *nodeAt(QGraphicsScene &scene, const QPointF &position)
     return nullptr;
 }
 
+DiagramItem *connectionEndpointAt(QGraphicsScene &scene, const QPointF &position)
+{
+    const QList<QGraphicsItem *> candidates = scene.items(position);
+    for (QGraphicsItem *candidate : candidates) {
+        auto *item = dynamic_cast<DiagramItem *>(candidate);
+        if (item && !dynamic_cast<ArrowItem *>(item))
+            return item;
+    }
+    return nullptr;
+}
+
 QString documentElementName(const DocumentElement &element)
 {
     if (const auto *model = dynamic_cast<const ModelElement *>(&element))
@@ -50,6 +61,13 @@ QString documentElementName(const DocumentElement &element)
     if (const auto *comment = dynamic_cast<const Comment *>(&element))
         return QString::fromStdString(comment->content);
     return {};
+}
+
+void makeControlPointsManual(Route &route)
+{
+    route.manual = true;
+    for (RoutePoint &point : route.controlPoints)
+        point.automatic = false;
 }
 
 } // namespace
@@ -78,6 +96,7 @@ void DiagramScene::setTool(Tool tool)
     m_tool = tool;
     m_connectionSource = 0;
     cancelRubberLine();
+    cancelEndpointPreview();
 }
 
 qds::core::EntityId DiagramScene::createElementAt(ElementKind kind, const QPointF &position)
@@ -262,12 +281,10 @@ void DiagramScene::setSelectedRouteMode(RouteMode mode)
         route.manual = true;
         if (mode == RouteMode::Straight)
             route.controlPoints.clear();
-        else if (mode == RouteMode::Bezier && route.controlPoints.size() < 2) {
-            const QPointF start = routed->from() ? routed->from()->pos() : routed->geometryPath().pointAtPercent(0.0);
-            const QPointF end = routed->to() ? routed->to()->pos() : routed->geometryPath().pointAtPercent(1.0);
-            route.controlPoints = {
-                {start.x() + (end.x() - start.x()) / 3.0, start.y() + (end.y() - start.y()) / 3.0 - 50.0},
-                {start.x() + (end.x() - start.x()) * 2.0 / 3.0, start.y() + (end.y() - start.y()) * 2.0 / 3.0 + 50.0}};
+        else if (mode == RouteMode::Bezier) {
+            if (route.controlPoints.size() < 2)
+                route.controlPoints = defaultConnectorRoute().controlPoints;
+            makeControlPointsManual(route);
         }
         m_controller->setRoute(routed->id(), route);
     }
@@ -278,8 +295,11 @@ void DiagramScene::resetSelectedRoute()
     for (QGraphicsItem *item : selectedItems()) {
         if (auto *routed = dynamic_cast<RoutedItem *>(item)) {
             Route route;
-            if (routed->type() == FlowItem::Type)
+            if (routed->type() == FlowItem::Type) {
                 route.mode = RouteMode::Straight;
+            } else {
+                route = defaultConnectorRoute();
+            }
             m_controller->setRoute(routed->id(), route);
         }
     }
@@ -318,13 +338,13 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
     }
 
     if (event->button() == Qt::LeftButton && isRouteTool(m_tool)) {
-        DiagramItem *item = nodeAt(*this, event->scenePos());
+        DiagramItem *item = connectionEndpointAt(*this, event->scenePos());
         if (!item && m_tool != Tool::AddFlow) {
             event->accept();
             return;
         }
         m_connectionSource = item ? item->id() : 0;
-        m_connectionStart = item ? item->pos() : snapPoint(event->scenePos());
+        m_connectionStart = item ? item->center() : snapPoint(event->scenePos());
         clearSelection();
         if (item)
             item->setSelected(true);
@@ -352,7 +372,10 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
         }
         return;
     }
-    if (event->button() == Qt::LeftButton && m_tool == Tool::Select && !itemAt(event->scenePos(), QTransform())) {
+    const QGraphicsItem *pressedItem = event->button() == Qt::LeftButton && m_tool == Tool::Select
+        ? itemAt(event->scenePos(), QTransform()) : nullptr;
+    if (event->button() == Qt::LeftButton && m_tool == Tool::Select
+        && (!pressedItem || dynamic_cast<const RoutedItem *>(pressedItem))) {
         m_areaSelecting = true;
         syncControlPoints();
     }
@@ -363,7 +386,7 @@ void DiagramScene::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
 {
     if (m_rubberLine) {
         DiagramItem *source = m_items.value(m_connectionSource);
-        m_rubberLine->setLine(QLineF(source ? source->pos() : m_connectionStart, event->scenePos()));
+        m_rubberLine->setLine(QLineF(source ? source->center() : m_connectionStart, event->scenePos()));
         event->accept();
         return;
     }
@@ -384,7 +407,7 @@ void DiagramScene::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
 void DiagramScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 {
     if (m_rubberLine && event->button() == Qt::LeftButton) {
-        DiagramItem *target = nodeAt(*this, event->scenePos());
+        DiagramItem *target = connectionEndpointAt(*this, event->scenePos());
         const bool differentTarget = target && target->id() != m_connectionSource;
         EntityId created = 0;
         if (m_tool == Tool::AddFlow && (!target || differentTarget)) {
@@ -478,8 +501,8 @@ void DiagramScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
     if (routed && (routed->type() != FlowItem::Type || routed->route().mode == RouteMode::Bezier)) {
         Route route = m_controller->document().diagram().route(routed->id());
         const QPointF point = snapPoint(event->scenePos());
-        route.controlPoints.push_back({point.x(), point.y()});
-        route.manual = true;
+        route.controlPoints.push_back(routed->routePointFromScene(point));
+        makeControlPointsManual(route);
         m_controller->setRoute(routed->id(), route);
         event->accept();
         return;
@@ -493,6 +516,7 @@ void DiagramScene::applyChangeNotification(const ChangeNotification &notificatio
         m_controlHandles.clear();
         m_obstacles.clear();
         m_rubberLine = nullptr;
+        m_endpointPreviewItem.clear();
         clear();
         m_items.clear();
         m_connectionSource = 0;
@@ -590,21 +614,25 @@ void DiagramScene::createCanvasItems(std::vector<EntityId> ids)
 
 void DiagramScene::updateDependentRoutes(EntityId id)
 {
+    std::vector<EntityId> updatedFlows;
     for (DiagramItem *item : m_items) {
-        if (auto *routed = dynamic_cast<RoutedItem *>(item); routed && routed->connects(id)) {
-            routed->updatePosition();
-            updateAutomaticRoute(routed);
+        if (auto *flow = dynamic_cast<FlowItem *>(item); flow && flow->connects(id)) {
+            flow->updatePosition();
+            updatedFlows.push_back(flow->id());
         }
     }
-    for (ControlPointHandle *handle : m_controlHandles) {
-        RoutedItem *routed = dynamic_cast<RoutedItem *>(m_items.value(handle->routeId()));
-        if (!routed)
+    for (DiagramItem *item : m_items) {
+        auto *arrow = dynamic_cast<ArrowItem *>(item);
+        if (!arrow)
             continue;
-        if (handle->index() == -1 && routed->from() && routed->from()->id() == id)
-            handle->setPos(routed->from()->pos());
-        else if (handle->index() == -2 && routed->to() && routed->to()->id() == id)
-            handle->setPos(routed->to()->pos());
+        const bool dependsOnMovedFlow = std::any_of(updatedFlows.begin(), updatedFlows.end(),
+            [arrow](EntityId flowId) { return arrow->connects(flowId); });
+        if (arrow->connects(id) || dependsOnMovedFlow) {
+            arrow->updatePosition();
+            updateAutomaticRoute(arrow);
+        }
     }
+    syncControlPoints();
 }
 
 RoutedItem *DiagramScene::selectedRoutedItem() const
@@ -618,7 +646,7 @@ void DiagramScene::syncControlPoints()
     RoutedItem *selected = selectedRoutedItem();
     for (DiagramItem *item : m_items) {
         if (auto *routed = dynamic_cast<RoutedItem *>(item))
-            routed->setControlGuidesVisible(routed == selected);
+            routed->setControlGuidesVisible(routed == selected && !routed->previewing());
     }
     const Route route = selected ? m_controller->document().diagram().route(selected->id()) : Route();
     int required = 0;
@@ -637,15 +665,18 @@ void DiagramScene::syncControlPoints()
     };
 
     if (selected) {
-        if (selected->from())
-            updateHandle(required++, selected->id(), -1, ControlPointHandle::Role::Source, selected->from()->pos());
-        if (selected->to())
-            updateHandle(required++, selected->id(), -2, ControlPointHandle::Role::Target, selected->to()->pos());
-        if (route.mode != RouteMode::Straight) {
+        const QPainterPath path = selected->geometryPath();
+        if (selected->from() && !path.isEmpty())
+            updateHandle(required++, selected->id(), -1, ControlPointHandle::Role::Source, path.pointAtPercent(0.0));
+        if (selected->to() && !path.isEmpty())
+            updateHandle(required++, selected->id(), -2, ControlPointHandle::Role::Target, path.pointAtPercent(1.0));
+        if (route.mode != RouteMode::Straight && !selected->previewing()) {
             for (std::size_t index = 0; index < route.controlPoints.size(); ++index) {
-                const Vec2 point = route.controlPoints[index];
+                const RoutePoint &point = route.controlPoints[index];
+                if (point.automatic && route.mode != RouteMode::Bezier)
+                    continue;
                 updateHandle(required++, selected->id(), static_cast<int>(index),
-                             ControlPointHandle::Role::ControlPoint, QPointF(point.x, point.y));
+                             ControlPointHandle::Role::ControlPoint, selected->scenePoint(point));
             }
         }
     }
@@ -655,16 +686,23 @@ void DiagramScene::syncControlPoints()
 
 void DiagramScene::previewControlPoint(EntityId id, int index, const QPointF &position)
 {
-    if (index < 0)
+    if (index < 0) {
+        auto *item = dynamic_cast<RoutedItem *>(m_items.value(id));
+        if (!item || (index != -1 && index != -2))
+            return;
+        m_endpointPreviewItem = item;
+        m_endpointPreviewItem->previewEndpoint(index, position);
+        syncControlPoints();
         return;
+    }
     auto *item = dynamic_cast<RoutedItem *>(m_items.value(id));
     if (!item)
         return;
     Route route = m_controller->document().diagram().route(id);
     if (index >= static_cast<int>(route.controlPoints.size()))
         return;
-    route.controlPoints[static_cast<std::size_t>(index)] = {position.x(), position.y()};
-    route.manual = true;
+    route.controlPoints[static_cast<std::size_t>(index)] = item->routePointFromScene(position);
+    makeControlPointsManual(route);
     item->setRoute(route);
 }
 
@@ -674,18 +712,20 @@ void DiagramScene::finishControlPoint(EntityId id, int index, const QPointF &pos
     const DocumentElement *element = m_controller->document().find(id);
     if (!item || !element)
         return;
+    if (index < 0)
+        cancelEndpointPreview();
     if (index >= 0) {
         Route route = m_controller->document().diagram().route(id);
         if (index >= static_cast<int>(route.controlPoints.size()))
             return;
         const QPointF snapped = snapPoint(position);
-        route.controlPoints[static_cast<std::size_t>(index)] = {snapped.x(), snapped.y()};
-        route.manual = true;
+        route.controlPoints[static_cast<std::size_t>(index)] = item->routePointFromScene(snapped);
+        makeControlPointsManual(route);
         m_controller->setRoute(id, route);
         return;
     }
 
-    DiagramItem *target = nodeAt(*this, position);
+    DiagramItem *target = connectionEndpointAt(*this, position);
     if (!target) {
         syncControlPoints();
         return;
@@ -712,7 +752,7 @@ void DiagramScene::removeControlPoint(EntityId id, int index)
     if (index < 0 || index >= static_cast<int>(route.controlPoints.size()))
         return;
     route.controlPoints.erase(route.controlPoints.begin() + index);
-    route.manual = true;
+    makeControlPointsManual(route);
     m_controller->setRoute(id, route);
 }
 
@@ -725,6 +765,14 @@ void DiagramScene::cancelRubberLine()
     m_rubberLine = nullptr;
 }
 
+void DiagramScene::cancelEndpointPreview()
+{
+    if (m_endpointPreviewItem)
+        m_endpointPreviewItem->clearEndpointPreview();
+    m_endpointPreviewItem.clear();
+    syncControlPoints();
+}
+
 void DiagramScene::updateAutomaticRoute(RoutedItem *item)
 {
     if (!item || item->type() != ArrowItem::Type || !item->from() || !item->to())
@@ -732,7 +780,7 @@ void DiagramScene::updateAutomaticRoute(RoutedItem *item)
     const Route route = m_controller->document().diagram().route(item->id());
     if (route.manual || route.locked || route.mode != RouteMode::Orthogonal)
         return;
-    item->setRoute(m_router.route(item->from()->pos(), item->to()->pos(), item->from()->id(), item->to()->id(), m_obstacles));
+    item->setAutomaticRoute(m_router.route(item->from()->center(), item->to()->center(), item->from()->id(), item->to()->id(), m_obstacles));
 }
 
 void DiagramScene::rerouteAll()

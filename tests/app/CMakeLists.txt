@@ -2,6 +2,7 @@ add_executable(test-editor
     TestEditor.cpp
 )
 target_link_libraries(test-editor PRIVATE QDS::Editor Qt5::Test)
+target_compile_definitions(test-editor PRIVATE QDS_SIR_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/SIR/SIR.xmile")
 add_test(NAME editor-commands COMMAND test-editor)
 add_dependencies(all-test-targets test-editor)
 

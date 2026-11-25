@@ -1,5 +1,6 @@
 #include "DiagramItems.h"
 #include "DiagramScene.h"
+#include "DiagramView.h"
 #include "DocumentController.h"
 #include "PropertyPanel.h"
 #include <qds/io/DocumentFile.h>
@@ -11,6 +12,7 @@
 #include <QGraphicsLineItem>
 #include <QGraphicsSceneMouseEvent>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QTemporaryDir>
 #include <QTextStream>
 
@@ -72,7 +74,7 @@ int main(int argc, char **argv)
     for (EntityId id : connectionIds) {
         Route route = controller.document().diagram().route(id);
         route.manual = true;
-        route.controlPoints = {{50.0, 60.0}};
+        route.controlPoints = {{0.5, 60.0}};
         controller.setRoute(id, route);
     }
     const qint64 routeEditNs = timer.nsecsElapsed();
@@ -143,6 +145,29 @@ int main(int argc, char **argv)
     const EntityId guideTo = guideController.createVariable(ElementKind::Auxiliary, QPointF(200.0, 0.0));
     const EntityId guideConnection = guideController.createConnector(guideFrom, guideTo);
     auto *guideItem = dynamic_cast<ArrowItem *>(guideScene.item(guideConnection));
+    const EntityId guideComment = guideController.createComment(QStringLiteral("Note"), QPointF(100.0, 100.0));
+    const EntityId guideAnnotation = guideController.createConnector(guideComment, guideFrom);
+    auto *annotationItem = dynamic_cast<ArrowItem *>(guideScene.item(guideAnnotation));
+    timer.restart();
+    int lineStyleChecksum = 0;
+    for (int index = 0; index < 1000; ++index)
+        lineStyleChecksum += guideItem->lineStyle() + annotationItem->lineStyle();
+    const qint64 connectorStyleNs = timer.nsecsElapsed();
+
+    Route automaticRoute;
+    automaticRoute.mode = RouteMode::Orthogonal;
+    guideController.setRoute(guideConnection, automaticRoute);
+    timer.restart();
+    int automaticPointCount = 0;
+    bool automaticFlagsValid = true;
+    for (int index = 0; index < 1000; ++index) {
+        guideScene.rerouteAll();
+        const Route route = guideItem->route();
+        automaticPointCount += route.controlPoints.size();
+        for (const RoutePoint &point : route.controlPoints)
+            automaticFlagsValid = automaticFlagsValid && point.automatic;
+    }
+    const qint64 automaticRouteNs = timer.nsecsElapsed();
     guideItem->setSelected(true);
     guideScene.setSelectedRouteMode(RouteMode::Bezier);
     Route guideRoute = guideController.document().diagram().route(guideConnection);
@@ -150,12 +175,128 @@ int main(int argc, char **argv)
     int guideCount = 0;
     for (int index = 0; index < 1000; ++index) {
         const double y = index % 2 == 0 ? -80.0 : 80.0;
-        guideRoute.controlPoints[0].y = y;
-        guideRoute.controlPoints[1].y = y;
+        guideRoute.controlPoints[0].relative.y = y;
+        guideRoute.controlPoints[1].relative.y = y;
         guideItem->setRoute(guideRoute);
         guideCount += guideItem->controlGuides().size();
     }
     const qint64 bezierGuideNs = timer.nsecsElapsed();
+
+    guideScene.resetSelectedRoute();
+    ControlPointHandle *automaticHandle = nullptr;
+    for (QGraphicsItem *item : guideScene.items()) {
+        auto *handle = qgraphicsitem_cast<ControlPointHandle *>(item);
+        if (handle && handle->isVisible() && handle->routeId() == guideConnection && handle->index() == 0)
+            automaticHandle = handle;
+    }
+    if (!automaticHandle)
+        return 15;
+    timer.restart();
+    int automaticGuideCount = 0;
+    bool automaticGroupManual = true;
+    for (int index = 0; index < 1000; ++index) {
+        guideScene.resetSelectedRoute();
+        automaticGuideCount += guideItem->controlGuides().size();
+        automaticHandle->setPos(automaticHandle->pos() + QPointF(1.0, 0.0));
+        for (const RoutePoint &point : guideItem->route().controlPoints)
+            automaticGroupManual = automaticGroupManual && !point.automatic;
+    }
+    const qint64 automaticBezierEditNs = timer.nsecsElapsed();
+
+    timer.restart();
+    int connectorDragGuideCount = 0;
+    bool connectorDragStateValid = true;
+    for (int index = 0; index < 1000; ++index) {
+        const QPointF position = guideItem->geometryPath().pointAtPercent(0.5);
+        QGraphicsSceneMouseEvent press(QEvent::GraphicsSceneMousePress);
+        press.setButton(Qt::LeftButton);
+        press.setButtons(Qt::LeftButton);
+        press.setScenePos(position);
+        QApplication::sendEvent(&guideScene, &press);
+        QGraphicsSceneMouseEvent move(QEvent::GraphicsSceneMouseMove);
+        move.setButtons(Qt::LeftButton);
+        move.setScenePos(position + QPointF(100.0, 80.0));
+        QApplication::sendEvent(&guideScene, &move);
+        connectorDragGuideCount += guideItem->controlGuides().size();
+        QGraphicsSceneMouseEvent release(QEvent::GraphicsSceneMouseRelease);
+        release.setButton(Qt::LeftButton);
+        release.setButtons(Qt::NoButton);
+        release.setScenePos(position + QPointF(100.0, 80.0));
+        QApplication::sendEvent(&guideScene, &release);
+        connectorDragGuideCount += guideItem->controlGuides().size();
+        connectorDragStateValid = connectorDragStateValid && guideItem->isSelected();
+    }
+    const qint64 connectorDragStateNs = timer.nsecsElapsed();
+
+    ControlPointHandle *targetHandle = nullptr;
+    for (QGraphicsItem *item : guideScene.items()) {
+        auto *handle = qgraphicsitem_cast<ControlPointHandle *>(item);
+        if (handle && handle->isVisible() && handle->routeId() == guideConnection && handle->index() == -2)
+            targetHandle = handle;
+    }
+    if (!targetHandle)
+        return 16;
+    DiagramView guideView(&guideScene);
+    guideView.resize(640, 480);
+    guideView.centerOn(100.0, 0.0);
+    timer.restart();
+    int endpointPreviewGuideCount = 0;
+    bool endpointPreviewHandlesValid = true;
+    for (int index = 0; index < 1000; ++index) {
+        const QPoint start = guideView.mapFromScene(targetHandle->pos());
+        const QPoint end = guideView.mapFromScene(targetHandle->pos() + QPointF(200.0, 200.0));
+        QMouseEvent press(QEvent::MouseButtonPress, start, guideView.viewport()->mapToGlobal(start), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(guideView.viewport(), &press);
+        QMouseEvent move(QEvent::MouseMove, end, guideView.viewport()->mapToGlobal(end), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(guideView.viewport(), &move);
+        endpointPreviewGuideCount += guideItem->controlGuides().size();
+        for (QGraphicsItem *item : guideScene.items()) {
+            const auto *handle = qgraphicsitem_cast<ControlPointHandle *>(item);
+            if (handle && handle->routeId() == guideConnection
+                && handle->role() == ControlPointHandle::Role::ControlPoint)
+                endpointPreviewHandlesValid = endpointPreviewHandlesValid && !handle->isVisible();
+        }
+        QMouseEvent release(QEvent::MouseButtonRelease, end, guideView.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(guideView.viewport(), &release);
+        endpointPreviewGuideCount += guideItem->controlGuides().size();
+        endpointPreviewHandlesValid = endpointPreviewHandlesValid && !guideItem->previewing();
+    }
+    const qint64 endpointPreviewNs = timer.nsecsElapsed();
+
+    DocumentController flowTargetController;
+    DiagramScene flowTargetScene(&flowTargetController);
+    const EntityId flowTargetSource = flowTargetController.createVariable(ElementKind::Auxiliary, QPointF(0.0, -200.0));
+    const EntityId flowTargetStock = flowTargetController.createVariable(ElementKind::Stock, QPointF());
+    const EntityId flowTargetCloud = flowTargetController.createCloud(QPointF(400.0, 0.0));
+    const EntityId flowTargetFlow = flowTargetController.createFlow(flowTargetStock, flowTargetCloud);
+    DiagramView flowTargetView(&flowTargetScene);
+    flowTargetView.resize(800, 600);
+    flowTargetView.centerOn(QPointF(100.0, 0.0));
+    flowTargetScene.setTool(DiagramScene::Tool::Connect);
+    qint64 connectorToFlowNs = 0;
+    int connectorToFlowCount = 0;
+    for (int index = 0; index < count; ++index) {
+        const QPoint start = flowTargetView.mapFromScene(flowTargetScene.item(flowTargetSource)->center());
+        const QPoint end = flowTargetView.mapFromScene(flowTargetScene.item(flowTargetFlow)->center());
+        timer.restart();
+        QMouseEvent press(QEvent::MouseButtonPress, start, flowTargetView.viewport()->mapToGlobal(start), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(flowTargetView.viewport(), &press);
+        QMouseEvent move(QEvent::MouseMove, end, flowTargetView.viewport()->mapToGlobal(end), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(flowTargetView.viewport(), &move);
+        QMouseEvent release(QEvent::MouseButtonRelease, end, flowTargetView.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(flowTargetView.viewport(), &release);
+        connectorToFlowNs += timer.nsecsElapsed();
+        const std::vector<EntityId> selection = flowTargetScene.selectedElementIds();
+        if (selection.size() != 1)
+            return 17;
+        const auto *connector = dynamic_cast<const Connector *>(flowTargetController.document().find(selection.front()));
+        const auto *arrow = dynamic_cast<const ArrowItem *>(flowTargetScene.item(selection.front()));
+        if (!connector || !arrow || connector->from != flowTargetSource || connector->to != flowTargetFlow
+            || arrow->to() != flowTargetScene.item(flowTargetFlow))
+            return 18;
+        ++connectorToFlowCount;
+        flowTargetController.undoStack()->undo();
+    }
 
     timer.restart();
     int singleSelectionGuideCount = 0;
@@ -188,6 +329,22 @@ int main(int argc, char **argv)
     for (int index = 0; index < 1000; ++index)
         flowArrowPointCount += flowItem->arrowHead().size();
     const qint64 flowArrowNs = timer.nsecsElapsed();
+
+    timer.restart();
+    int flowLabelCount = 0;
+    for (int index = 0; index < 1000; ++index)
+        flowLabelCount += flowItem->boundingRect().contains(flowItem->labelRect()) ? 1 : 0;
+    const qint64 flowLabelNs = timer.nsecsElapsed();
+
+    const EntityId flowArrow = guideController.createConnector(guideTo, valveFlow);
+    auto *flowArrowItem = dynamic_cast<ArrowItem *>(guideScene.item(flowArrow));
+    timer.restart();
+    int centerBoundaryCount = 0;
+    for (int index = 0; index < 1000; ++index) {
+        const QPointF boundary = flowItem->boundaryPointToward(flowArrowItem->from()->center());
+        centerBoundaryCount += QLineF(boundary, flowItem->center()).length() > 0.0 ? 1 : 0;
+    }
+    const qint64 centerBoundaryNs = timer.nsecsElapsed();
 
     DocumentController dragController;
     DiagramScene dragScene(&dragController);
@@ -300,8 +457,40 @@ int main(int argc, char **argv)
         if (element.kind() == ElementKind::Connector)
             ++sirConnectorCount;
     }
-    for (const auto &entry : sir.diagram().routes())
-        sirRoutesAutomatic = sirRoutesAutomatic && !entry.second.manual && entry.second.controlPoints.empty();
+    for (const auto &entry : sir.diagram().routes()) {
+        sirRoutesAutomatic = sirRoutesAutomatic && !entry.second.manual;
+        for (const RoutePoint &point : entry.second.controlPoints)
+            sirRoutesAutomatic = sirRoutesAutomatic && point.automatic;
+    }
+
+    DocumentController sirController;
+    DiagramScene sirScene(&sirController);
+    sirController.replaceDocument(std::move(sir));
+    const ModelElement *infectious = sirController.document().findByName("infectious");
+    if (!infectious)
+        return 14;
+    std::vector<ArrowItem *> dependentArrows;
+    for (const ViewElement &element : sirController.document().diagram().elements()) {
+        if (element.kind() != ElementKind::Connector)
+            continue;
+        auto *arrow = dynamic_cast<ArrowItem *>(sirScene.item(element.id()));
+        const auto *sourceFlow = dynamic_cast<FlowItem *>(arrow->from());
+        const auto *targetFlow = dynamic_cast<FlowItem *>(arrow->to());
+        if ((sourceFlow && sourceFlow->connects(infectious->id()))
+            || (targetFlow && targetFlow->connects(infectious->id())))
+            dependentArrows.push_back(arrow);
+    }
+    timer.restart();
+    double dependentEndpointChecksum = 0.0;
+    const Vec2 initialInfectiousPosition = sirController.document().diagram().position(infectious->id());
+    const QPointF infectiousPosition(initialInfectiousPosition.x, initialInfectiousPosition.y);
+    for (int index = 0; index < 1000; ++index) {
+        const QPointF offset(index % 2 == 0 ? 80.0 : 0.0, index % 2 == 0 ? 60.0 : 0.0);
+        sirController.moveElements({{infectious->id(), infectiousPosition + offset}});
+        for (ArrowItem *arrow : dependentArrows)
+            dependentEndpointChecksum += arrow->geometryPath().pointAtPercent(0.5).x();
+    }
+    const qint64 sirDependentMoveNs = timer.nsecsElapsed();
 
     std::size_t exportedModelCount = 0;
     for (const ModelElement &element : exported.model().elements()) {
@@ -330,11 +519,19 @@ int main(int argc, char **argv)
                         << "editor_search_100," << count * 100 << "," << searchNs / 1e6 << "," << searchNs / 1000.0 / (count * 100) << "\n"
                         << "rubber_preview,1000," << previewNs / 1e6 << "," << previewNs / 1000.0 / 1000 << "\n"
                         << "connection_context_menu,1000," << contextMenuNs / 1e6 << "," << contextMenuNs / 1000.0 / 1000 << "\n"
+                        << "connector_line_style,1000," << connectorStyleNs / 1e6 << "," << connectorStyleNs / 1000.0 / 1000 << "\n"
+                        << "orthogonal_auto_route,1000," << automaticRouteNs / 1e6 << "," << automaticRouteNs / 1000.0 / 1000 << "\n"
                         << "bezier_control_guide_updates,1000," << bezierGuideNs / 1e6 << "," << bezierGuideNs / 1000.0 / 1000 << "\n"
+                        << "automatic_bezier_edit_reset,1000," << automaticBezierEditNs / 1e6 << "," << automaticBezierEditNs / 1000.0 / 1000 << "\n"
+                        << "connector_drag_selection,1000," << connectorDragStateNs / 1e6 << "," << connectorDragStateNs / 1000.0 / 1000 << "\n"
+                        << "endpoint_preview_cancel,1000," << endpointPreviewNs / 1e6 << "," << endpointPreviewNs / 1000.0 / 1000 << "\n"
+                        << "connector_create_to_flow," << connectorToFlowCount << "," << connectorToFlowNs / 1e6 << "," << connectorToFlowNs / 1000.0 / count << "\n"
                         << "bezier_guide_single_selection,1000," << guideSelectionNs / 1e6 << "," << guideSelectionNs / 1000.0 / 1000 << "\n"
                         << "flow_valve_geometry,1000," << valveNs / 1e6 << "," << valveNs / 1000.0 / 1000 << "\n"
                         << "flow_pipeline_geometry,1000," << pipelineNs / 1e6 << "," << pipelineNs / 1000.0 / 1000 << "\n"
                         << "flow_arrow_geometry,1000," << flowArrowNs / 1e6 << "," << flowArrowNs / 1000.0 / 1000 << "\n"
+                        << "flow_label_geometry,1000," << flowLabelNs / 1e6 << "," << flowLabelNs / 1000.0 / 1000 << "\n"
+                        << "flow_center_boundary,1000," << centerBoundaryNs / 1e6 << "," << centerBoundaryNs / 1000.0 / 1000 << "\n"
                         << "shift_drag,1000," << modifierDragNs / 1e6 << "," << modifierDragNs / 1000.0 / 1000 << "\n"
                         << "blank_flow_create_undo_redo,1000," << blankFlowNs / 1e6 << "," << blankFlowNs / 1000.0 / 1000 << "\n"
                         << "comment_content_edit,1000," << commentEditNs / 1e6 << "," << commentEditNs / 1000.0 / 1000 << "\n"
@@ -343,11 +540,19 @@ int main(int argc, char **argv)
                         << "qds_open," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n"
                         << "xmile_export," << count << "," << exportNs / 1e6 << "," << exportNs / 1000.0 / count << "\n"
                         << "xmile_import," << count << "," << importNs / 1e6 << "," << importNs / 1000.0 / count << "\n"
-                        << "xmile_sir_import,100," << sirImportNs / 1e6 << "," << sirImportNs / 1000.0 / 100 << "\n";
+                        << "xmile_sir_import,100," << sirImportNs / 1e6 << "," << sirImportNs / 1000.0 / 100 << "\n"
+                        << "sir_dependent_route_moves,1000," << sirDependentMoveNs / 1e6 << "," << sirDependentMoveNs / 1000.0 / 1000 << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
-        && matches > 0 && guideCount == 2000 && singleSelectionGuideCount == 1000 && valveCount == 2000
-        && pipelineCount == 2000 && flowArrowPointCount == 3000 && variableKindsMatch
+        && matches > 0 && guideCount == 2000 && automaticGuideCount == 2000 && automaticGroupManual
+        && connectorDragGuideCount == 2000 && connectorDragStateValid
+        && endpointPreviewGuideCount == 2000 && endpointPreviewHandlesValid
+        && connectorToFlowCount == count
+        && singleSelectionGuideCount == 1000 && valveCount == 2000
+        && lineStyleChecksum == 3000 && automaticPointCount > 0 && automaticFlagsValid
+        && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000
+        && centerBoundaryCount == 1000 && variableKindsMatch
         && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic
+        && !dependentArrows.empty() && dependentEndpointChecksum != 0.0
         && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)
         QTextStream(stderr) << "validation failed: commands=" << commands << ", points=" << pointCount

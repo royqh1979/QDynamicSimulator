@@ -74,13 +74,13 @@ QList<QPolygonF> trimmedPolygons(const QPainterPath &path, double trailingLength
 
 QPointF DiagramItem::boundaryPointToward(const QPointF &target) const
 {
-    const QPointF delta = target - pos();
+    const QPointF delta = target - center();
     if (delta.isNull())
-        return pos();
+        return center();
     const QRectF bounds(-60.0, -25.0, 120.0, 50.0);
     const double xScale = std::abs(delta.x()) > 1e-12 ? bounds.width() / 2.0 / std::abs(delta.x()) : 1e12;
     const double yScale = std::abs(delta.y()) > 1e-12 ? bounds.height() / 2.0 / std::abs(delta.y()) : 1e12;
-    return pos() + delta * std::min(xScale, yScale);
+    return center() + delta * std::min(xScale, yScale);
 }
 
 QVariant DiagramItem::itemChange(GraphicsItemChange change, const QVariant &value)
@@ -173,7 +173,7 @@ QPointF VariableItem::boundaryPointToward(const QPointF &target) const
         const double yScale = std::abs(delta.y()) > 1e-12 ? halfHeight / std::abs(delta.y()) : 1e12;
         scale = std::min(xScale, yScale);
     }
-    return pos() + delta * scale;
+    return center() + delta * scale;
 }
 
 void VariableItem::refresh(const qds::core::ModelElement &variable, const QPointF &position)
@@ -258,7 +258,8 @@ RoutedItem::RoutedItem(DiagramItem *from, DiagramItem *to, const qds::core::Rout
 
 QRectF RoutedItem::boundingRect() const
 {
-    return geometryPath().boundingRect().adjusted(-16.0, -16.0, 16.0, 16.0);
+    const QPainterPath path = geometryPath();
+    return path.boundingRect().united(path.controlPointRect()).adjusted(-16.0, -16.0, 16.0, 16.0);
 }
 
 QPainterPath RoutedItem::shape() const
@@ -266,6 +267,24 @@ QPainterPath RoutedItem::shape() const
     QPainterPathStroker stroker;
     stroker.setWidth(12.0);
     return stroker.createStroke(geometryPath());
+}
+
+void RoutedItem::previewEndpoint(int index, const QPointF &position)
+{
+    if (index != -1 && index != -2)
+        return;
+    m_previewEndpoint = index;
+    m_previewPosition = position;
+    updateLayout();
+}
+
+void RoutedItem::clearEndpointPreview()
+{
+    if (m_previewEndpoint == 0)
+        return;
+    m_previewEndpoint = 0;
+    m_previewPosition = {};
+    updateLayout();
 }
 
 void RoutedItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
@@ -363,14 +382,14 @@ void RoutedItem::setControlGuidesVisible(bool visible)
     update();
 }
 
-void RoutedItem::setRoute(const qds::core::Route &route)
+void RoutedItem::updateLayout(const qds::core::Route &route)
 {
     prepareGeometryChange();
     m_route = route;
     update();
 }
 
-void RoutedItem::rebind(DiagramItem *from, DiagramItem *to)
+void RoutedItem::updateLayout(DiagramItem *from, DiagramItem *to)
 {
     prepareGeometryChange();
     m_from = from;
@@ -378,10 +397,68 @@ void RoutedItem::rebind(DiagramItem *from, DiagramItem *to)
     update();
 }
 
-void RoutedItem::updatePosition()
+void RoutedItem::updateLayout()
 {
     prepareGeometryChange();
     update();
+}
+
+void RoutedItem::setAutomaticRoute(const qds::core::Route &route)
+{
+    qds::core::Route automatic = route;
+    for (qds::core::RoutePoint &point : automatic.controlPoints) {
+        const QPointF absolute(point.relative.x, point.relative.y);
+        point = routePointFromScene(absolute);
+        point.automatic = true;
+    }
+    updateLayout(automatic);
+}
+
+void RoutedItem::setRoute(const qds::core::Route &route)
+{
+    updateLayout(route);
+}
+
+void RoutedItem::rebind(DiagramItem *from, DiagramItem *to)
+{
+    updateLayout(from, to);
+}
+
+void RoutedItem::updatePosition()
+{
+    updateLayout();
+}
+
+void RoutedItem::routeFrame(QPointF &from, QPointF &delta, QPointF &normal) const
+{
+    const QPointF fromPosition = m_from ? m_from->center() : m_fallbackPosition + QPointF(-60.0, 0.0);
+    const QPointF toPosition = m_to ? m_to->center() : m_fallbackPosition + QPointF(60.0, 0.0);
+    from = fromPosition;
+    delta = toPosition - fromPosition;
+    const double length = std::sqrt(delta.x() * delta.x() + delta.y() * delta.y());
+    normal = length > 1e-9 ? QPointF(-delta.y() / length, delta.x() / length) : QPointF();
+}
+
+QPointF RoutedItem::scenePoint(const qds::core::RoutePoint &point) const
+{
+    QPointF from;
+    QPointF delta;
+    QPointF normal;
+    routeFrame(from, delta, normal);
+    return from + delta * point.relative.x + normal * point.relative.y;
+}
+
+qds::core::RoutePoint RoutedItem::routePointFromScene(const QPointF &position) const
+{
+    QPointF from;
+    QPointF delta;
+    QPointF normal;
+    routeFrame(from, delta, normal);
+    const QPointF offset = position - from;
+    const double lengthSquared = delta.x() * delta.x() + delta.y() * delta.y();
+    if (lengthSquared < 1e-12)
+        return {};
+    return {{QPointF::dotProduct(offset, delta) / lengthSquared, QPointF::dotProduct(offset, normal)}, false};
 }
 
 QVector<QPointF> RoutedItem::points() const
@@ -390,20 +467,22 @@ QVector<QPointF> RoutedItem::points() const
         return QLineF(left, right).length() < 1e-9;
     };
     QVector<QPointF> controls;
-    for (const qds::core::Vec2 &point : m_route.controlPoints) {
-        const QPointF candidate(point.x, point.y);
-        if ((m_from && samePoint(candidate, m_from->pos())) || (m_to && samePoint(candidate, m_to->pos())))
+    for (const qds::core::RoutePoint &point : m_previewEndpoint == 0 ? m_route.controlPoints : std::vector<qds::core::RoutePoint> {}) {
+        const QPointF candidate = scenePoint(point);
+        if ((m_from && samePoint(candidate, m_from->center())) || (m_to && samePoint(candidate, m_to->center())))
             continue;
         if (controls.isEmpty() || !samePoint(candidate, controls.back()))
             controls.append(candidate);
     }
 
     const QPointF fromTarget = !controls.isEmpty() ? controls.front()
-        : m_to ? m_to->pos() : m_fallbackPosition;
+        : m_to ? m_to->center() : m_fallbackPosition;
     const QPointF toTarget = !controls.isEmpty() ? controls.back()
-        : m_from ? m_from->pos() : m_fallbackPosition;
-    const QPointF start = m_from ? m_from->boundaryPointToward(fromTarget) : m_fallbackPosition + QPointF(-60.0, 0.0);
-    const QPointF end = m_to ? m_to->boundaryPointToward(toTarget) : m_fallbackPosition + QPointF(60.0, 0.0);
+        : m_from ? m_from->center() : m_fallbackPosition;
+    const QPointF start = m_previewEndpoint == -1 ? m_previewPosition
+        : m_from ? m_from->boundaryPointToward(fromTarget) : m_fallbackPosition + QPointF(-60.0, 0.0);
+    const QPointF end = m_previewEndpoint == -2 ? m_previewPosition
+        : m_to ? m_to->boundaryPointToward(toTarget) : m_fallbackPosition + QPointF(60.0, 0.0);
     QVector<QPointF> result;
     if (m_route.mode == qds::core::RouteMode::Straight || m_route.mode == qds::core::RouteMode::Bezier
         || !controls.isEmpty()) {
@@ -434,6 +513,15 @@ int ArrowItem::type() const
     return Type;
 }
 
+Qt::PenStyle ArrowItem::lineStyle() const
+{
+    const auto *source = dynamic_cast<const ViewObjectItem *>(m_from);
+    const auto *target = dynamic_cast<const ViewObjectItem *>(m_to);
+    const bool commented = (source && source->kind() == qds::core::ElementKind::Comment)
+        || (target && target->kind() == qds::core::ElementKind::Comment);
+    return commented ? Qt::DashLine : Qt::SolidLine;
+}
+
 void ArrowItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
     Q_UNUSED(option)
@@ -448,7 +536,7 @@ void ArrowItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
             painter->drawLine(guide);
     }
     const QColor color = isSelected() ? QColor(35, 120, 210) : QColor(75, 85, 95);
-    painter->setPen(QPen(color, isSelected() ? 2.4 : 1.4, Qt::DashLine));
+    painter->setPen(QPen(color, isSelected() ? 2.4 : 1.4, lineStyle()));
     painter->drawPath(geometryPath());
     painter->setBrush(color);
     const QPolygonF arrow = arrowHead();
@@ -496,6 +584,25 @@ QVector<QPainterPath> FlowItem::linePaths() const
     return result;
 }
 
+QPointF FlowItem::center() const
+{
+    return geometryPath().pointAtPercent(0.5);
+}
+
+QRectF FlowItem::boundingRect() const
+{
+    return RoutedItem::boundingRect().united(labelRect().adjusted(-2.0, -2.0, 2.0, 2.0));
+}
+
+QRectF FlowItem::labelRect() const
+{
+    const QPainterPath path = geometryPath();
+    if (path.isEmpty())
+        return {};
+    const QPointF center = path.pointAtPercent(0.5);
+    return QRectF(center + QPointF(-60.0, 16.0), QSizeF(120.0, 24.0));
+}
+
 void FlowItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
     RoutedItem::paint(painter, option, widget);
@@ -504,9 +611,8 @@ void FlowItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
         painter->drawPolygon(polygon);
     const QPainterPath path = geometryPath();
     if (!path.isEmpty()) {
-        const QPointF center = path.pointAtPercent(0.5);
         painter->setPen(QColor(25, 30, 35));
-        const QRectF textRect(center + QPointF(-60.0, 16.0), QSizeF(120.0, 24.0));
+        const QRectF textRect = labelRect();
         painter->drawText(textRect, Qt::AlignCenter, painter->fontMetrics().elidedText(m_name, Qt::ElideRight, 120));
     }
 }
@@ -549,6 +655,7 @@ ControlPointHandle::ControlPointHandle(qds::core::EntityId id, int index, Role r
     , m_role(role)
 {
     setFlags(ItemIsMovable | ItemSendsGeometryChanges);
+    setAcceptedMouseButtons(Qt::LeftButton);
     setFlag(ItemIgnoresTransformations);
     setZValue(10.0);
     setPos(position);

@@ -25,9 +25,17 @@ enum class RouteMode {
     Bezier
 };
 
+struct RoutePoint {
+    Vec2 relative;
+    bool automatic = false;
+
+    bool operator==(const RoutePoint &other) const { return relative == other.relative && automatic == other.automatic; }
+    bool operator!=(const RoutePoint &other) const { return !(*this == other); }
+};
+
 struct Route {
-    RouteMode mode = RouteMode::Orthogonal;
-    std::vector<Vec2> controlPoints;
+    RouteMode mode = RouteMode::Straight;
+    std::vector<RoutePoint> controlPoints;
     bool manual = false;
     bool locked = false;
 
@@ -37,6 +45,8 @@ struct Route {
     }
     bool operator!=(const Route &other) const { return !(*this == other); }
 };
+
+Route defaultConnectorRoute();
 
 struct ElementData {
     EntityId id = 0;
@@ -204,7 +214,7 @@ private:
     template <typename T>
     EntityId insert(std::unique_ptr<T> element, Vec2 position);
     bool validFlowEndpoint(EntityId id) const;
-    bool validConnectorEndpoint(EntityId id) const;
+    bool validConnectorEndpoints(EntityId from, EntityId to) const;
     std::string uniqueName(ElementKind kind);
     void updateReferences(EntityId id, const std::string &oldName, const std::string &newName);
 

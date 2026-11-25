@@ -15,6 +15,7 @@ public:
     }
 
     virtual qds::core::EntityId id() const = 0;
+    virtual QPointF center() const { return pos(); }
     virtual QPointF boundaryPointToward(const QPointF &target) const;
 
 signals:
@@ -60,6 +61,7 @@ public:
     QRectF boundingRect() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     qds::core::EntityId id() const override { return m_id; }
+    qds::core::ElementKind kind() const { return m_kind; }
     QString text() const { return m_text; }
     QPointF boundaryPointToward(const QPointF &target) const override;
     void refresh(const qds::core::ViewElement &object, const QPointF &position);
@@ -83,24 +85,36 @@ public:
     DiagramItem *from() const { return m_from; }
     DiagramItem *to() const { return m_to; }
     const qds::core::Route &route() const { return m_route; }
+    bool previewing() const { return m_previewEndpoint != 0; }
+    void previewEndpoint(int index, const QPointF &position);
+    void clearEndpointPreview();
     QPainterPath geometryPath() const;
+    QPointF scenePoint(const qds::core::RoutePoint &point) const;
+    qds::core::RoutePoint routePointFromScene(const QPointF &position) const;
     QPolygonF arrowHead() const;
     virtual qreal arrowSize() const;
     virtual QVector<QPainterPath> linePaths() const;
     QVector<QLineF> controlGuides() const;
     void setControlGuidesVisible(bool visible);
+    void updateLayout(const qds::core::Route &route);
+    void updateLayout(DiagramItem *from, DiagramItem *to);
+    void updateLayout();
+    void setAutomaticRoute(const qds::core::Route &route);
     void setRoute(const qds::core::Route &route);
     void rebind(DiagramItem *from, DiagramItem *to);
     void updatePosition();
 
 protected:
     QVector<QPointF> points() const;
+    void routeFrame(QPointF &from, QPointF &delta, QPointF &normal) const;
 
     DiagramItem *m_from;
     DiagramItem *m_to;
     qds::core::Route m_route;
     QPointF m_fallbackPosition;
     bool m_controlGuidesVisible = false;
+    int m_previewEndpoint = 0;
+    QPointF m_previewPosition;
 };
 
 class ArrowItem : public RoutedItem
@@ -113,6 +127,7 @@ public:
     int type() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     qds::core::EntityId id() const override { return m_id; }
+    Qt::PenStyle lineStyle() const;
 
 private:
     qds::core::EntityId m_id;
@@ -132,8 +147,11 @@ public:
         QGraphicsItem *parent = nullptr);
 
     int type() const override;
+    QRectF boundingRect() const override;
+    QRectF labelRect() const;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     qds::core::EntityId id() const override { return m_id; }
+    QPointF center() const override;
     qreal arrowSize() const override { return 16.0; }
     QVector<QPainterPath> linePaths() const override;
     QVector<QPolygonF> valvePolygons() const;

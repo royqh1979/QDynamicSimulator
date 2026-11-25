@@ -69,8 +69,12 @@
 | editor_connect | 667 | 123.211 | 184.724 |
 | route_edit | 667 | 210.212 | 315.160 |
 | editor_paste | 1000 | 40.9090 | 40.9090 |
+| connector_line_style | 1000 | 0.0568 | 0.0568 |
 | flow_pipeline_geometry | 1000 | 1.4258 | 1.4258 |
-| flow_arrow_geometry | 1000 | 0.4226 | 0.4226 |
+| flow_arrow_geometry | 1000 | 0.4314 | 0.4314 |
+| orthogonal_auto_route | 1000 | 1.8474 | 1.8474 |
+| flow_label_geometry | 1000 | 7.1001 | 7.1001 |
+| flow_center_boundary | 1000 | 9.9470 | 9.9470 |
 | blank_flow_create_undo_redo | 1000 | 17.2425 | 17.2425 |
 | comment_content_edit | 1000 | 417.708 | 417.708 |
 | property_panel_refresh | 1000 | 162.383 | 162.383 |
@@ -81,3 +85,32 @@
 | xmile_sir_import | 100 | 9.5488 | 95.4880 |
 
 `blank_flow_create_undo_redo` 每轮实际执行“创建两个 Cloud 和一个 Flow → undo 删除全部 → redo 恢复全部 → undo 回到空文档”，并断言 Scene 与 Document 同步。QDS profile 逐变量断言原生往返后的 ElementKind 一致，覆盖 Auxiliary、Constant 和 Data；XMILE profile 单独测量未压缩导出与导入，不要求保留专有分类。`comment_content_edit` 覆盖正文 ChangeSet、Scene 文本刷新和最终值校验；`flow_pipeline_geometry` 验证每次返回两条 Flow 路径，`property_panel_refresh` 测量独立属性 Widget 的完整刷新。属性面板输入及 undo 同步由编辑器单元测试覆盖。结果只用于后续同环境回归比较，不与不同 Qt 链接方式或旧数据结构的结果直接比较。
+
+## Connector 默认贝塞尔与依赖刷新
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`sir_dependent_route_moves` 导入真实 SIR，定位 infectious 及其 Stock→Flow→Arrow 依赖链，每轮通过 DocumentController 移动 Stock，并读取全部相关 Arrow 的最新路径作为校验；不是只测量孤立几何函数。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| bezier_control_guide_updates | 1000 | 0.7701 | 0.7701 |
+| automatic_bezier_edit_reset | 1000 | 1.1954 | 1.1954 |
+| connector_drag_selection | 1000 | 42.4483 | 42.4483 |
+| endpoint_preview_cancel | 1000 | 46.2102 | 46.2102 |
+| bezier_guide_single_selection | 1000 | 4.5462 | 4.5462 |
+| flow_center_boundary | 1000 | 9.1708 | 9.1708 |
+| xmile_sir_import | 100 | 10.3845 | 103.845 |
+| sir_dependent_route_moves | 1000 | 72.6264 | 72.6264 |
+
+`automatic_bezier_edit_reset` 每轮恢复两个自动点、计算辅助线，再通过控制句柄位置变化预览编辑，并验证两个点成组转为手动；覆盖自动点显示和编辑路径，而非只测量几何函数。`connector_drag_selection` 通过 Scene 鼠标按下、移动和释放测量框选状态切换，校验拖动中辅助线数量为零、释放后恢复为两条且曲线保持选中；真实 Viewport 反向拖动和释放重绘由编辑器单元测试覆盖。`endpoint_preview_cancel` 使用真实 DiagramView 鼠标事件执行端点按下、空白拖动和取消，校验预览中无辅助线或中间控制句柄、取消后恢复两条辅助线；控制句柄启用 ItemIgnoresTransformations，不能用缺少 View 的 Scene 事件替代。
+
+该结果用于后续同场景回归比较。当前两级依赖刷新直接遍历 Scene 图元，不引入额外派生索引；只有后续 profile 证明需要时才调整索引结构。
+
+## Connector 指向 Flow 的端点命中
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`connector_create_to_flow` 使用真实 DiagramView 鼠标按下、拖动和释放，从 Auxiliary 创建指向 Flow 阀门中心的 Connector；每轮断言 Document 端点和 Scene Arrow 端点，再在计时外 undo 清理。计时包含端点命中、橡皮线、命令和 Scene 增量同步，不包含坐标映射、结果断言和清理。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| connector_create_to_flow | 1000 | 21.5640 | 21.5640 |
+
+编辑器回归同时覆盖 Connect 工具创建、端点句柄重连到 Flow、空白取消、Arrow 不可作为端点、undo/redo，以及 QDS 和 XMILE 往返后的 from/to。

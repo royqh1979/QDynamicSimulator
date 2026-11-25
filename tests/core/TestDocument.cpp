@@ -153,7 +153,7 @@ void TestDocument::restoreWithStableIds()
     Route route;
     route.mode = RouteMode::Bezier;
     route.manual = true;
-    route.controlPoints = {{50.0, 25.0}, {100.0, 50.0}};
+    route.controlPoints = {{0.25, 25.0}, {0.75, 50.0}};
     QVERIFY(document.setRoute(flow, route));
     std::unordered_map<EntityId, ElementData> records;
     for (EntityId id : {stock, flow, connector})
@@ -177,11 +177,14 @@ void TestDocument::routeAndPositionState()
     const EntityId cloud = document.createCloud({200.0, 0.0});
     const EntityId flow = document.createFlow(stock, cloud);
     QCOMPARE(document.diagram().route(flow).mode, RouteMode::Straight);
+    const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
+    const EntityId connector = document.createConnector(auxiliary, flow);
+    QCOMPARE(document.diagram().route(connector), defaultConnectorRoute());
     Route route;
     route.mode = RouteMode::Bezier;
     route.manual = true;
     route.locked = true;
-    route.controlPoints = {{1.0, 2.0}, {3.0, 4.0}};
+    route.controlPoints = {{0.25, 2.0}, {0.75, 4.0}};
     QVERIFY(document.setPosition(stock, {99.0, 100.0}));
     QCOMPARE(document.diagram().position(flow), Vec2({149.5, 50.0}));
     QVERIFY(document.setRoute(flow, route));
@@ -230,6 +233,12 @@ void TestDocument::entityAndConnectorTypes()
     QVERIFY(arrow != 0);
     QCOMPARE(document.createConnector(stock, auxiliary), EntityId(0));
     QVERIFY(document.createConnector(comment, flow) != 0);
+    QCOMPARE(document.createConnector(comment, secondComment), EntityId(0));
+    ElementData invalidCommentLink;
+    invalidCommentLink.kind = ElementKind::Connector;
+    invalidCommentLink.from = comment;
+    invalidCommentLink.to = secondComment;
+    QVERIFY(!document.restore(invalidCommentLink));
     QCOMPARE(document.createConnector(cloud, auxiliary), EntityId(0));
 }
 

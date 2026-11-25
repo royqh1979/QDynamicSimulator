@@ -8,6 +8,7 @@
 
 #include <QGraphicsScene>
 #include <QHash>
+#include <QPointer>
 
 class DocumentController;
 class QGraphicsLineItem;
@@ -81,6 +82,7 @@ private:
     void removeControlPoint(qds::core::EntityId id, int index);
     void updateAutomaticRoute(RoutedItem *item);
     void cancelRubberLine();
+    void cancelEndpointPreview();
 
     DocumentController *m_controller;
     QHash<qds::core::EntityId, DiagramItem *> m_items;
@@ -88,6 +90,7 @@ private:
     qds::core::EntityId m_connectionSource = 0;
     QPointF m_connectionStart;
     QGraphicsLineItem *m_rubberLine = nullptr;
+    QPointer<RoutedItem> m_endpointPreviewItem;
     QList<ControlPointHandle *> m_controlHandles;
     ObstacleIndex m_obstacles;
     OrthogonalRouter m_router;
