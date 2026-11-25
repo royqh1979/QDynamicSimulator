@@ -13,6 +13,7 @@
 #include <qds/io/DocumentFile.h>
 #include <qds/io/XmileFile.h>
 
+#include <QDockWidget>
 #include <QDropEvent>
 #include <QFile>
 #include <QGraphicsProxyWidget>
@@ -24,6 +25,7 @@
 #include <QMenuBar>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QSettings>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QToolBar>
@@ -114,6 +116,7 @@ private slots:
     void unifiedIdUndoRedo();
     void modifierDragOperations();
     void fileDropOpen();
+    void windowLayoutPersistence();
 };
 
 void TestEditor::createUndoRedo()
@@ -1994,6 +1997,46 @@ void TestEditor::fileDropOpen()
     QDragEnterEvent rejected(QPoint(20, 20), Qt::CopyAction, &invalid, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view->viewport(), &rejected);
     QVERIFY(!rejected.isAccepted());
+}
+
+void TestEditor::windowLayoutPersistence()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, directory.path());
+    QCoreApplication::setOrganizationName(QStringLiteral("QDSTest"));
+    QCoreApplication::setApplicationName(QStringLiteral("WindowLayout"));
+
+    MainWindow window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    window.resize(977, 633);
+    window.move(41, 61);
+    auto *propertyDock = window.findChild<QDockWidget *>(QStringLiteral("propertyDock"));
+    auto *navigationDock = window.findChild<QDockWidget *>(QStringLiteral("navigationDock"));
+    QVERIFY(propertyDock && navigationDock);
+    propertyDock->hide();
+    navigationDock->setFloating(true);
+    const QList<QDockWidget *> docks = window.findChildren<QDockWidget *>();
+    for (const QDockWidget *dock : docks)
+        QVERIFY(!dock->objectName().isEmpty());
+    QVERIFY(window.close());
+
+    QSettings settings;
+    const QByteArray geometry = settings.value(QStringLiteral("mainWindow/geometry")).toByteArray();
+    const QByteArray state = settings.value(QStringLiteral("mainWindow/state")).toByteArray();
+    QVERIFY(!geometry.isEmpty());
+    QVERIFY(!state.isEmpty());
+
+    MainWindow restored;
+    QCOMPARE(restored.saveGeometry(), geometry);
+    QCOMPARE(restored.saveState(), state);
+    auto *restoredProperties = restored.findChild<QDockWidget *>(QStringLiteral("propertyDock"));
+    auto *restoredNavigation = restored.findChild<QDockWidget *>(QStringLiteral("navigationDock"));
+    QVERIFY(restoredProperties && restoredNavigation);
+    QVERIFY(restoredProperties->isHidden());
+    QVERIFY(restoredNavigation->isFloating());
 }
 
 QTEST_MAIN(TestEditor)

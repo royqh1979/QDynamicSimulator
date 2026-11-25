@@ -140,6 +140,7 @@
 - 保存多个视图及当前视图。
 - 工作区状态放入容器内独立专有 XML。
 - 打开后恢复画布位置、缩放比例和必要的窗口状态。
+- 应用窗口布局与文档工作区分层保存：退出且通过未保存修改检查时，将 `saveGeometry()`/`saveState()` 写入 QSettings 的 `mainWindow/geometry`、`mainWindow/state`；启动构造 MainWindow 时恢复。所有 Dock 和 ToolBar 使用稳定 objectName，保存窗口尺寸/位置、Dock 区域、浮动和可见状态；取消退出不覆盖布局。
 - 保存后重新打开，模型结构和布局一致。
 - 对暂不支持的 XMILE 内容尽量保留，避免静默丢失。
 - 导出剥离专有数据的纯 XMILE。

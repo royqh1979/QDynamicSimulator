@@ -2,6 +2,7 @@
 #include "DiagramScene.h"
 #include "DiagramView.h"
 #include "DocumentController.h"
+#include "MainWindow.h"
 #include "PropertyPanel.h"
 #include <qds/io/DocumentFile.h>
 #include <qds/io/XmileFile.h>
@@ -16,7 +17,9 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QSettings>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QTextStream>
 
 #include <vector>
@@ -525,6 +528,38 @@ int main(int argc, char **argv)
         propertyPanel.refresh();
     const qint64 propertyPanelNs = timer.nsecsElapsed();
 
+    QTemporaryDir layoutDirectory;
+    if (!layoutDirectory.isValid())
+        return 25;
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, layoutDirectory.path());
+    QCoreApplication::setOrganizationName(QStringLiteral("QDSProfile"));
+    QCoreApplication::setApplicationName(QStringLiteral("WindowLayout"));
+    const int layoutIterations = qMax(1, count / 10);
+    qint64 windowLayoutNs = 0;
+    int windowLayoutCount = 0;
+    for (int index = 0; index < layoutIterations; ++index) {
+        MainWindow window;
+        window.show();
+        QThread::msleep(20);
+        QApplication::processEvents();
+        window.resize(977, 633);
+        window.move(41, 61);
+        const QSize expectedSize = window.size();
+        timer.restart();
+        window.close();
+        QSettings settings;
+        const QByteArray expectedGeometry = settings.value(QStringLiteral("mainWindow/geometry")).toByteArray();
+        const QByteArray expectedState = settings.value(QStringLiteral("mainWindow/state")).toByteArray();
+        MainWindow restored;
+        windowLayoutNs += timer.nsecsElapsed();
+        if (expectedGeometry.isEmpty() || restored.size() != expectedSize)
+            return 26;
+        if (restored.saveState() != expectedState)
+            return 27;
+        ++windowLayoutCount;
+    }
+
     QTemporaryDir directory;
     if (!directory.isValid())
         return 3;
@@ -653,6 +688,7 @@ int main(int argc, char **argv)
                         << "blank_flow_create_undo_redo,1000," << blankFlowNs / 1e6 << "," << blankFlowNs / 1000.0 / 1000 << "\n"
                         << "comment_content_edit,1000," << commentEditNs / 1e6 << "," << commentEditNs / 1000.0 / 1000 << "\n"
                         << "property_panel_refresh,1000," << propertyPanelNs / 1e6 << "," << propertyPanelNs / 1000.0 / 1000 << "\n"
+                        << "window_layout_restore," << windowLayoutCount << "," << windowLayoutNs / 1e6 << "," << windowLayoutNs / 1000.0 / windowLayoutCount << "\n"
                         << "qds_save," << count << "," << saveNs / 1e6 << "," << saveNs / 1000.0 / count << "\n"
                         << "qds_open," << count << "," << loadNs / 1e6 << "," << loadNs / 1000.0 / count << "\n"
                         << "xmile_export," << count << "," << exportNs / 1e6 << "," << exportNs / 1000.0 / count << "\n"
@@ -668,7 +704,7 @@ int main(int argc, char **argv)
         && singleSelectionGuideCount == 1000 && valveCount == 2000
         && lineStyleChecksum == 3000 && automaticPointCount > 0 && automaticFlagsValid
         && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000
-        && centerBoundaryCount == 1000 && variableKindsMatch
+        && centerBoundaryCount == 1000 && variableKindsMatch && windowLayoutCount == layoutIterations
         && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic
         && !dependentArrows.empty() && dependentEndpointChecksum != 0.0
         && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
