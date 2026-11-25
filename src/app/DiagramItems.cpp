@@ -290,18 +290,20 @@ void RoutedItem::previewEndpoint(int index, const QPointF &position)
 {
     if (index != -1 && index != -2)
         return;
+    prepareGeometryChange();
     m_previewEndpoint = index;
     m_previewPosition = position;
-    updateLayout();
+    update();
 }
 
 void RoutedItem::clearEndpointPreview()
 {
     if (m_previewEndpoint == 0)
         return;
+    prepareGeometryChange();
     m_previewEndpoint = 0;
     m_previewPosition = {};
-    updateLayout();
+    update();
 }
 
 void RoutedItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)

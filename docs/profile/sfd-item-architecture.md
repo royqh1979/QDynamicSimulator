@@ -124,3 +124,13 @@
 | endpoint_target_highlight | 1000 | 5.7478 | 5.7478 |
 
 单元测试使用真实 DiagramView 验证普通实体和 Flow 的橙色虚线像素、蓝色选中态的区别、目标切换、空白清除、释放/取消及重绘一致性；颜色断言与绘制代码共同引用 `DiagramPalette.h`，避免测试依赖重复字面值。
+
+## 端点预览几何失效与依赖刷新
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`flow_endpoint_preview_dependents` 使用真实 View 在两个 Stock 之间反复拖动并释放 Flow 目标端点，每次包含按下、预览、正式 reconnect 和 Scene 通知；Flow 外另有长距离 Auxiliary→Flow Connector，用于覆盖依赖路径刷新。每轮校验最终 Flow 端点、预览状态清除和 Arrow 末端与 Flow 边界一致。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| flow_endpoint_preview_dependents | 1000 | 47.1443 | 47.1443 |
+
+回归测试直接收集 `QGraphicsScene::changed`，要求 Flow 预览覆盖依赖 Arrow 的旧/新实际绘制区域，并要求 Connector 跨越原 Stock 释放后覆盖完整预览边界；另比较连续拖动后的画面与强制全量重绘，防止只验证最终模型而遗漏像素残影。

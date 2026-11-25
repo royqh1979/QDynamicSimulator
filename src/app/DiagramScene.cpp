@@ -697,7 +697,7 @@ void DiagramScene::previewControlPoint(EntityId id, int index, const QPointF &po
         m_endpointPreviewItem = item;
         m_endpointPreviewItem->previewEndpoint(index, position);
         setEndpointTarget(connectionEndpointAt(*this, position));
-        syncControlPoints();
+        updateDependentRoutes(id);
         return;
     }
     auto *item = dynamic_cast<RoutedItem *>(m_items.value(id));
@@ -785,9 +785,14 @@ void DiagramScene::cancelRubberLine()
 void DiagramScene::cancelEndpointPreview()
 {
     setEndpointTarget(nullptr);
-    if (m_endpointPreviewItem)
-        m_endpointPreviewItem->clearEndpointPreview();
-    m_endpointPreviewItem.clear();
+    if (m_endpointPreviewItem) {
+        RoutedItem *item = m_endpointPreviewItem;
+        const EntityId id = item->id();
+        m_endpointPreviewItem.clear();
+        item->clearEndpointPreview();
+        updateDependentRoutes(id);
+        return;
+    }
     syncControlPoints();
 }
 
