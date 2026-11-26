@@ -133,6 +133,25 @@ int main(int argc, char **argv)
     }
     const qint64 lookupNs = timer.nsecsElapsed();
 
+    exponential.setSimulationSettings({0.0, steps * 0.01, 0.01, 0.01, IntegrationMethod::RungeKutta4});
+    const SimulationCompileResult rk4Compiled = compileSimulation(exponential);
+    if (!rk4Compiled.plan)
+        return 13;
+    timer.restart();
+    int rk4Count = 0;
+    double rk4Checksum = 0.0;
+    for (int index = 0; index < count; ++index) {
+        const SimulationRun run = SimulationRunner(exponential, *rk4Compiled.plan).run();
+        if (run.status() != SimulationRunStatus::Completed || run.times().size() != steps + 1)
+            return 14;
+        rk4Checksum += run.series(stock)->back();
+        ++rk4Count;
+    }
+    const qint64 rk4Ns = timer.nsecsElapsed();
+    const double rk4Expected = std::exp(steps * 0.01);
+    if (std::abs(rk4Checksum / rk4Count - rk4Expected) > 1e-9 * std::abs(rk4Expected))
+        return 15;
+
     QTextStream output(stdout);
     output << "operation,count,total_ms,per_operation_us\n";
     output << "settings_validate," << validationCount << ',' << validationNs / 1.0e6 << ','
@@ -154,5 +173,12 @@ int main(int argc, char **argv)
     output << "simulation_saved_points," << savedPoints << ",\n";
     output << "simulation_euler_checksum," << runChecksum << ",\n";
     output << "simulation_lookup_checksum," << lookupChecksum << ",\n";
+    output << "simulation_rk4," << rk4Count << ',' << rk4Ns / 1.0e6 << ','
+           << rk4Ns / 1000.0 / rk4Count << "\n";
+    output << "simulation_rk4_step," << rk4Count * steps << ',' << rk4Ns / 1.0e6 << ','
+           << rk4Ns / 1000.0 / (rk4Count * steps) << "\n";
+    output << "simulation_rk4_evaluation," << rk4Count * steps * 4 << ',' << rk4Ns / 1.0e6 << ','
+           << rk4Ns / 1000.0 / (rk4Count * steps * 4) << "\n";
+    output << "simulation_rk4_checksum," << rk4Checksum << ",\n";
     return 0;
 }

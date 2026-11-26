@@ -59,6 +59,8 @@ private slots:
     void logisticAndOscillatorBenchmarks();
     void saveIntervalsAndTimeBounds();
     void macrosAndResultAccess();
+    void rungeKutta4();
+    void rungeKutta4StageFailure();
     void compilationDiagnostics();
     void cancellationAndRuntimeFailure();
 };
@@ -215,6 +217,57 @@ void TestSimulation::macrosAndResultAccess()
     QCOMPARE(*run.series(stock), (QVector<double> {1.0, 3.0}));
 }
 
+void TestSimulation::rungeKutta4()
+{
+    Document coarseDocument = exponentialDocument(0.25);
+    QVERIFY(coarseDocument.setSimulationSettings({0.0, 1.0, 0.25, 0.25, IntegrationMethod::RungeKutta4}));
+    const SimulationRun coarse = runModel(coarseDocument);
+    QCOMPARE(coarse.status(), SimulationRunStatus::Completed);
+    QCOMPARE(coarse.settings().integrationMethod(), IntegrationMethod::RungeKutta4);
+    QCOMPARE(coarse.times().size(), 5);
+    const EntityId stock = coarseDocument.findByName("Stock")->id();
+    const double analytic = std::exp(1.0);
+    expectNear(coarse.series(stock)->back(), analytic, 0.001);
+
+    Document fineDocument = exponentialDocument(0.125);
+    QVERIFY(fineDocument.setSimulationSettings({0.0, 1.0, 0.125, 0.125, IntegrationMethod::RungeKutta4}));
+    const SimulationRun fine = runModel(fineDocument);
+    QCOMPARE(fine.times().size(), 9);
+    const double coarseError = std::abs(coarse.series(stock)->back() - analytic);
+    const double fineError = std::abs(fine.series(stock)->back() - analytic);
+    QVERIFY(coarseError > fineError * 14.0);
+    QVERIFY(coarseError < fineError * 18.0);
+
+    Document timeDocument;
+    const EntityId timeStock = timeDocument.createVariable(ElementKind::Stock);
+    const EntityId cloud = timeDocument.createCloud();
+    const EntityId timeFlow = timeDocument.createFlow(cloud, timeStock);
+    timeDocument.setEquation(timeStock, "0");
+    timeDocument.setEquation(timeFlow, "TIME");
+    QVERIFY(timeDocument.setSimulationSettings({0.0, 1.0, 1.0, 1.0, IntegrationMethod::RungeKutta4}));
+    const SimulationRun timeRun = runModel(timeDocument);
+    QCOMPARE(timeRun.status(), SimulationRunStatus::Completed);
+    QCOMPARE(*timeRun.series(timeStock), (QVector<double> {0.0, 0.5}));
+}
+
+void TestSimulation::rungeKutta4StageFailure()
+{
+    Document document;
+    const EntityId stock = document.createVariable(ElementKind::Stock);
+    const EntityId cloud = document.createCloud();
+    const EntityId flow = document.createFlow(cloud, stock);
+    document.setEquation(stock, "1");
+    document.setEquation(flow, "1 / (TIME - 0.5)");
+    QVERIFY(document.setSimulationSettings({0.0, 1.0, 1.0, 1.0, IntegrationMethod::RungeKutta4}));
+    const SimulationRun run = runModel(document);
+    QCOMPARE(run.status(), SimulationRunStatus::Failed);
+    QCOMPARE(run.times(), (QVector<double> {0.0}));
+    QCOMPARE(*run.series(stock), (QVector<double> {1.0}));
+    QCOMPARE(run.endTime(), std::optional<double>(0.5));
+    QVERIFY(!run.issues().isEmpty());
+    QCOMPARE(run.issues().front().code, QStringLiteral("non-finite-simulation-value"));
+}
+
 void TestSimulation::compilationDiagnostics()
 {
     Document missing;
@@ -257,9 +310,6 @@ void TestSimulation::compilationDiagnostics()
     runtimeCycle.setEquation(second, "First");
     QVERIFY(hasIssue(compileSimulation(runtimeCycle), "simultaneous-equations"));
 
-    Document rk4 = exponentialDocument(0.25);
-    rk4.setSimulationSettings({0.0, 1.0, 0.25, 0.25, IntegrationMethod::RungeKutta4});
-    QVERIFY(hasIssue(compileSimulation(rk4), "unsupported-integration-method"));
 }
 
 void TestSimulation::cancellationAndRuntimeFailure()

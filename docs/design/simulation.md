@@ -2,7 +2,7 @@
 
 ## 1. 状态与范围
 
-状态：总体设计已审查并持续细化；SimulationSettings、标量编译、同步 Euler、不可变 Run 与取消/失败处理已实现并通过验证；RK4 尚未实现。
+状态：SimulationSettings、标量编译、同步 Euler/RK4、不可变 Run 与取消/失败处理已实现并通过验证；结果界面处于设计阶段。
 
 本文定义从现有 Document、Formula、AnalysisReport 和 EvaluationContext 到可运行模型的边界。功能阶段计划只记录在本文，不进入 `docs/history/`；实际演进由 git log 记录。
 

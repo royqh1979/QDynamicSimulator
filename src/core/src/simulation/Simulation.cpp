@@ -155,10 +155,6 @@ SimulationCompileResult compileSimulation(const Document &document)
     const SimulationSettings &settings = document.simulationSettings();
     if (!settings.isValid())
         addIssue(result, 0, "Simulation settings are invalid", "invalid-simulation-settings");
-    if (settings.integrationMethod() != IntegrationMethod::Euler) {
-        addIssue(result, 0, "The selected integration method is not implemented", "unsupported-integration-method");
-    }
-
     const AnalysisReport analysis = analyzeDocument(document);
     for (const ModelIssue &issue : analysis.issues()) {
         if (issue.severity == IssueSeverity::Error && issue.code != "algebraic-cycle")
@@ -252,6 +248,7 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
 
     QHash<EntityId, double> values;
     double currentTime = m_plan.settings().startTime();
+    double evaluationTime = currentTime;
     const auto stopWithIssue = [&](SimulationRunStatus status, EntityId id, QString message, QString code,
                                 SourceSpan span = {}) {
         run.m_status = status;
@@ -262,6 +259,7 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
     };
     const auto evaluate = [&](const QVector<EntityId> &order, double time, double dt,
                             QHash<EntityId, double> &target) -> std::optional<ModelIssue> {
+        evaluationTime = time;
         EvaluationContext context;
         context.time = time;
         context.dt = dt;
@@ -293,7 +291,7 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
     };
     const auto failEvaluation = [&](const ModelIssue &issue) {
         run.m_status = SimulationRunStatus::Failed;
-        run.m_endTime = currentTime;
+        run.m_endTime = evaluationTime;
         run.m_issues.push_back(issue);
         return run;
     };
@@ -302,6 +300,19 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
         return stopWithIssue(SimulationRunStatus::Cancelled, 0, "Simulation cancelled", "simulation-cancelled");
     if (const auto issue = evaluate(m_plan.m_initializationOrder, currentTime, m_plan.settings().dt(), values))
         return failEvaluation(*issue);
+
+    const auto netRates = [this](const QHash<EntityId, double> &state) {
+        QHash<EntityId, double> rates;
+        for (const StockFlows &binding : m_plan.m_stockFlows) {
+            double rate = 0.0;
+            for (EntityId flow : binding.inflows)
+                rate += state.value(flow);
+            for (EntityId flow : binding.outflows)
+                rate -= state.value(flow);
+            rates.insert(binding.stock, rate);
+        }
+        return rates;
+    };
 
     double nextSave = m_plan.settings().startTime() + m_plan.settings().saveInterval();
     bool firstPoint = true;
@@ -332,13 +343,40 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
             break;
 
         QHash<EntityId, double> nextValues = values;
+        if (m_plan.settings().integrationMethod() == IntegrationMethod::Euler) {
+            const QHash<EntityId, double> rates = netRates(values);
+            for (const StockFlows &binding : m_plan.m_stockFlows)
+                nextValues[binding.stock] = values.value(binding.stock) + dt * rates.value(binding.stock);
+        } else {
+            const QHash<EntityId, double> k1 = netRates(values);
+            QHash<EntityId, double> stage = values;
+            for (const StockFlows &binding : m_plan.m_stockFlows)
+                stage[binding.stock] = values.value(binding.stock) + dt * k1.value(binding.stock) / 2.0;
+            if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime + dt / 2.0, dt, stage))
+                return failEvaluation(*issue);
+            const QHash<EntityId, double> k2 = netRates(stage);
+
+            stage = values;
+            for (const StockFlows &binding : m_plan.m_stockFlows)
+                stage[binding.stock] = values.value(binding.stock) + dt * k2.value(binding.stock) / 2.0;
+            if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime + dt / 2.0, dt, stage))
+                return failEvaluation(*issue);
+            const QHash<EntityId, double> k3 = netRates(stage);
+
+            stage = values;
+            for (const StockFlows &binding : m_plan.m_stockFlows)
+                stage[binding.stock] = values.value(binding.stock) + dt * k3.value(binding.stock);
+            if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime + dt, dt, stage))
+                return failEvaluation(*issue);
+            const QHash<EntityId, double> k4 = netRates(stage);
+
+            for (const StockFlows &binding : m_plan.m_stockFlows) {
+                nextValues[binding.stock] = values.value(binding.stock) + dt
+                    * (k1.value(binding.stock) + 2.0 * k2.value(binding.stock)
+                        + 2.0 * k3.value(binding.stock) + k4.value(binding.stock)) / 6.0;
+            }
+        }
         for (const StockFlows &binding : m_plan.m_stockFlows) {
-            double derivative = 0.0;
-            for (EntityId flow : binding.inflows)
-                derivative += values.value(flow);
-            for (EntityId flow : binding.outflows)
-                derivative -= values.value(flow);
-            nextValues[binding.stock] = values.value(binding.stock) + dt * derivative;
             if (!std::isfinite(nextValues.value(binding.stock)))
                 return stopWithIssue(SimulationRunStatus::Failed, binding.stock,
                     "Stock integration produced a non-finite value", "non-finite-simulation-value");
