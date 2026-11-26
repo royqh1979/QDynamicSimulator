@@ -16,6 +16,7 @@ XMILE 文件为原始 HTML。Vensim 官方文档不提交下载副本；用户�
 - 来源：https://github.com/SDXorg/test-models
 - 路径：`3rdparty/test-models`，通过 `.gitmodules` 和 gitlink 固定上游提交，不复制到本项目普通目录。
 - 用途：`tests/` 提供按单一功能划分的单元式模型，`samples/` 提供集成、互操作、性能验证和演示模型；其中的 XMILE、Vensim、Stella 文件及规范输出作为后续测试输入，不作为本项目图标或界面素材。
+- 数值验证按用例对齐参考文件、软件版本、积分方法、DT 和 SAVEPER，并考虑文本有效数字。上游比较脚本的容差、缺列和时间网格处理不能替代本项目的严格断言。PySD 是可选独立参考实现，不是默认 CTest 依赖或唯一正确性标准。
 - 许可证：MIT，见子模块中的 `LICENSE`；使用时保留上游版权和许可声明。
 - 初始化或更新到项目固定提交：`git submodule update --init 3rdparty/test-models`。
 - 子模块内容不作为普通项目文件逐个提交；需要变更上游版本时单独审核并提交 gitlink。

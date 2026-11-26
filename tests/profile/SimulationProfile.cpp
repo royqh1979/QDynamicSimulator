@@ -1,10 +1,13 @@
 #include <core/Document.h>
+#include <core/simulation/Simulation.h>
 #include <io/DocumentFile.h>
 #include <io/XmileFile.h>
 
 #include <QElapsedTimer>
 #include <QTemporaryDir>
 #include <QTextStream>
+
+#include <cmath>
 
 using namespace qds::core;
 
@@ -71,6 +74,65 @@ int main(int argc, char **argv)
     }
     const qint64 xmileNs = timer.nsecsElapsed();
 
+    Document exponential;
+    const EntityId stock = exponential.createVariable(ElementKind::Stock);
+    const EntityId cloud = exponential.createCloud();
+    const EntityId flow = exponential.createFlow(cloud, stock);
+    exponential.rename(stock, "Stock");
+    exponential.setEquation(stock, "1");
+    exponential.setEquation(flow, "Stock");
+    const int steps = count;
+    exponential.setSimulationSettings({0.0, steps * 0.01, 0.01, 0.01});
+    timer.restart();
+    int compileCount = 0;
+    for (int index = 0; index < count; ++index) {
+        if (!compileSimulation(exponential).plan)
+            return 8;
+        ++compileCount;
+    }
+    const qint64 compileNs = timer.nsecsElapsed();
+    const SimulationCompileResult compiled = compileSimulation(exponential);
+    if (!compiled.plan)
+        return 9;
+
+    timer.restart();
+    int runCount = 0;
+    double runChecksum = 0.0;
+    int savedPoints = 0;
+    for (int index = 0; index < count; ++index) {
+        const SimulationRun run = SimulationRunner(exponential, *compiled.plan).run();
+        if (run.status() != SimulationRunStatus::Completed || run.times().size() != steps + 1) {
+            QTextStream(stderr) << "Euler profile failed: status=" << int(run.status())
+                                << " samples=" << run.times().size() << " expected=" << steps + 1 << "\n";
+            for (const ModelIssue &issue : run.issues())
+                QTextStream(stderr) << issue.code << ":" << issue.message << "\n";
+            for (int row = qMax(0, run.times().size() - 5); row < run.times().size(); ++row)
+                QTextStream(stderr) << row << ":" << QString::number(run.times()[row], 'g', 17) << "\n";
+            return 10;
+        }
+        runChecksum += run.series(stock)->back();
+        savedPoints += run.times().size();
+        ++runCount;
+    }
+    const qint64 runNs = timer.nsecsElapsed();
+    const double expectedFinal = std::pow(1.01, steps);
+    if (std::abs(runChecksum / runCount - expectedFinal) > 1e-9 * std::max(1.0, std::abs(expectedFinal))) {
+        QTextStream(stderr) << "Euler checksum mismatch: actual=" << QString::number(runChecksum / runCount, 'g', 17)
+                            << " expected=" << QString::number(expectedFinal, 'g', 17) << "\n";
+        return 11;
+    }
+
+    const SimulationRun lookupRun = SimulationRunner(exponential, *compiled.plan).run();
+    timer.restart();
+    double lookupChecksum = 0.0;
+    for (int index = 0; index < count; ++index) {
+        const QVector<double> *series = lookupRun.series(stock);
+        if (!series)
+            return 12;
+        lookupChecksum += series->back();
+    }
+    const qint64 lookupNs = timer.nsecsElapsed();
+
     QTextStream output(stdout);
     output << "operation,count,total_ms,per_operation_us\n";
     output << "settings_validate," << validationCount << ',' << validationNs / 1.0e6 << ','
@@ -81,5 +143,16 @@ int main(int argc, char **argv)
            << xmileNs / 1000.0 / xmileCount << "\n";
     output << "settings_qds_checksum," << settings.stopTime() + settings.dt() << ",\n";
     output << "settings_xmile_checksum," << xmileSettings.stopTime() + xmileSettings.dt() << ",\n";
+    output << "simulation_compile," << compileCount << ',' << compileNs / 1.0e6 << ','
+           << compileNs / 1000.0 / compileCount << "\n";
+    output << "simulation_euler," << runCount << ',' << runNs / 1.0e6 << ','
+           << runNs / 1000.0 / runCount << "\n";
+    output << "simulation_euler_step," << runCount * steps << ',' << runNs / 1.0e6 << ','
+           << runNs / 1000.0 / (runCount * steps) << "\n";
+    output << "simulation_result_lookup," << count << ',' << lookupNs / 1.0e6 << ','
+           << lookupNs / 1000.0 / count << "\n";
+    output << "simulation_saved_points," << savedPoints << ",\n";
+    output << "simulation_euler_checksum," << runChecksum << ",\n";
+    output << "simulation_lookup_checksum," << lookupChecksum << ",\n";
     return 0;
 }

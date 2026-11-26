@@ -20,3 +20,16 @@ cmake --build <RELEASE_BUILD_DIR> --target profile-simulation --parallel
 | settings_xmile_roundtrip | 1000 | 652.723 | 652.723 |
 
 QDS 与 XMILE 场景校验和均为 12.25。该校验和来自固定 stop+DT，仅用于防止错误结果被忽略，不作为跨格式 SAVEPER 相等的依据。
+
+## 标量编译与 Euler
+
+同一 Release 可执行文件增加固定指数模型：初始 Stock=1、Flow=Stock、DT=0.01、1000 步。编译与运行各执行 1000 次，保存 1001000 个样本点；每次运行校验样本数和最终 Stock，结果查询单独使用已完成的 Run，不重复计时仿真。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| simulation_compile | 1000 | 1.7741 | 1.7741 |
+| simulation_euler | 1000 | 287.051 | 287.051 |
+| simulation_euler_step | 1000000 | 287.051 | 0.287051 |
+| simulation_result_lookup | 1000 | 0.0015 | 0.0015 |
+
+Euler 与结果查询校验和均为约 2.09592e+07。时间由整数步序号派生，1000 步只产生 1001 个样本，避免浮点累计造成终点重复。

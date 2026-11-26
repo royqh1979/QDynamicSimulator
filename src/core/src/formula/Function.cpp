@@ -31,7 +31,8 @@ const FunctionSignature *findFunctionSignature(const QString &nameKey)
         {"mean", {1, 1, Category::Array}}, {"rank", {2, 3, Category::Array}},
         {"size", {1, 1, Category::Array}}, {"stddev", {1, 1, Category::Array}},
         {"sum", {1, 1, Category::Array}}, {"if_then_else", {3, 3, Category::Miscellaneous}},
-        {"log", {1, 1, Category::Compatibility}}, {"integr", {2, 3, Category::Compatibility}},
+        {"log", {1, 1, Category::Compatibility}}, {"integ", {2, 3, Category::Compatibility}},
+        {"integr", {2, 3, Category::Compatibility}},
         {"smooth", {2, 3, Category::Compatibility}}, {"lookup", {1, 2, Category::Compatibility}}
     };
     const auto found = signatures.find(nameKey);

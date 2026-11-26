@@ -2,7 +2,7 @@
 
 ## 1. 状态与范围
 
-状态：总体设计已审查并持续细化；SimulationSettings 与 QDS/XMILE 持久化已实现并通过验证，等待审核；积分器尚未开始。
+状态：总体设计已审查并持续细化；SimulationSettings、标量编译、同步 Euler、不可变 Run 与取消/失败处理已实现并通过验证；RK4 尚未实现。
 
 本文定义从现有 Document、Formula、AnalysisReport 和 EvaluationContext 到可运行模型的边界。功能阶段计划只记录在本文，不进入 `docs/history/`；实际演进由 git log 记录。
 
@@ -243,7 +243,7 @@ Runner 的 ExecutionStatus 区分 NotStarted、Running、Completed、Cancelled �
 3. **存量恒等式**：终值等于初值加全部净流入积分；封闭子系统总量守恒，同一 Stock 的流入与流出不会重复计算。
 4. **执行顺序**：多层 Auxiliary、双向反馈经 Stock、初始化依赖、代数环和缺失值。
 5. **时间边界**：零时长、最后一个短步、保存间隔、取消、NaN/Inf、溢出保护。
-6. **真实模型**：使用 SDXorg SIR 的对齐设置和参考结果；与 Vensim 比较时必须使用相同积分方法和 DT。
+6. **真实模型**：使用 SDXorg ABS、eval_order、Teacup、chained_initialization 和 SIR 的对齐设置及参考结果；与 Vensim 比较时必须使用相同积分方法和 DT。SIR 的守恒量是初始 Stock 总和 1005，而 total_population=1000 仅用于感染率归一化。参考 CSV 按文本有效数字设置舍入容差，解析解测试另按积分方法和 DT 标定数值误差。
 7. **黄金文件**：保存确定性基准输入、样本时间、结果与容差；文件包含生成语义版本，不能用当前错误结果重写黄金文件来消除失败。
 
 ## 11. 性能 profile
