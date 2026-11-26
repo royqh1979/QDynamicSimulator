@@ -7,7 +7,7 @@
 | `xmile-1.1.html` | https://xmile.systemdynamics.org/1.1/xmile-v1.1.html | XMILE 1.1 目标规范，原始 HTML |
 | `xmile-1.0-os.html` | https://docs.oasis-open.org/xmile/xmile/v1.0/os/xmile-v1.0-os.html | XMILE 1.0 正式规范，仅用于旧文件兼容核对 |
 
-XMILE 文件为原始 HTML。Vensim 内容仅保留官方在线链接，不保存本地下载副本。
+XMILE 文件为原始 HTML。Vensim 官方文档不提交下载副本；用户提供的求值顺序摘录仅保存于本地 `docs/references/vensim/`，该目录由 gitignore 排除，原始 URL 未提供时明确标记为未知，不猜测来源地址。
 
 设计引用入口为 `docs/design/vensim-xmile-mapping.md`。
 

@@ -461,6 +461,18 @@ QByteArray writeNativeXml(const core::Document &document, const Workspace &works
     }
     writer.writeEndElement();
 
+    const core::SimulationSettings &simulation = document.simulationSettings();
+    writer.writeStartElement(QStringLiteral("simulation"));
+    writer.writeAttribute(QStringLiteral("start"), QString::number(simulation.startTime(), 'g', 15));
+    writer.writeAttribute(QStringLiteral("stop"), QString::number(simulation.stopTime(), 'g', 15));
+    writer.writeAttribute(QStringLiteral("dt"), QString::number(simulation.dt(), 'g', 15));
+    writer.writeAttribute(QStringLiteral("save-interval"), QString::number(simulation.saveInterval(), 'g', 15));
+    writer.writeAttribute(QStringLiteral("method"),
+        simulation.integrationMethod() == core::IntegrationMethod::RungeKutta4 ? QStringLiteral("rk4") : QStringLiteral("euler"));
+    if (!simulation.timeUnit().isEmpty())
+        writer.writeAttribute(QStringLiteral("time-unit"), simulation.timeUnit());
+    writer.writeEndElement();
+
     writer.writeStartElement(QStringLiteral("diagram"));
     for (const core::ViewElement &element : document.diagram().elements()) {
         writer.writeStartElement(nativeKindTag(element.kind()));
@@ -729,6 +741,45 @@ bool parseNativeXml(const QByteArray &xml, core::Document &document, Workspace &
                 setError(errorMessage, translate("The QDS dimensions are invalid."));
                 return false;
             }
+            continue;
+        }
+        if (reader.name() == QStringLiteral("simulation")) {
+            const QXmlStreamAttributes attributes = reader.attributes();
+            const core::SimulationSettings &current = parsed.simulationSettings();
+            double start = current.startTime();
+            double stop = current.stopTime();
+            double dt = current.dt();
+            double saveInterval = current.saveInterval();
+            bool startOk = true;
+            bool stopOk = true;
+            bool dtOk = true;
+            bool saveIntervalOk = true;
+            if (attributes.hasAttribute(QStringLiteral("start")))
+                start = attributes.value(QStringLiteral("start")).toDouble(&startOk);
+            if (attributes.hasAttribute(QStringLiteral("stop")))
+                stop = attributes.value(QStringLiteral("stop")).toDouble(&stopOk);
+            if (attributes.hasAttribute(QStringLiteral("dt")))
+                dt = attributes.value(QStringLiteral("dt")).toDouble(&dtOk);
+            if (attributes.hasAttribute(QStringLiteral("save-interval")))
+                saveInterval = attributes.value(QStringLiteral("save-interval")).toDouble(&saveIntervalOk);
+            const QString method = attributes.value(QStringLiteral("method")).toString().trimmed();
+            core::IntegrationMethod integrationMethod = current.integrationMethod();
+            if (method.compare(QStringLiteral("euler"), Qt::CaseInsensitive) == 0) {
+                integrationMethod = core::IntegrationMethod::Euler;
+            } else if (method.compare(QStringLiteral("rk4"), Qt::CaseInsensitive) == 0) {
+                integrationMethod = core::IntegrationMethod::RungeKutta4;
+            } else if (!method.isEmpty()) {
+                setError(errorMessage, translate("The QDS integration method is invalid."));
+                return false;
+            }
+            const QString timeUnit = attributes.hasAttribute(QStringLiteral("time-unit"))
+                ? attributes.value(QStringLiteral("time-unit")).toString() : current.timeUnit();
+            if (!startOk || !stopOk || !dtOk || !saveIntervalOk
+                || !parsed.setSimulationSettings({start, stop, dt, saveInterval, integrationMethod, timeUnit})) {
+                setError(errorMessage, translate("The QDS simulation settings are invalid."));
+                return false;
+            }
+            reader.skipCurrentElement();
             continue;
         }
         if (reader.name() == QStringLiteral("workspace")) {

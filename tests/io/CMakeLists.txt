@@ -4,7 +4,10 @@ add_executable(test-xmile
     TestXmileFile.cpp
 )
 target_link_libraries(test-xmile PRIVATE QDS::IO Qt5::Test)
-target_compile_definitions(test-xmile PRIVATE QDS_SIR_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/SIR/SIR.xmile")
+target_compile_definitions(test-xmile PRIVATE
+    QDS_SIR_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/SIR/SIR.xmile"
+    QDS_SIR_RECIPROCAL_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/SIR/SIR_reciprocal-dt.xmile"
+)
 if(TARGET Qt5::Zlib)
     target_link_libraries(test-xmile PRIVATE Qt5::Zlib)
 else()

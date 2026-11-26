@@ -23,7 +23,7 @@
 - `AGENTS.md` 只保存长期规则和顶层索引，不堆叠具体设计、profile 数据或本机命令。
 - 根目录保留需求、构建和项目入口文档；内部设计、性能和环境文档放入 `docs/` 子目录。
 - `docs/design/` 保存现状、约定、算法和实施方案，按模块组织。
-- `docs/history/` 保存重构和性能优化的带时间戳计划及其后续细化记录。开始此类工作前必须先建立计划，文件名以 `YYYY-MM-DD` 开头，文首记录完整本地创建时间；先写整体目标、范围、方法、步骤和验收边界，再随设计讨论逐步细化更新。计划完成后在文档名末尾追加 `-done`，计划放弃则追加 `-abandon`，并同步更新所有引用。
+- `docs/history/` 只保存重构和性能优化的带时间戳计划及其后续细化记录；计划中的功能实现不进入 history，其当前设计与阶段计划写入 `docs/design/`，实际演进由 git log 记录。开始重构或性能优化前必须先建立计划，文件名以 `YYYY-MM-DD` 开头，文首记录完整本地创建时间；先写整体目标、范围、方法、步骤和验收边界，再随设计讨论逐步细化更新。计划完成后在文档名末尾追加 `-done`，计划放弃则追加 `-abandon`，并同步更新所有引用。
 - `docs/history/` 是计划与演进记录，不替代当前权威设计；形成或修改设计结论时必须同步更新 `docs/design/`。
 - `docs/profile/` 保存性能基线、报告、结果与配套工具，按模块组织。
 - `docs/env/template/` 不含机器专有路径；`docs/env/local/` 保存本机实际配置，默认不提交。
@@ -89,6 +89,7 @@
 - `docs/design/sfd-editor.md`：SFD 完整功能清单与实施计划。
 - `docs/design/sfd-item-architecture.md`：核心模型、Item 类体系和同步设计。
 - `docs/design/formula-analysis.md`：公式 AST、语法分析、符号与依赖图设计。
+- `docs/design/simulation.md`：仿真设置、执行计划、Euler/RK4、运行结果与正确性验证设计。
 - `docs/history/`：带时间戳的重构/性能优化整体计划与逐步细化记录；开始此类工作前必须先建立。
 - `docs/profile/README.md`：性能基线、报告、优化结果与工具索引；开始性能工作后建立。
 - `docs/references/README.md`：参考文献及 `3rdparty/test-models` 测试模型子模块的来源、许可证和使用约定。

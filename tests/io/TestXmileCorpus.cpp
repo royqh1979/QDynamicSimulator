@@ -89,14 +89,14 @@ private slots:
                     connected.insert(flow.endpoints().to);
                 } else if (element.kind() == ElementKind::Connector) {
                     const auto &connector = static_cast<const Connector &>(element);
-                    if (connector.from == 0 || connector.to == 0
-                        || !document.find(connector.from) || !document.find(connector.to)) {
+                    if (connector.from() == 0 || connector.to() == 0
+                        || !document.find(connector.from()) || !document.find(connector.to())) {
                         failures.append(path + ": invalid connector endpoints");
                         continue;
                     }
                     connected.insert(connector.id());
-                    connected.insert(connector.from);
-                    connected.insert(connector.to);
+                    connected.insert(connector.from());
+                    connected.insert(connector.to());
                 }
             }
             for (const DocumentElement &element : document.elements()) {
@@ -110,7 +110,7 @@ private slots:
                 failures.append(path + ": isolated element " + QString::number(element.id()));
             }
             const auto checkFormula = [&corpusFormulaCount](const QString &equation) {
-                if (equation.empty())
+                if (equation.isEmpty())
                     return;
                 ++corpusFormulaCount;
                 Formula analysis = analyzeFormula(equation);
@@ -123,8 +123,8 @@ private slots:
             };
             for (const ModelElement &element : document.model().elements()) {
                 checkFormula(element.equation());
-                for (const ArrayElementEquation &entry : element.elementEquations())
-                    checkFormula(entry.equation);
+                for (const ArrayElementFormula &entry : element.elementEquations())
+                    checkFormula(entry.equation());
             }
             for (const auto &entry : document.diagram().routes()) {
                 const auto &points = entry.second.controlPoints;

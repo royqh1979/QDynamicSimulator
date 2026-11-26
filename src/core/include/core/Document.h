@@ -4,6 +4,7 @@
 #include <core/Dimension.h>
 #include <core/Macro.h>
 #include <core/Model.h>
+#include <core/SimulationSettings.h>
 
 #include <map>
 #include <memory>
@@ -69,6 +70,8 @@ public:
     DocumentRange elements() const { return DocumentRange(m_elements); }
     const Model &model() const { return m_model; }
     const DiagramDefinition &diagram() const { return m_diagram; }
+    const SimulationSettings &simulationSettings() const { return m_simulationSettings; }
+    bool setSimulationSettings(const SimulationSettings &settings);
 
     EntityId createVariable(ElementKind kind, Vec2 position = {});
     EntityId createFlow(EntityId from, EntityId to);
@@ -129,6 +132,7 @@ private:
     EntityId m_nextId = 1;
     Model m_model;
     DiagramDefinition m_diagram;
+    SimulationSettings m_simulationSettings;
 };
 
 } // namespace qds::core

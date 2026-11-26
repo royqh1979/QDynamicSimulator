@@ -11,6 +11,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
+#include <QStringList>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -30,6 +32,90 @@ void setError(QString *errorMessage, const QString &message)
 {
     if (errorMessage)
         *errorMessage = message;
+}
+
+std::optional<core::IntegrationMethod> xmileIntegrationMethod(const QString &text)
+{
+    bool rk2 = false;
+    const QStringList methods = text.split(',', Qt::SkipEmptyParts);
+    for (QString method : methods) {
+        method = method.trimmed();
+        if (method.compare(QStringLiteral("euler"), Qt::CaseInsensitive) == 0)
+            return core::IntegrationMethod::Euler;
+        if (method.compare(QStringLiteral("rk4"), Qt::CaseInsensitive) == 0)
+            return core::IntegrationMethod::RungeKutta4;
+        if (method.compare(QStringLiteral("rk2"), Qt::CaseInsensitive) == 0)
+            rk2 = true;
+    }
+    if (rk2)
+        return core::IntegrationMethod::RungeKutta4;
+    return std::nullopt;
+}
+
+bool parseSimulationSettings(QXmlStreamReader &reader, core::Document &document, bool documentDefaults,
+    QString *errorMessage)
+{
+    const core::SimulationSettings &current = document.simulationSettings();
+    double start = current.startTime();
+    double stop = current.stopTime();
+    double dt = documentDefaults ? 1.0 : current.dt();
+    QString timeUnit = current.timeUnit();
+    core::IntegrationMethod method = current.integrationMethod();
+    const QXmlStreamAttributes attributes = reader.attributes();
+    if (attributes.hasAttribute(QStringLiteral("method"))) {
+        const auto parsedMethod = xmileIntegrationMethod(attributes.value(QStringLiteral("method")).toString());
+        if (!parsedMethod) {
+            setError(errorMessage, translate("The XMILE integration method is not supported."));
+            return false;
+        }
+        method = *parsedMethod;
+    }
+    if (attributes.hasAttribute(QStringLiteral("time_units")))
+        timeUnit = attributes.value(QStringLiteral("time_units")).toString();
+
+    while (reader.readNext() != QXmlStreamReader::Invalid) {
+        if (reader.isEndElement() && reader.name() == QStringLiteral("sim_specs")) {
+            const core::SimulationSettings settings {start, stop, dt, dt, method, timeUnit};
+            if (stop <= start || !settings.isValid() || !document.setSimulationSettings(settings)) {
+                setError(errorMessage, translate("The XMILE simulation settings are invalid."));
+                return false;
+            }
+            return true;
+        }
+        if (!reader.isStartElement())
+            continue;
+        const QString tag = reader.name().toString();
+        if (tag != QStringLiteral("start") && tag != QStringLiteral("stop") && tag != QStringLiteral("dt")) {
+            reader.skipCurrentElement();
+            continue;
+        }
+        bool reciprocal = false;
+        if (tag == QStringLiteral("dt") && reader.attributes().hasAttribute(QStringLiteral("reciprocal"))) {
+            const QString value = reader.attributes().value(QStringLiteral("reciprocal")).toString().trimmed();
+            if (value.compare(QStringLiteral("true"), Qt::CaseInsensitive) == 0) {
+                reciprocal = true;
+            } else if (value.compare(QStringLiteral("false"), Qt::CaseInsensitive) != 0) {
+                setError(errorMessage, translate("The XMILE DT reciprocal flag is invalid."));
+                return false;
+            }
+        }
+        bool valid = false;
+        double value = reader.readElementText().trimmed().toDouble(&valid);
+        if (reciprocal)
+            value = 1.0 / value;
+        if (!valid || !std::isfinite(value)) {
+            setError(errorMessage, translate("The XMILE simulation time value is invalid."));
+            return false;
+        }
+        if (tag == QStringLiteral("start"))
+            start = value;
+        else if (tag == QStringLiteral("stop"))
+            stop = value;
+        else
+            dt = value;
+    }
+    setError(errorMessage, translate("The XMILE simulation settings are incomplete."));
+    return false;
 }
 
 QString referenceName(const QString &text)
@@ -188,8 +274,13 @@ void writeXmileArrayDefinition(QXmlStreamWriter &writer, const core::Document &d
     }
 }
 
-QByteArray writeXml(const core::Document &document)
+QByteArray writeXml(const core::Document &document, QString *errorMessage)
 {
+    const core::SimulationSettings &simulation = document.simulationSettings();
+    if (simulation.stopTime() <= simulation.startTime()) {
+        setError(errorMessage, translate("XMILE requires the stop time to be after the start time."));
+        return {};
+    }
     const core::Model &model = document.model();
     QByteArray output;
     QXmlStreamWriter writer(&output);
@@ -224,9 +315,13 @@ QByteArray writeXml(const core::Document &document)
     }
 
     writer.writeStartElement(QStringLiteral("sim_specs"));
-    writer.writeTextElement(QStringLiteral("start"), QStringLiteral("0"));
-    writer.writeTextElement(QStringLiteral("stop"), QStringLiteral("100"));
-    writer.writeTextElement(QStringLiteral("dt"), QStringLiteral("0.25"));
+    writer.writeAttribute(QStringLiteral("method"),
+        simulation.integrationMethod() == core::IntegrationMethod::RungeKutta4 ? QStringLiteral("rk4") : QStringLiteral("euler"));
+    if (!simulation.timeUnit().isEmpty())
+        writer.writeAttribute(QStringLiteral("time_units"), simulation.timeUnit());
+    writer.writeTextElement(QStringLiteral("start"), QString::number(simulation.startTime(), 'g', 15));
+    writer.writeTextElement(QStringLiteral("stop"), QString::number(simulation.stopTime(), 'g', 15));
+    writer.writeTextElement(QStringLiteral("dt"), QString::number(simulation.dt(), 'g', 15));
     writer.writeEndElement();
 
     writeXmileDimensions(writer, document);
@@ -882,6 +977,9 @@ bool parseXml(
         } else if (tag == QStringLiteral("dimensions")) {
             if (!parseXmileDimensions(reader, parsed, errorMessage))
                 return false;
+        } else if (tag == QStringLiteral("sim_specs")) {
+            if (!parseSimulationSettings(reader, parsed, !foundModel, errorMessage))
+                return false;
         } else if (tag == QStringLiteral("model")) {
             if (foundModel) {
                 setError(errorMessage, translate("Multiple XMILE models are not supported."));
@@ -986,7 +1084,8 @@ bool XmileFile::importFile(const QString &fileName, core::Document &document, QS
 
 bool XmileFile::exportFile(const QString &fileName, const core::Document &document, QString *errorMessage)
 {
-    return writeFileBytes(fileName, writeXml(document), errorMessage);
+    const QByteArray xml = writeXml(document, errorMessage);
+    return !xml.isEmpty() && writeFileBytes(fileName, xml, errorMessage);
 }
 
 } // namespace qds::io

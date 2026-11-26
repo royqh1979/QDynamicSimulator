@@ -107,6 +107,7 @@ private slots:
     void nativeRoundTrip();
     void plainXmlOpen();
     void sirModelImport();
+    void simulationSettingsImport();
     void xmileExport();
     void xmileRejectsZip();
     void missingViewsAreCompleted();
@@ -156,6 +157,8 @@ void TestXmileFile::nativeRoundTrip()
     route.mode = RouteMode::Bezier;
     route.controlPoints = {{0.25, 100.0}, {0.75, 120.0}};
     document.setRoute(flow, route);
+    const SimulationSettings simulation {-2.5, 12.0, 0.25, 0.5, IntegrationMethod::RungeKutta4, QStringLiteral("Month")};
+    QVERIFY(document.setSimulationSettings(simulation));
     const qds::io::Workspace workspace {true, 0.66, {123.5, 456.25}};
 
     QString error;
@@ -172,6 +175,10 @@ void TestXmileFile::nativeRoundTrip()
     QVERIFY(xml.contains("<model>"));
     QVERIFY(xml.contains("<diagram>"));
     QVERIFY(xml.contains("<workspace"));
+    QVERIFY(xml.contains("<simulation"));
+    QVERIFY(xml.contains("save-interval=\"0.5\""));
+    QVERIFY(xml.contains("method=\"rk4\""));
+    QVERIFY(xml.contains("time-unit=\"Month\""));
     QVERIFY(xml.contains("zoom=\"0.66\""));
     QVERIFY(xml.contains("center-x=\"123.5\""));
     QVERIFY(xml.contains("center-y=\"456.25\""));
@@ -188,6 +195,7 @@ void TestXmileFile::nativeRoundTrip()
     QVERIFY2(qds::io::DocumentFile::open(path, loaded, loadedWorkspace, &error, &nativeFormat), qPrintable(error));
     QVERIFY(nativeFormat);
     QCOMPARE(loadedWorkspace, workspace);
+    QCOMPARE(loaded.simulationSettings(), simulation);
     std::size_t modelCount = 0;
     std::size_t connectorCount = 0;
     for (const ModelElement &element : loaded.model().elements()) {
@@ -311,6 +319,12 @@ void TestXmileFile::sirModelImport()
     QString error;
     QVERIFY2(qds::io::XmileFile::importFile(QStringLiteral(QDS_SIR_XMILE_PATH), document, &error), qPrintable(error));
     verifyConnectedDocument(document, 8, 6);
+    QCOMPARE(document.simulationSettings().startTime(), 0.0);
+    QCOMPARE(document.simulationSettings().stopTime(), 100.0);
+    QCOMPARE(document.simulationSettings().dt(), 0.03125);
+    QCOMPARE(document.simulationSettings().saveInterval(), 0.03125);
+    QCOMPARE(document.simulationSettings().integrationMethod(), IntegrationMethod::Euler);
+    QCOMPARE(document.simulationSettings().timeUnit(), QStringLiteral("Time"));
     const auto *succumbing = dynamic_cast<const Flow *>(document.findByName("succumbing"));
     const auto *recovering = dynamic_cast<const Flow *>(document.findByName("recovering"));
     QVERIFY(succumbing && recovering);
@@ -325,6 +339,52 @@ void TestXmileFile::sirModelImport()
     Document reimported;
     QVERIFY2(qds::io::XmileFile::importFile(path, reimported, &error), qPrintable(error));
     verifyConnectedDocument(reimported, 8, 6);
+    QCOMPARE(reimported.simulationSettings(), document.simulationSettings());
+}
+
+void TestXmileFile::simulationSettingsImport()
+{
+    Document reciprocal;
+    QString error;
+    QVERIFY2(qds::io::XmileFile::importFile(QStringLiteral(QDS_SIR_RECIPROCAL_XMILE_PATH), reciprocal, &error),
+        qPrintable(error));
+    QCOMPARE(reciprocal.simulationSettings().dt(), 0.03125);
+    QCOMPARE(reciprocal.simulationSettings().saveInterval(), 0.03125);
+
+    QTemporaryDir directory;
+    const QString path = directory.filePath(QStringLiteral("settings.xmile"));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write("<xmile><sim_specs method=\"rk2\" time_units=\"Month\">"
+               "<start>1</start><stop>5</stop><dt reciprocal=\"true\">4</dt></sim_specs>"
+               "<model><sim_specs method=\"gear, rk4\"><stop>9</stop></sim_specs>"
+               "<variables><stock name=\"S\"><eqn>1</eqn></stock></variables></model></xmile>");
+    file.close();
+    Document document;
+    QVERIFY2(qds::io::XmileFile::importFile(path, document, &error), qPrintable(error));
+    QCOMPARE(document.simulationSettings().startTime(), 1.0);
+    QCOMPARE(document.simulationSettings().stopTime(), 9.0);
+    QCOMPARE(document.simulationSettings().dt(), 0.25);
+    QCOMPARE(document.simulationSettings().saveInterval(), 0.25);
+    QCOMPARE(document.simulationSettings().integrationMethod(), IntegrationMethod::RungeKutta4);
+    QCOMPARE(document.simulationSettings().timeUnit(), QStringLiteral("Month"));
+
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    file.write("<xmile><sim_specs><start>0</start><stop>2</stop></sim_specs>"
+               "<model><variables/></model></xmile>");
+    file.close();
+    QVERIFY2(qds::io::XmileFile::importFile(path, document, &error), qPrintable(error));
+    QCOMPARE(document.simulationSettings().dt(), 1.0);
+    QCOMPARE(document.simulationSettings().saveInterval(), 1.0);
+
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    file.write("<xmile><sim_specs method=\"unsupported\"><start>0</start><stop>1</stop></sim_specs>"
+               "<model><variables/></model></xmile>");
+    file.close();
+    const SimulationSettings original = document.simulationSettings();
+    QVERIFY(!qds::io::XmileFile::importFile(path, document, &error));
+    QVERIFY(!error.isEmpty());
+    QCOMPARE(document.simulationSettings(), original);
 }
 
 void TestXmileFile::xmileExport()
@@ -337,6 +397,7 @@ void TestXmileFile::xmileExport()
     document.createFlow(stock, cloud);
     document.createVariable(ElementKind::Constant, {100.0, 300.0});
     document.createComment("Note", {400.0, 300.0});
+    QVERIFY(document.setSimulationSettings({2.0, 4.0, 0.25, 0.5, IntegrationMethod::RungeKutta4, QStringLiteral("Month")}));
     QString error;
     QVERIFY2(qds::io::XmileFile::exportFile(path, document, &error), qPrintable(error));
     QFile file(path);
@@ -345,6 +406,12 @@ void TestXmileFile::xmileExport()
     QVERIFY(!xml.startsWith("PK"));
     QVERIFY(xml.contains("<xmile"));
     QVERIFY(xml.contains("version=\"1.1\""));
+    QVERIFY(xml.contains("method=\"rk4\""));
+    QVERIFY(xml.contains("time_units=\"Month\""));
+    QVERIFY(xml.contains("<start>2</start>"));
+    QVERIFY(xml.contains("<stop>4</stop>"));
+    QVERIFY(xml.contains("<dt>0.25</dt>"));
+    QVERIFY(!xml.contains("saveper"));
     QVERIFY(!xml.contains("<cloud"));
     QVERIFY(!xml.contains("qds-workspace"));
 
@@ -356,6 +423,15 @@ void TestXmileFile::xmileExport()
     QCOMPARE(imported.find(importedFlow->endpoints().to)->kind(), ElementKind::Cloud);
     QCOMPARE(imported.findByName("Constant1")->kind(), ElementKind::Auxiliary);
     QCOMPARE(imported.model().findByName("Stock1")->id(), importedFlow->endpoints().from);
+    QCOMPARE(imported.simulationSettings(),
+        SimulationSettings(2.0, 4.0, 0.25, 0.25, IntegrationMethod::RungeKutta4, QStringLiteral("Month")));
+
+    file.close();
+    QVERIFY(document.setSimulationSettings({0.0, 0.0, 0.25, 0.25}));
+    QVERIFY(!qds::io::XmileFile::exportFile(path, document, &error));
+    QVERIFY(!error.isEmpty());
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QCOMPARE(file.readAll(), xml);
 }
 
 void TestXmileFile::xmileRejectsZip()

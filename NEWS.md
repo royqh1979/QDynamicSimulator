@@ -46,6 +46,7 @@
 - 使用 FullViewportUpdate 修复移动带连接线实体后 undo 时旧路径在 Windows backing store 中残留的问题，并加入真实屏幕像素回归。
 - 接入 Qt LinguistTools 和完整简体中文翻译，TS 在构建时生成 QM 并内嵌，系统中文语言下自动加载。
 - QDS 工作区 XML 保存并恢复缩放比例、视口中心和滚动位置；视口由 DiagramView 持有并经独立 I/O DTO 交换，覆盖保存、另存、恢复副本和无保存视口文件。
+- 新增不可变仿真设置，支持起止时间、DT、SAVEPER、Euler/RK4 和时间单位校验；QDS 完整往返，XMILE 支持 sim_specs、倒数 DT、方法回退及模型级覆盖，并附独立性能 profile。
 - 新增标量公式 AST、UTF-8 名称与注释 Lexer、Pratt Parser、运算符优先级、函数/条件/下标节点和 SourceSpan 诊断，附 SDXorg 语料结构检查与性能基线。
 - 新增 nameKey 符号解析、XMILE 内置函数签名、公式依赖图与代数环检查；Validation 统一使用 AST 分析并区分公式依赖和结构使用关系。
 - 新增无全局状态的标量公式求值，支持已解析变量、时间常量、基本运算、条件分支和无状态数学函数；Analysis 与 Evaluator 共用函数签名注册表。

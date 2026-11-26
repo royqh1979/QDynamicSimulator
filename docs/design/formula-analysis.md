@@ -227,7 +227,7 @@ EvaluationResult evaluateFormula(const FormulaNode *node, const EvaluationContex
 
 数学函数使用 C++ 标准库的 double 语义；除零和定义域错误不替换为零，允许按 IEEE 754 产生 Inf/NaN。MAX/MIN 的单参数形式对标量返回参数本身，双参数形式返回较大/较小值。
 
-随机数、延迟、平滑、预测、测试输入、INIT/PREVIOUS/SELF、Lookup、命名模型、数组函数、下标和转置仍返回明确的未支持错误。它们需要随机状态、历史状态、图形函数或容器语义，不在本阶段伪造实现。后续仿真运行器复用 EvaluationContext 提供时间和变量存储，不在 Evaluator 内隐藏全局状态。
+INTEG/INTEGR、随机数、延迟、平滑、预测、STEP/PULSE/RAMP、INIT/PREVIOUS 和 Lookup 仍返回明确的未支持错误；它们需要积分状态、历史状态、随机状态、测试输入或图形函数语义，不能因已登记函数签名而视为可求值。数组函数、下标和转置已由后续数组阶段实现。仿真运行器复用 EvaluationContext 提供时间和变量存储，不在 Evaluator 内隐藏全局状态；具体边界见 [仿真引擎设计](simulation.md)。
 
 ## 9. 数组模型、语法与分析
 
@@ -406,6 +406,6 @@ QDS/XMILE 使用 macro、parm、eqn 保存同一定义，不持久化展开结�
 5. **数组与高级求值**：带维度信息的 ArrayValue、下标/切片、转置、Apply-to-All 广播、数组函数及元素级执行排序。
 6. **统一宏调用**：移除非递归 AST 展开，保留所有 CallNode，完成局部调用帧、默认参数、依赖闭包、递归深度限制及宏修改失效边界。
 7. **Formula 与 AnalysisReport 归属**：Formula 随 Document 定义持有原始文本、AST 和本地诊断；以全局 AnalysisReport 替代影子 ModelAnalysis，不保留平行 AST 容器。
-8. **兼容方言与外部定义**：命名模型、外部 include、厂商命名空间和 Vensim 差异，逐项引用权威资料，不凭经验补语法。
+8. **兼容方言与外部定义（低优先级，暂缓）**：命名模型、外部 include、厂商命名空间和 Vensim 差异，待仿真核心闭环完成后再按需启动；逐项引用权威资料，不凭经验补语法。
 
 每个阶段独立完成功能实现、单元测试、profile、Release 后 Debug 全量回归和审核，不把后续求值或数组工作提前混入首阶段。
