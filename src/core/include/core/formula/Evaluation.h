@@ -11,6 +11,8 @@
 
 namespace qds::core {
 
+struct MacroDefinition;
+
 struct ArrayValue {
     QVector<QString> dimensions;
     QVector<std::size_t> shape;
@@ -26,6 +28,13 @@ using Value = std::variant<double, ArrayValue>;
 using VariableReader = std::function<std::optional<Value>(const QString &nameKey)>;
 using DimensionReader = std::function<const Dimension *(const QString &)>;
 
+struct MacroEvaluation {
+    const MacroDefinition *definition = nullptr;
+    const FormulaNode *body = nullptr;
+    const std::vector<FormulaAnalysis> *defaults = nullptr;
+};
+using MacroReader = std::function<std::optional<MacroEvaluation>(const QString &, int, int)>;
+
 struct EvaluationScope {
     QVector<QString> dimensions;
     QVector<std::size_t> indices;
@@ -39,6 +48,7 @@ struct EvaluationContext {
     double stopTime = 0.0;
     VariableReader readVariable;
     DimensionReader readDimension;
+    MacroReader readMacro;
     EvaluationScope scope;
 };
 

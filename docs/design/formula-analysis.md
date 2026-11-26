@@ -10,44 +10,36 @@
 
 ## 2. 整体分析流程
 
-分析输入是完整的 Document，而不是逐行公式文本。Document 在编辑/读取阶段已经建立元素、维度、宏定义以及 EntityId/nameKey 索引；这些定义在文件中的先后位置不影响语义分析。`analyzeDocument()` 按以下管线执行：
+公式 AST 不再由 ModelAnalysis 镜像持有。Document 在创建、读取或修改每条定义公式时，直接构建并替换对应的不可变 Formula；全局分析只遍历这些现有 Formula：
 
 ```text
-完整 Document
+Document 定义编辑 / save-load 源文本输入
 │
-├─ 阶段 1：完整定义与结构准备
-│  ├─ 遍历全部 Stock、Flow、Auxiliary、Constant、Data 定义
-│  ├─ 读取各元素端点、数组维度、原始总体/逐元素 equation
-│  ├─ 遍历全部 MacroDefinition，解析宏体和默认参数，生成 MacroAnalysis AST
-│  ├─ 提供模型变量、Dimension、DimensionElement、MacroDefinition 的统一查找
-│  └─ 收集 Connector、Stock/Flow 的结构关系，不在此阶段分析模型公式
+├─ 本地公式构建（每个定义独立）
+│  ├─ Formula 同时保存原始 QString、不可变 AST 和本地语法诊断
+│  ├─ 普通公式、数组逐元素公式、宏体和默认参数使用同一表示
+│  ├─ 本地解析不 Resolve 模型符号，因此无需前置定义
+│  └─ 文本与 AST 原子替换；无效输入仍可编辑，不保留半成品状态
 │
-├─ 阶段 2：公式 AST 与符号分析
-│  ├─ 每个模型总体 equation / 逐元素 equation 独立 Lexer + Pratt Parser
-│  ├─ 遍历阶段 1 宏体/默认参数 AST，按需解析局部参数与全局符号
-│  ├─ 模型公式和宏体中的宏调用始终保留 CallNode，不做文本或 AST 展开
-│  ├─ SymbolResolver：使用现有索引区分局部参数、变量、函数、维度和宏
-│  ├─ 绑定只在当次遍历中使用，直接生成诊断、引用集合及公式/宏调用关系
-│  └─ 生成 ElementAnalysis 并补全 MacroAnalysis，单公式错误不阻断其它公式
+├─ analyzeDocument(const Document &)：全局分析
+│  ├─ 遍历全部 ModelElement 和 MacroDefinition 的现有 Formula
+│  ├─ 收集 Connector、Stock/Flow 的结构关系
+│  ├─ 使用现有索引按需 Resolve，直接生成引用、宏调用关系和诊断
+│  ├─ 不展开宏，不复制或拥有任何公式 AST
+│  └─ 计算依赖闭包、数组完整性、未使用变量和代数环
 │
-├─ 阶段 3：全模型派生分析
-│  ├─ 在不展开 AST 的前提下计算宏依赖闭包，合并公式引用与结构使用
-│  ├─ 检查未使用变量、数组元素完整性和标量代数环
-│  ├─ 数组合法递推及元素级调度按既定边界单独处理
-│  └─ 汇总 parse / symbol / arity / structural 等诊断
-│
-└─ ModelAnalysis
-   ├─ MacroAnalysis：每个宏唯一的宏体、默认参数 AST 和直接依赖
-   ├─ ElementAnalysis：总体/逐元素 AST 与引用集合
-   ├─ DependencyGraph、StructuralUse、issues
-   └─ 供 Validation、统一运行期宏求值和后续执行器共享只读使用
+└─ AnalysisReport（构建后不可变）
+   ├─ DependencyGraph、StructuralUse 和 issues
+   ├─ 只保存 EntityId、诊断及公式内 SourceSpan
+   ├─ 不保存 Document/元素/宏/AST 指针，不含 ElementAnalysis 影子容器
+   └─ 供 Validation 和后续执行器使用；ExecutionPlan 另行归运行期管理
 ```
 
-阶段 1 必须先读取完整 Document 中全部模型元素和宏定义，再开始阶段 2 的模型公式分析；不得把遍历到某个 Flow 时的结构收集和公式分析混在同一循环中。这样，模型公式可以引用文件后面定义的变量或宏，宏也可以引用其他宏，不需要前置声明。最终 Document 中不存在的变量或宏仍分别报告未定义变量或未知函数。
+Document 在编辑/读取阶段已经建立全部元素、维度、宏定义及 EntityId/nameKey 索引。本地 AST 构建与全局符号分析分离，因此文件顺序和前置定义仍不影响语义。`analyzeDocument()` 先准备完整定义和结构，再执行全局遍历，不得把 Flow 的结构收集与公式分析混成互相依赖的局部循环。未定义变量或宏仍分别报告诊断。
 
-所有公式共用手写 Lexer 和 Pratt/precedence-climbing Parser，不引入第三方 parser 依赖。Pratt 实现右结合乘方、一元运算符、函数调用和 IF THEN ELSE，并保留每个节点与 QString 字符位置一致的 SourceSpan。宏采用自定义函数语义，而不是 C 预处理器宏语义：分析期不替换文本、不复制实参到宏体、不级联展开；非递归、直接递归和间接递归都通过同一运行期调用机制执行。
+所有公式共用手写 Lexer 和 Pratt/precedence-climbing Parser，不引入第三方 parser 依赖。Pratt 实现右结合乘方、一元运算符、函数调用和 IF THEN ELSE，并保留每个节点与 QString 字符位置一致的 SourceSpan。宏采用自定义函数语义，而不是 C 预处理器宏语义：不替换文本、不复制实参到宏体、不级联展开；非递归、直接递归和间接递归都通过同一运行期调用机制执行。
 
-AST 在语法分析完成后完全不可变，只保存语法结构、规范化名称、字面量和 SourceSpan。Resolve 是独立的按需过程，不在 AST 中写入 EntityId、内置函数目标、宏定义、签名或其它语义绑定，也不生成另一份 Resolved AST。`validateDocument()` 只是返回 ModelAnalysis.issues 的薄接口，不另建检查流程。
+AST 创建后不可变，只保存语法结构、规范化名称、字面量和 SourceSpan。Resolve 是按需过程，不在 AST 中写入 EntityId、函数目标、宏定义或签名，也不生成 Resolved AST。`validateDocument()` 只是返回 AnalysisReport.issues 的薄接口，不另建检查流程。
 
 ## 3. AST 与结果所有权
 
@@ -70,7 +62,7 @@ public:
 };
 class ReferenceNode final : public FormulaNode {
 public:
-    const std::string &nameKey() const;
+    const QString &nameKey() const;
 };
 class UnaryNode final : public FormulaNode {
 public:
@@ -85,19 +77,19 @@ public:
 };
 class CallNode final : public FormulaNode {
 public:
-    const std::string &nameKey() const;
+    const QString &nameKey() const;
     std::size_t argumentCount() const;
     const FormulaNode *argument(std::size_t position) const;
 };
 ```
 
-Conditional、Subscript、Range 等节点采用相同的私有状态和 const 子节点访问。集合节点只提供数量及按位置的 const 元素访问，不公开 `unique_ptr` 容器。FormulaAnalysis 私有持有 AST 和 issues，构建完成后只读；公式变化时替换整份结果。
+Conditional、Subscript、Range 等节点采用相同的私有状态和 const 子节点访问。集合节点只提供数量及按位置的 const 元素访问，不公开 `unique_ptr` 容器。Formula 私有持有原始 QString、AST 和 issues，构建完成后只读；公式变化时替换整个 Formula。
 
-上述代码块只表达 AST 的逻辑结构，不表示公开字段接口。正式类型必须通过私有状态和只读访问接口保证创建后不可变；可变构造仅属于 Parser 内部，外部不能取得可修改的子节点指针。FormulaAnalysis 和独立保留的 ModelAnalysis 也是完成后不可变的派生结果，构建期可变与完成后只读相互分离。FormulaIssue、ModelIssue、ArrayValue 和 EvaluationResult 同样按逻辑结果语义提供不可变边界；输入 DTO、EvaluationContext 和内部 Builder 不被迫采用同一接口。
+上述代码块只表达 AST 的逻辑结构，不表示公开字段接口。正式类型必须通过私有状态和只读访问接口保证创建后不可变；可变构造仅属于 Parser 内部，外部不能取得可修改的子节点指针。AnalysisReport 也是完成后不可变的派生结果，构建期可变与完成后只读相互分离。FormulaIssue、ModelIssue、ArrayValue 和 EvaluationResult 同样按逻辑结果语义提供不可变边界；输入 DTO、EvaluationContext 和内部 Builder 不被迫采用同一接口。
 
-`FormulaAnalysis` 保存 `unique_ptr<FormulaNode>`。`ModelAnalysis` 唯一拥有各元素公式 AST、每个宏的宏体/默认参数 AST、引用集合和诊断；同一宏体不得复制到调用方 AST。AST 不保存 Resolve 结果，`Formula.h` 也不为了实体绑定依赖 `Model.h`。DependencyGraph 作为独立分析结果可以保存 EntityId，因此 AST 或 Document 对象地址变化不会使图失效；EntityId 出现在依赖图中不属于 AST 语义绑定。
+Document 中的 ModelElement 和 MacroDefinition 唯一持有各自公式的 Formula，包括原始文本、AST 和本地诊断；同一宏体不得复制到调用方 AST。AnalysisReport 只保存 EntityId 关系、诊断和 SourceSpan，不拥有 AST 或 Document 对象指针。DependencyGraph 作为独立结果保存 EntityId，因此 AST 或 Document 对象地址变化不会使图失效。
 
-普通编辑阶段不提前引入绑定表、执行计划或其它解析缓存；当前调用方可以每次基于当前 Document 全量重新分析，这只是实现选择，不代表调用方在语义上依赖宏体副本。待 profile 证明重复名称解析确实是瓶颈后，才可设计 AST 之外、按定义修订号失效的执行缓存。
+普通编辑不提前引入绑定表或增量缓存。AnalysisReport 在需要时基于当前 Document 重新生成；只有 profile 证明重复名称解析或全局分析确实是瓶颈后，才可设计按定义修订号失效的外部缓存。ExecutionPlan 不属于 Document 或 AnalysisReport 的持久状态。
 
 ## 4. 标量语法
 
@@ -156,7 +148,7 @@ struct FunctionSignature {
     FunctionCategory category;
 };
 
-const FunctionSignature *findFunctionSignature(const std::string &nameKey);
+const FunctionSignature *findFunctionSignature(const QString &nameKey);
 ```
 
 注册表覆盖 XMILE 3.5 全部内置函数的名称和参数个数，包括数学、统计、延迟、测试输入、时间及其它函数。分析阶段可识别全部签名，求值阶段复用同一注册表分派实现，避免函数列表散落。
@@ -196,7 +188,7 @@ DependencyGraph 的边统一为 **dependency → dependent**，表示必须先�
 - 代数依赖环、未使用变量。
 - 单位一致性检查后续复用同一诊断通道。
 
-`validateDocument()` 改为调用 ModelAnalysis，不再保留现有逐字符公式扫描和平行括号检查。不得在旧实现与新 AST 解析器之间维护两套公式语义。
+`validateDocument()` 使用 AnalysisReport，不再保留逐字符公式扫描和平行括号检查。不得在旧实现与新 AST 解析器之间维护两套公式语义。
 
 ## 8. 标量求值与共享函数注册表
 
@@ -205,7 +197,7 @@ DependencyGraph 的边统一为 **dependency → dependent**，表示必须先�
 `Evaluation.h/.cpp` 提供不依赖 Document 或 Qt UI 的同步标量求值，可使用 QtCore 容器：
 
 ```cpp
-using VariableReader = std::function<std::optional<double>(const std::string &nameKey)>;
+using VariableReader = std::function<std::optional<double>(const QString &nameKey)>;
 
 struct EvaluationContext {
     double time = 0.0;
@@ -217,7 +209,7 @@ struct EvaluationContext {
 
 struct EvaluationResult {
     std::optional<double> value;
-    std::string error;
+    QString error;
     SourceSpan errorSpan;
 };
 
@@ -248,17 +240,18 @@ Document 拥有文档级 `Dimension` 值对象。维度具有 displayName、全�
 维度通过统一 `m_dimensionIndex` 查找，与变量名称相互排斥；不同维度可以复用元素名，同一维度内不可重名。数组 ModelElement 保存有序维度 nameKey，允许同一维度重复出现以支持后续转置。维度一旦定义暂不提供删除或重命名，避免提前引入引用迁移复杂度。
 
 ```cpp
-struct ArrayElementEquation {
-    std::vector<std::size_t> indices; // 每个维度的零基下标
-    std::string equation;
+class ArrayElementFormula {
+public:
+    const QVector<std::size_t> &indices() const; // 每个维度的零基下标
+    const Formula &formula() const;
 };
 
-// ModelElement 新增：
-std::vector<std::string> dimensions;
-std::vector<ArrayElementEquation> elementEquations;
+// ModelElement 私有持有：
+QVector<QString> dimensions;
+QVector<ArrayElementFormula> elementFormulas;
 ```
 
-Apply-to-All 数组只使用 `equation`；non-Apply-to-All 数组只使用 `elementEquations`。下标按维度顺序保存零基整数，不保存显示名称，因此维度元素重命名不会使持久下标失效。编辑过程允许逐元素方程暂不完整，Validation 报告缺失/重复；XMILE 导入要求完整覆盖。`setEquation()` 与逐元素方程互斥，修改维度会清空旧逐元素方程。Capture/Apply/Restore 和重命名公式引用更新同时覆盖两类方程。
+Apply-to-All 数组只使用总体 Formula；non-Apply-to-All 数组只使用 `elementFormulas`。下标按维度顺序保存零基整数，不保存显示名称，因此维度元素重命名不会使持久下标失效。编辑过程允许逐元素方程暂不完整，Validation 报告缺失/重复；XMILE 导入要求完整覆盖。`setEquation()` 与逐元素方程互斥，修改维度会清空旧逐元素方程。Capture/Apply/Restore 和重命名公式引用更新同时覆盖两类方程。
 
 ### 9.2 下标 AST
 
@@ -268,7 +261,7 @@ Apply-to-All 数组只使用 `equation`；non-Apply-to-All 数组只使用 `elem
 
 Resolver 依次区分模型变量、维度、下标上下文中对应维度的元素，以及 `Dimension.Element` 限定元素。维度/元素引用不生成 EntityId 依赖，模型变量引用继续生成依赖。Wildcard 和 DimensionPosition 不生成引用，Range 递归解析两端。
 
-`ElementAnalysis` 增加带零基下标的逐元素 FormulaAnalysis；元素级 `references` 是所有方程引用的并集，结构使用检查覆盖全部公式。DependencyGraph 仍是变量级图，不能精确表达不同数组元素之间的执行顺序。本阶段遇到含数组变量的候选环时不报告 `algebraic-cycle`，避免把 `A[Dim-1]` 等合法递推误报为自环；元素级依赖与执行排序在数组求值阶段单独设计，不声称变量级图可完成数组调度。
+Document 以 ArrayElementFormula 保存零基下标和对应 Formula。分析器直接遍历全部总体/逐元素 Formula，引用即时汇入 DependencyGraph 和 StructuralUse，不生成 ElementAnalysis 影子结果。DependencyGraph 仍是变量级图，不能精确表达不同数组元素之间的执行顺序。本阶段遇到含数组变量的候选环时不报告 `algebraic-cycle`，避免把 `A[Dim-1]` 等合法递推误报为自环；元素级依赖与执行排序在数组求值阶段单独设计，不声称变量级图可完成数组调度。
 
 数组值与求值见第 10 节。Vensim 逗号数组初始化列表作为明确的厂商扩展处理，不误标为 XMILE 标准表达式。
 
@@ -284,18 +277,18 @@ QDS 在 model 前保存完整维度定义，每个变量保存维度引用及零
 
 ```cpp
 struct ArrayValue {
-    std::vector<std::string> dimensions; // 有序维度 nameKey
-    std::vector<std::size_t> shape;
-    std::vector<double> values;          // 行主序
+    QVector<QString> dimensions; // 有序维度 nameKey
+    QVector<std::size_t> shape;
+    QVector<double> values;          // 行主序
 };
 using Value = std::variant<double, ArrayValue>;
-using VariableReader = std::function<std::optional<Value>(const std::string &nameKey)>;
-using DimensionReader = std::function<const Dimension *(const std::string &)>;
+using VariableReader = std::function<std::optional<Value>(const QString &nameKey)>;
+using DimensionReader = std::function<const Dimension *(const QString &)>;
 
 struct EvaluationScope {
-    std::vector<std::string> dimensions; // 当前方程输出维度
-    std::vector<std::size_t> indices;    // 为空表示整体求值，否则为当前元素零基下标
-    std::string self; // 当前方程元素的 nameKey，供 SELF 与普通变量共用读取入口
+    QVector<QString> dimensions; // 当前方程输出维度
+    QVector<std::size_t> indices;    // 为空表示整体求值，否则为当前元素零基下标
+    QString self; // 当前方程元素的 nameKey，供 SELF 与普通变量共用读取入口
 };
 
 struct EvaluationContext {
@@ -335,23 +328,23 @@ ArrayValue 的维度长度等于 shape 长度，元素数等于各维长度乘�
 
 宏采用**自定义函数语义**，不是 C 预处理器式的文本替换。它支持参数、默认参数、局部作用域、嵌套调用、直接递归和间接递归，返回表达式求值得到的 Value。非递归与递归宏不得具有两套调用语义。
 
-Document 以值对象保存 MacroDefinition；宏和参数都有 displayName/nameKey，参数可保存默认表达式。宏不是 ModelElement，不分配 EntityId 或画布 Item。按 nameKey + 实参个数及默认参数规则选择具体定义，支持 XMILE 的参数个数重载；同一签名不可重复，默认参数之后不得再出现必填参数。宏名与模型变量、维度相互排斥，参数在宏体内为局部名称并遮蔽同名全局变量。
+Document 以值对象保存 MacroDefinition；宏和参数都有 displayName/nameKey，参数可保存默认表达式。宏不是 ModelElement，不分配 EntityId 或画布 Item。通用宏签名为 nameKey + 输入个数 + 输出个数，其中输出个数包含宏名自身的主输出；当前表达式宏固定为 1。选择定义时结合实参个数、默认参数规则和调用所需输出个数，支持 XMILE 的参数个数重载；同一签名不可重复，默认参数之后不得再出现必填参数。宏名与模型变量、维度相互排斥，参数在宏体内为局部名称并遮蔽同名全局变量。
 
-每个 MacroDefinition 在 ModelAnalysis 中只有一个 MacroAnalysis，唯一保存该定义的宏体和默认参数 AST。模型公式及宏体中的每次宏调用只保存 CallNode 和实参 AST；**任何阶段都不得把宏体或默认参数复制到调用方，也不做文本替换、AST 替换或级联展开。** 这既是非递归调用的表示，也是递归调用的表示。
+每个 MacroDefinition 唯一持有宏体和默认参数的 Formula，不经过 MacroAnalysis 转存。模型公式及宏体中的每次宏调用只保存 CallNode 和实参 AST；**任何阶段都不得把宏体或默认参数复制到调用方，也不做文本替换、AST 替换或级联展开。** 这既是非递归调用的表示，也是递归调用的表示。
 
 ### 11.2 分析过程
 
 宏接入第 2 节的统一管线，不另建宏展开流程：
 
 1. 阶段 1 先收集全部宏定义，分别解析宏体和默认表达式，建立 nameKey/签名索引。定义顺序无关，互相引用不需要前置声明。
-2. 阶段 2 遍历宏体，按需查询局部参数、全局变量、内置函数和其它宏调用；查询结果直接形成 MacroAnalysis 的引用集合、调用关系和诊断，不回写宏体 AST。
+2. 阶段 2 遍历宏体，按需查询局部参数、全局变量、内置函数和其它宏调用；查询结果直接形成 AnalysisReport 的依赖、宏调用关系和诊断，不回写宏体 AST。
 3. 模型公式中的宏调用即时校验目标签名，CallNode 本身不变，也不保存目标。参数绑定发生在运行期，不把实参 AST 填入宏体。
 4. 阶段 3 按第 6 节计算宏的传递变量依赖。直接递归、间接递归和重载调用都按具体签名建边；递归环是合法调用关系，不再产生 `recursive-macro` 诊断。
 5. 未找到定义仍报告未知函数；签名重复、参数个数不匹配和非法默认参数仍报告普通分析诊断。单个宏或公式出错不阻断其它定义的分析。
 
 ### 11.3 统一运行期调用
 
-求值器通过 MacroReader 按 nameKey + 实参个数取得当前 MacroAnalysis 中的宏体和默认参数 AST。`makeMacroReader(analysis)` 只捕获 Analysis 指针；求值期间 Document 和 ModelAnalysis 都必须存活且不得修改，Result 不持有二者的指针。
+求值器通过 MacroReader 按 nameKey + 实参个数取得 Document 当前 MacroDefinition 中的宏体和默认参数 Formula。`makeMacroReader(document)` 只捕获 Document 指针；求值期间 Document 必须存活且不得修改，Result 不持有 Document 或 AST 指针。
 
 每次调用建立独立宏调用帧，形参绑定采用按值语义：
 
@@ -365,11 +358,11 @@ Document 以值对象保存 MacroDefinition；宏和参数都有 displayName/nam
 
 ### 11.4 宏修改与失效边界
 
-宏定义是宏体的唯一事实来源，调用方没有宏体副本。因此修改宏体或默认表达式后，只需重新生成该定义的 MacroAnalysis，并更新受影响的依赖闭包、诊断和将来可能存在的求值缓存；调用方 AST 保持原样，不做级联失效检查或级联重新展开。所有后续调用通过 MacroReader 使用重分析后的同一份宏体。
+宏定义是宏体的唯一事实来源，调用方没有宏体副本。修改宏体或默认表达式时，Document 只替换该定义的 Formula；调用方 AST 不变，不做级联失效检查或重新展开。后续全局分析重新生成受影响的 AnalysisReport，所有求值调用通过 MacroReader 使用当前宏体。
 
 如果修改的是宏名、参数个数或默认参数布局，则需要重新解析相关 CallNode 的目标签名并更新参数个数诊断，但仍不修改调用方 AST 的表达式结构。变量重命名等普通编辑按统一符号解析规则处理，不为宏另建名称迁移通道。
 
-当前每次编辑后全量重建 ModelAnalysis 仍是允许的简单实现，但它不是级联展开，也不要求调用方保存宏体。未来只有 profile 证明全量分析或运行期调用是瓶颈时，才引入增量分析、编译或缓存；这些优化必须保留宏定义的唯一权威表示，并按定义修订关系失效，禁止以保存内联宏体副本的方式优化。
+当前每次需要全局分析时重新生成 AnalysisReport，是简单实现，不是级联展开，也不要求调用方保存宏体。未来只有 profile 证明全局分析或运行期调用是瓶颈时，才引入增量分析、编译或缓存；这些优化必须保留宏定义的唯一权威表示，并按定义修订关系失效，禁止以保存内联宏体副本的方式优化。
 
 ### 11.5 持久化与边界
 
@@ -412,6 +405,7 @@ QDS/XMILE 使用 macro、parm、eqn 保存同一定义，不持久化展开结�
 4. **数组模型与分析**：Dimension、Apply-to-All/逐元素方程、Subscript、通配、区间、@ AST、符号依赖和 QDS/XMILE 持久化。
 5. **数组与高级求值**：带维度信息的 ArrayValue、下标/切片、转置、Apply-to-All 广播、数组函数及元素级执行排序。
 6. **统一宏调用**：移除非递归 AST 展开，保留所有 CallNode，完成局部调用帧、默认参数、依赖闭包、递归深度限制及宏修改失效边界。
-7. **兼容方言与外部定义**：命名模型、外部 include、厂商命名空间和 Vensim 差异，逐项引用权威资料，不凭经验补语法。
+7. **Formula 与 AnalysisReport 归属**：Formula 随 Document 定义持有原始文本、AST 和本地诊断；以全局 AnalysisReport 替代影子 ModelAnalysis，不保留平行 AST 容器。
+8. **兼容方言与外部定义**：命名模型、外部 include、厂商命名空间和 Vensim 差异，逐项引用权威资料，不凭经验补语法。
 
 每个阶段独立完成功能实现、单元测试、profile、Release 后 Debug 全量回归和审核，不把后续求值或数组工作提前混入首阶段。

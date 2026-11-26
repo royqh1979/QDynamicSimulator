@@ -24,7 +24,7 @@ private slots:
 void verifyMacro(const Document &document)
 {
     QCOMPARE(document.macros().size(), std::size_t(1));
-    const MacroDefinition &macro = document.macros().front();
+    const MacroDefinition &macro = document.macros().begin().value();
     QCOMPARE(macro.displayName, QString("Scale"));
     QCOMPARE(macro.parameters.size(), std::size_t(2));
     QCOMPARE(macro.parameters[0].nameKey, QString("x"));
@@ -34,7 +34,9 @@ void verifyMacro(const Document &document)
     const auto found = std::find_if(analysis.elements.begin(), analysis.elements.end(), [](const ElementAnalysis &entry) {
         return entry.formula.root() != nullptr;
     });
-    const EvaluationResult result = evaluateFormula(found->formula.root(), {});
+    EvaluationContext context;
+    context.readMacro = makeMacroReader(analysis);
+    const EvaluationResult result = evaluateFormula(found->formula.root(), context);
     const auto *scalar = result.value ? std::get_if<double>(&*result.value) : nullptr;
     QVERIFY(scalar);
     QCOMPARE(*scalar, 10.0);

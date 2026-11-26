@@ -240,6 +240,7 @@ int main(int argc, char **argv)
     for (const ElementAnalysis &entry : macroAnalysis.elements)
         macroFormulas[entry.id] = entry.formula.root();
     EvaluationContext macroContext;
+    macroContext.readMacro = makeMacroReader(macroAnalysis);
     macroContext.readVariable = [&macroValues](const QString &name) -> std::optional<Value> {
         const auto found = macroValues.find(name);
         return found == macroValues.end() ? std::nullopt : std::optional<Value>(found.value());
@@ -258,6 +259,45 @@ int main(int argc, char **argv)
     const qint64 macroEvaluationNs = timer.nsecsElapsed();
     if (!std::isfinite(macroChecksum))
         return 20;
+
+    Document recursiveMacros;
+    MacroDefinition recursive;
+    recursive.displayName = "Down";
+    recursive.parameters = {{"x", "x", {}}};
+    recursive.equation = "IF x <= 0 THEN 0 ELSE Down(x - 1)";
+    if (!recursiveMacros.defineMacro(recursive))
+        return 21;
+    QVector<EntityId> recursiveOutputs;
+    for (int index = 0; index < count; ++index) {
+        const EntityId output = recursiveMacros.createVariable(ElementKind::Auxiliary);
+        recursiveMacros.setEquation(output, "Down(4)");
+        recursiveOutputs.push_back(output);
+    }
+    timer.restart();
+    const ModelAnalysis recursiveAnalysis = analyzeDocument(recursiveMacros);
+    const qint64 recursiveAnalysisNs = timer.nsecsElapsed();
+    EvaluationContext recursiveContext;
+    recursiveContext.readMacro = makeMacroReader(recursiveAnalysis);
+    std::size_t recursiveNodes = 0;
+    std::unordered_map<EntityId, const FormulaNode *> recursiveFormulas;
+    double recursiveChecksum = 0.0;
+    timer.restart();
+    for (const ElementAnalysis &entry : recursiveAnalysis.elements) {
+        recursiveNodes += formulaNodeCount(entry.formula.root());
+        recursiveFormulas[entry.id] = entry.formula.root();
+    }
+    for (const EntityId output : recursiveOutputs) {
+        const EvaluationResult evaluated = evaluateFormula(recursiveFormulas.at(output), recursiveContext);
+        if (!evaluated.value)
+            return 22;
+        recursiveChecksum += *std::get_if<double>(&*evaluated.value);
+    }
+    const qint64 recursiveEvaluationNs = timer.nsecsElapsed();
+    if (recursiveNodes != static_cast<std::size_t>(count) * 2 || !std::isfinite(recursiveChecksum)) {
+        QTextStream(stderr) << "Recursive profile mismatch: nodes " << recursiveNodes << " expected " << count
+                            << " checksum " << recursiveChecksum << "\n";
+        return 23;
+    }
     QTextStream(stdout) << "operation,count,total_ms,per_formula_us\n"
                         << "formula_analyze," << count << "," << elapsedNs / 1e6 << ","
                         << elapsedNs / 1000.0 / count << "\n"
@@ -284,6 +324,12 @@ int main(int argc, char **argv)
                         << macroNs / 1000.0 / count << "\n"
                         << "macro_evaluate," << count << "," << macroEvaluationNs / 1e6 << ","
                         << macroEvaluationNs / 1000.0 / count << "\n"
-                        << "macro_checksum," << macroChecksum << ",\n";
+                        << "macro_checksum," << macroChecksum << ",\n"
+                        << "macro_recursive_analysis," << count << "," << recursiveAnalysisNs / 1e6 << ","
+                        << recursiveAnalysisNs / 1000.0 / count << "\n"
+                        << "macro_recursive_evaluate," << count << "," << recursiveEvaluationNs / 1e6 << ","
+                        << recursiveEvaluationNs / 1000.0 / count << "\n"
+                        << "macro_recursive_nodes," << recursiveNodes << ",\n"
+                        << "macro_recursive_checksum," << recursiveChecksum << ",\n";
     return 0;
 }
