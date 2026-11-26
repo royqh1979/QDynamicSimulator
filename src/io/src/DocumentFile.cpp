@@ -904,14 +904,27 @@ bool writeFileBytes(const QString &fileName, const QByteArray &contents, QString
 
 } // namespace
 
-bool DocumentFile::save(const QString &fileName, const core::Document &document, const Workspace &workspace,
-    QString *errorMessage)
+QByteArray DocumentFile::toXml(const core::Document &document, const Workspace &workspace, QString *errorMessage)
 {
     if (!validWorkspace(workspace)) {
         setError(errorMessage, translate("The QDS workspace is invalid."));
-        return false;
+        return {};
     }
-    const QByteArray archive = makeZip(writeNativeXml(document, workspace));
+    return writeNativeXml(document, workspace);
+}
+
+bool DocumentFile::fromXml(const QByteArray &xml, core::Document &document, Workspace &workspace, QString *errorMessage)
+{
+    return parseNativeXml(xml, document, workspace, errorMessage);
+}
+
+bool DocumentFile::save(const QString &fileName, const core::Document &document, const Workspace &workspace,
+    QString *errorMessage)
+{
+    const QByteArray xml = toXml(document, workspace, errorMessage);
+    if (xml.isEmpty())
+        return false;
+    const QByteArray archive = makeZip(xml);
     if (archive.isEmpty()) {
         setError(errorMessage, translate("Could not create the QDS ZIP container."));
         return false;
@@ -937,7 +950,7 @@ bool DocumentFile::open(const QString &fileName, core::Document &document, Works
     }
 
     QByteArray xml;
-    if (!readZip(contents, xml, errorMessage) || !parseNativeXml(xml, document, workspace, errorMessage))
+    if (!readZip(contents, xml, errorMessage) || !fromXml(xml, document, workspace, errorMessage))
         return false;
     if (nativeFormat)
         *nativeFormat = true;

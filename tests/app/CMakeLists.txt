@@ -8,6 +8,13 @@ target_compile_definitions(test-editor PRIVATE QDS_ZH_CN_TS_PATH="${CMAKE_SOURCE
 add_test(NAME editor-commands COMMAND test-editor)
 add_dependencies(all-test-targets test-editor)
 
+add_executable(test-simulation-controller
+    TestSimulationController.cpp
+)
+target_link_libraries(test-simulation-controller PRIVATE QDS::Editor Qt5::Test)
+add_test(NAME editor-simulation-controller COMMAND test-simulation-controller)
+add_dependencies(all-test-targets test-simulation-controller)
+
 add_executable(test-icons
     TestIcons.cpp
     ../../src/app/resources/icons.qrc

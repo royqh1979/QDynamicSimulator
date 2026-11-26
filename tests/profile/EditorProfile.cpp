@@ -4,6 +4,7 @@
 #include "DocumentController.h"
 #include "MainWindow.h"
 #include "PropertyPanel.h"
+#include "SimulationController.h"
 #include <io/DocumentFile.h>
 #include <io/XmileFile.h>
 
@@ -12,6 +13,7 @@
 #include <QClipboard>
 #include <QDockWidget>
 #include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFrame>
 #include <QGraphicsLineItem>
 #include <QGraphicsProxyWidget>
@@ -874,6 +876,38 @@ int main(int argc, char **argv)
         variableKindsMatch = variableKindsMatch && loadedElement && loadedElement->kind() == element.kind();
     }
 
+    DocumentController sessionDocument;
+    Document sessionModel;
+    const EntityId sessionStock = sessionModel.createVariable(ElementKind::Stock);
+    const EntityId sessionCloud = sessionModel.createCloud();
+    sessionModel.createFlow(sessionCloud, sessionStock);
+    sessionModel.setEquation(sessionStock, "0");
+    sessionModel.setEquation(sessionModel.findByName("Flow1")->id(), "1");
+    sessionModel.setSimulationSettings({0.0, 1.0, 1.0, 1.0});
+    sessionDocument.replaceDocument(std::move(sessionModel));
+    SimulationController session(&sessionDocument);
+    timer.restart();
+    int sessionCount = 0;
+    int sessionSamples = 0;
+    for (int index = 0; index < count; ++index) {
+        if (!session.start("Run", true))
+            return 50;
+        QElapsedTimer waitTimer;
+        waitTimer.start();
+        while (session.isBusy()) {
+            if (waitTimer.elapsed() > 10000)
+                return 51;
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
+        }
+        if (session.status() != SimulationSessionStatus::Completed || !session.lastRun()
+            || session.lastRun()->times().size() != 2)
+            return 52;
+        sessionSamples += session.lastRun()->times().size();
+        ++sessionCount;
+    }
+    const qint64 sessionNs = timer.nsecsElapsed();
+    session.reset();
+
     const qint64 commands = controller.undoStack()->count();
     QTextStream(stdout) << "operation,count,total_ms,per_operation_us\n"
                         << "editor_create," << count << "," << createNs / 1e6 << "," << createNs / 1000.0 / count << "\n"
@@ -923,7 +957,9 @@ int main(int argc, char **argv)
                         << "xmile_export," << count << "," << exportNs / 1e6 << "," << exportNs / 1000.0 / count << "\n"
                         << "xmile_import," << count << "," << importNs / 1e6 << "," << importNs / 1000.0 / count << "\n"
                         << "xmile_sir_import,100," << sirImportNs / 1e6 << "," << sirImportNs / 1000.0 / 100 << "\n"
-                        << "sir_dependent_route_moves,1000," << sirDependentMoveNs / 1e6 << "," << sirDependentMoveNs / 1000.0 / 1000 << "\n";
+                        << "sir_dependent_route_moves,1000," << sirDependentMoveNs / 1e6 << "," << sirDependentMoveNs / 1000.0 / 1000 << "\n"
+                        << "simulation_session," << sessionCount << "," << sessionNs / 1e6 << "," << sessionNs / 1000.0 / sessionCount << "\n"
+                        << "simulation_session_samples," << sessionSamples << ",\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
         && inlineRenameCount == count && areaResizeCount == 1000 && cursorStatusCount == 1000
         && moveUndoCount == moveUndoIterations && matches > 0 && guideCount == 2000 && automaticGuideCount == 2000 && automaticGroupManual
@@ -942,6 +978,7 @@ int main(int argc, char **argv)
         && loaded.diagram().fontStyle(loadedFontStock->id()) == (FontStyle {"Arial", 18})
         && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic
         && !dependentArrows.empty() && dependentEndpointChecksum != 0.0
+        && sessionCount == count && sessionSamples == count * 2
         && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)
         QTextStream(stderr) << "validation failed: commands=" << commands << ", points=" << pointCount

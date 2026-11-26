@@ -26,6 +26,7 @@ public:
     explicit DocumentController(QObject *parent = nullptr);
 
     const qds::core::Document &document() const;
+    quint64 simulationRevision() const { return m_simulationRevision; }
     QUndoStack *undoStack();
 
     qds::core::EntityId createVariable(qds::core::ElementKind kind, const QPointF &position);
@@ -63,4 +64,5 @@ private:
 
     qds::core::Document m_document;
     QUndoStack m_undoStack;
+    quint64 m_simulationRevision = 0;
 };

@@ -223,3 +223,9 @@ CMake 使用 `qt5_create_translation` 更新 TS 并生成 QM，再通过 RCC 内
 | 操作 | 数量 | 总耗时 ms | 每操作 μs |
 | --- | ---: | ---: | ---: |
 | workspace_roundtrip | 100 | 232.992 | 2329.92 |
+
+## 模拟运行会话
+
+`simulation_session` 覆盖不可变 XML 副本、编译、QThread Worker、结果交付和命名 Run 覆盖；每个 Run 有两个样本。1000 次会话共交付 2000 个样本，总耗时 305.484 ms，每会话 305.484 μs。该值包含调度和事件处理，不与 Core 的纯积分 self-time 混合。
+
+取消、重置、析构和文档替换的线程生命周期由 `test-simulation-controller` 验证。一次本机 Editor profile 出现系统剪贴板占用警告，但进程退出码和全部校验通过；该警告不属于模拟会话指标。

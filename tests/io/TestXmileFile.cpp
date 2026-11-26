@@ -196,6 +196,16 @@ void TestXmileFile::nativeRoundTrip()
     QVERIFY(nativeFormat);
     QCOMPARE(loadedWorkspace, workspace);
     QCOMPARE(loaded.simulationSettings(), simulation);
+
+    const QByteArray memoryXml = qds::io::DocumentFile::toXml(document, workspace, &error);
+    QVERIFY(!memoryXml.startsWith("PK"));
+    Document memoryDocument;
+    qds::io::Workspace memoryWorkspace;
+    QVERIFY2(qds::io::DocumentFile::fromXml(memoryXml, memoryDocument, memoryWorkspace, &error), qPrintable(error));
+    QCOMPARE(memoryDocument.simulationSettings(), simulation);
+    QCOMPARE(memoryWorkspace, workspace);
+    QVERIFY(memoryDocument.findByName("\u5E93\u5B58 & Population"));
+
     std::size_t modelCount = 0;
     std::size_t connectorCount = 0;
     for (const ModelElement &element : loaded.model().elements()) {

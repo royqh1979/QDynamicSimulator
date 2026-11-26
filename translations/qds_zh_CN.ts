@@ -649,4 +649,22 @@
         <translation>注释</translation>
     </message>
 </context>
+<context>
+    <name>SimulationController</name>
+    <message>
+        <location filename="../src/app/SimulationController.cpp" line="107"/>
+        <source>A simulation is already running.</source>
+        <translation>已有模拟正在运行。</translation>
+    </message>
+    <message>
+        <location filename="../src/app/SimulationController.cpp" line="112"/>
+        <source>Run name cannot be empty.</source>
+        <translation>运行名称不能为空。</translation>
+    </message>
+    <message>
+        <location filename="../src/app/SimulationController.cpp" line="116"/>
+        <source>A run with this name already exists.</source>
+        <translation>已存在同名运行。</translation>
+    </message>
+</context>
 </TS>

@@ -21,6 +21,16 @@ cmake --build <RELEASE_BUILD_DIR> --target profile-simulation --parallel
 
 QDS 与 XMILE 场景校验和均为 12.25。该校验和来自固定 stop+DT，仅用于防止错误结果被忽略，不作为跨格式 SAVEPER 相等的依据。
 
+## 内存运行副本
+
+`simulation_document_copy_xml` 对指数模型执行 1000 次 `DocumentFile::toXml/fromXml`，不使用文件或 ZIP，逐次校验 SimulationSettings 和副本变量。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| simulation_document_copy_xml | 1000 | 32.6485 | 32.6485 |
+
+该通道复用 QDS 字段维护，AST 在副本中重建；运行变量元数据完全来自副本，不建立原模型双重 ID 映射。
+
 ## 标量编译与 Euler
 
 同一 Release 可执行文件增加固定指数模型：初始 Stock=1、Flow=Stock、DT=0.01、1000 步。编译与运行各执行 1000 次，保存 1001000 个样本点；每次运行校验样本数和最终 Stock，结果查询单独使用已完成的 Run，不重复计时仿真。

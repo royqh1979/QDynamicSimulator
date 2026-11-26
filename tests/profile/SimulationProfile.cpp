@@ -84,6 +84,20 @@ int main(int argc, char **argv)
     const int steps = count;
     exponential.setSimulationSettings({0.0, steps * 0.01, 0.01, 0.01});
     timer.restart();
+    int documentCopyCount = 0;
+    for (int index = 0; index < count; ++index) {
+        const QByteArray xml = qds::io::DocumentFile::toXml(exponential, {}, &error);
+        Document copied;
+        qds::io::Workspace copiedWorkspace;
+        if (xml.isEmpty() || !qds::io::DocumentFile::fromXml(xml, copied, copiedWorkspace, &error)
+            || copied.simulationSettings() != exponential.simulationSettings()
+            || !copied.findByName("Stock")) {
+            return 16;
+        }
+        ++documentCopyCount;
+    }
+    const qint64 documentCopyNs = timer.nsecsElapsed();
+    timer.restart();
     int compileCount = 0;
     for (int index = 0; index < count; ++index) {
         if (!compileSimulation(exponential).plan)
@@ -162,6 +176,8 @@ int main(int argc, char **argv)
            << xmileNs / 1000.0 / xmileCount << "\n";
     output << "settings_qds_checksum," << settings.stopTime() + settings.dt() << ",\n";
     output << "settings_xmile_checksum," << xmileSettings.stopTime() + xmileSettings.dt() << ",\n";
+    output << "simulation_document_copy_xml," << documentCopyCount << ',' << documentCopyNs / 1.0e6 << ','
+           << documentCopyNs / 1000.0 / documentCopyCount << "\n";
     output << "simulation_compile," << compileCount << ',' << compileNs / 1.0e6 << ','
            << compileNs / 1000.0 / compileCount << "\n";
     output << "simulation_euler," << runCount << ',' << runNs / 1.0e6 << ','

@@ -22,6 +22,8 @@ add_library(qds-editor STATIC
     RecentFiles.h
     Routing.cpp
     Routing.h
+    SimulationController.cpp
+    SimulationController.h
     Translation.cpp
     Translation.h
     resources/icons.qrc

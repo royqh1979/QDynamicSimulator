@@ -2,7 +2,7 @@
 
 ## 1. 范围与当前基础
 
-状态：界面目标设计，尚未开始 UI 实现。
+状态：运行会话基础已实现并通过验证，等待审核；设置、结果 Dock 和 Qt Charts 界面尚未开始。
 
 当前 Core 已提供 SimulationSettings、SimulationPlan、同步 SimulationRunner 和不可变 SimulationRun。本设计覆盖建模到运行的完整工作流、命名结果、Workbench Variable、折线图和数据表。命名多 Run 与叠加比较属于基本结果管理；数组、参数扫描、批量实验和蒙特卡洛仍不提前混入首批实现。
 
@@ -120,7 +120,8 @@ SimulationRunRequest（不可变、共享所有权）
 └─ QVector<RunVariableInfo>                EntityId、当时 displayName、unit
 ```
 
-- 副本通过 Core 的 capture/restore 类型通道建立，不经过 QDS/XMILE 文件，也不依赖 Scene。
+- 副本复用 QDS `document.xml` 的内存 XML 读写通道：DocumentFile 直接将 Document 序列化为 UTF-8 XML，再在内存中解析为新 Document；不写文件、不经过 ZIP 压缩/解压，也不依赖 Scene。新增语义字段只需维护同一持久化通道。
+- XML 加载允许重新分配 EntityId，因此 RunVariableInfo 完全基于运行副本建立，只保存 runElementId、当时的 displayName/nameKey 和单位；旧 Run 不保存原模型对象或双重 ID 映射。若界面需要定位当前模型，只能在相同修订下按 nameKey 做辅助导航，这不属于 Run 的身份语义。
 - 副本保留 EntityId、公式、Dimensions、Macros、FlowEndpoints 和 SimulationSettings；不需要 QGraphicsItem、Workspace 或窗口对象。
 - Plan 只与这个副本配套，不能用于后续已修改的 Document。
 - RunVariableInfo 固定运行时的显示名称和单位；之后用户改名或删除元素，不改变历史结果中的名称，也不产生悬空 Document 指针。
@@ -155,7 +156,13 @@ NamedRun 发布后不可变；覆盖同名结果也创建新 RunId 和新结果�
 
 ### 3.3 结果与文档编辑
 
+多个 Run 用于比较同一模型在不同常量、Stock 初值、公式、结构、积分方法、DT/SAVEPER、Lookup、外部 Data 或随机种子下的结果；输入完全相同时也允许重复运行。每个 Run 都是完整不可变输入及设置产生的历史结果，而不是当前画布的另一块临时状态。
+
 - 当前 Run 是独立历史事实，不进入 Document undo/redo。
+- 运行期间允许继续编辑当前 Document，为下一次运行做准备；Worker 始终使用 activeRequest 的旧副本，不会混入部分新公式。
+- 修改不修改或删除旧 Run。Completed 与是否对应当前模型是两个维度：模型修订号不同只增加 Outdated，不把 Completed 改为 Failed。
+- 首批采用保守失效规则：常量/初值、公式、变量类型、数值对象和 Flow 增删、Flow 端点、数组、宏、Lookup/Data/随机输入、仿真设置以及影响结果解释的名称/单位变化都推进 simulationRevision。
+- 元素位置、Route、字体、选择/悬停、画布缩放滚动、窗口布局和不影响计算的 Comment/Connector 展示变化不推进 simulationRevision。undo 后即使内容碰巧恢复，首批也允许保守地保持 Outdated。
 - 运行后的普通模型编辑不修改旧 Run；界面标记 `Results are from an older model`，并提供 Run 按钮刷新。
 - 新名称生成新的 NamedRun，并置于已加载列表首部；相同名称经确认后也只在新 Run 成功时替换旧记录。失败 Run 可以显示自身诊断，任何失败/取消都不得静默删除旧结果。
 - NamedRun 的 RunId 在会话内单调递增；runName 用于显示与覆盖判断，RunId 用于信号、加载列表和界面索引，避免改名或同名覆盖时引用错位。
