@@ -21,3 +21,4 @@ M1 先交付 SFD 建模、方程编辑、Euler/RK4、折线图和文件保存，
 - [Vensim、XMILE 与本程序概念对应](vensim-xmile-mapping.md)：元素、Rate、Arrow、Cloud、Comment 的语义和重构边界。
 - [公式分析器设计](formula-analysis.md)：标量 AST、Pratt Parser、符号解析、依赖图、诊断及分阶段实施。
 - [仿真引擎设计](simulation.md)：仿真设置、编译与执行顺序、Euler/RK4、运行结果、状态函数边界及正确性验证。
+- [模拟器界面设计](simulation-ui.md)：运行设置、Worker 生命周期、取消、结果 Dock、折线图和数据表。

@@ -90,6 +90,7 @@
 - `docs/design/sfd-item-architecture.md`：核心模型、Item 类体系和同步设计。
 - `docs/design/formula-analysis.md`：公式 AST、语法分析、符号与依赖图设计。
 - `docs/design/simulation.md`：仿真设置、执行计划、Euler/RK4、运行结果与正确性验证设计。
+- `docs/design/simulation-ui.md`：模拟器设置、Worker 生命周期、结果查看与图表界面设计。
 - `docs/history/`：带时间戳的重构/性能优化整体计划与逐步细化记录；开始此类工作前必须先建立。
 - `docs/profile/README.md`：性能基线、报告、优化结果与工具索引；开始性能工作后建立。
 - `docs/references/README.md`：参考文献及 `3rdparty/test-models` 测试模型子模块的来源、许可证和使用约定。
