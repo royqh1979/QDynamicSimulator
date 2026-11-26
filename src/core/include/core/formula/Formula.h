@@ -2,16 +2,17 @@
 
 #include <cstddef>
 #include <memory>
-#include <string>
-#include <string_view>
+#include <QString>
+#include <QVector>
+
 #include <utility>
 #include <vector>
 
 namespace qds::core {
 
 struct SourceSpan {
-    std::size_t begin = 0;
-    std::size_t end = 0;
+    int begin = 0;
+    int end = 0;
 
     bool operator==(const SourceSpan &other) const { return begin == other.begin && end == other.end; }
     bool operator!=(const SourceSpan &other) const { return !(*this == other); }
@@ -68,16 +69,16 @@ private:
 class ReferenceNode final : public FormulaNode
 {
 public:
-    ReferenceNode(std::string nameKey, SourceSpan span)
+    ReferenceNode(QString nameKey, SourceSpan span)
         : FormulaNode(FormulaNodeKind::Reference, span)
         , m_nameKey(std::move(nameKey))
     {
     }
 
-    const std::string &nameKey() const { return m_nameKey; }
+    const QString &nameKey() const { return m_nameKey; }
 
 private:
-    std::string m_nameKey;
+    QString m_nameKey;
 };
 
 enum class UnaryOperator { Positive, Negative, Not, Transpose };
@@ -141,19 +142,19 @@ private:
 class CallNode final : public FormulaNode
 {
 public:
-    CallNode(std::string nameKey, std::vector<std::unique_ptr<FormulaNode>> arguments, SourceSpan span)
+    CallNode(QString nameKey, std::vector<std::unique_ptr<FormulaNode>> arguments, SourceSpan span)
         : FormulaNode(FormulaNodeKind::Call, span)
         , m_nameKey(std::move(nameKey))
         , m_arguments(std::move(arguments))
     {
     }
 
-    const std::string &nameKey() const { return m_nameKey; }
+    const QString &nameKey() const { return m_nameKey; }
     std::size_t argumentCount() const { return m_arguments.size(); }
     const FormulaNode *argument(std::size_t position) const { return m_arguments[position].get(); }
 
 private:
-    std::string m_nameKey;
+    QString m_nameKey;
     std::vector<std::unique_ptr<FormulaNode>> m_arguments;
 };
 
@@ -258,7 +259,7 @@ private:
 
 struct FormulaIssue {
     SourceSpan span;
-    std::string message;
+    QString message;
 
     bool operator==(const FormulaIssue &other) const { return span == other.span && message == other.message; }
 };
@@ -267,21 +268,21 @@ class FormulaAnalysis
 {
 public:
     FormulaAnalysis() = default;
-    FormulaAnalysis(std::unique_ptr<FormulaNode> ast, std::vector<FormulaIssue> issues)
+    FormulaAnalysis(std::unique_ptr<FormulaNode> ast, QVector<FormulaIssue> issues)
         : m_ast(std::move(ast))
         , m_issues(std::move(issues))
     {
     }
 
     const FormulaNode *root() const { return m_ast.get(); }
-    const std::vector<FormulaIssue> &issues() const { return m_issues; }
+    const QVector<FormulaIssue> &issues() const { return m_issues; }
 
 private:
     std::unique_ptr<FormulaNode> m_ast;
-    std::vector<FormulaIssue> m_issues;
+    QVector<FormulaIssue> m_issues;
 };
 
-FormulaAnalysis analyzeFormula(std::string_view equation);
+FormulaAnalysis analyzeFormula(QString equation);
 std::size_t formulaNodeCount(const FormulaNode *node);
 
 } // namespace qds::core

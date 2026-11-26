@@ -3,7 +3,7 @@
 #include <core/Identifier.h>
 
 #include <algorithm>
-#include <string>
+#include <QString>
 #include <unordered_set>
 #include <vector>
 
@@ -13,7 +13,7 @@ using namespace qds::core;
 
 namespace {
 
-MacroParameter parameter(const std::string &name, const std::string &defaultEquation = {})
+MacroParameter parameter(const QString &name, const QString &defaultEquation = {})
 {
     return {name, normalizeIdentifier(name), defaultEquation};
 }
@@ -26,7 +26,7 @@ const ElementAnalysis &element(const ModelAnalysis &analysis, EntityId id)
     return *found;
 }
 
-bool hasIssue(const ModelAnalysis &analysis, const std::string &code)
+bool hasIssue(const ModelAnalysis &analysis, const QString &code)
 {
     return std::any_of(analysis.issues.begin(), analysis.issues.end(), [&code](const ModelIssue &issue) {
         return issue.code == code;
@@ -36,7 +36,7 @@ bool hasIssue(const ModelAnalysis &analysis, const std::string &code)
 void expectScalar(const ModelAnalysis &analysis, EntityId id, const EvaluationContext &context, double expected)
 {
     const EvaluationResult result = evaluateFormula(element(analysis, id).formula.root(), context);
-    QVERIFY2(result.value.has_value(), result.error.c_str());
+    QVERIFY2(result.value.has_value(), qPrintable(result.error));
     const auto *scalar = std::get_if<double>(&*result.value);
     QVERIFY(scalar);
     QCOMPARE(*scalar, expected);
@@ -125,7 +125,7 @@ void TestMacros::expansionAndEvaluation()
     QCOMPARE(element(analysis, output).references, std::unordered_set<EntityId> {offset});
     QCOMPARE(analysis.macros.size(), std::size_t(4));
     EvaluationContext context;
-    context.readVariable = [](const std::string &name) -> std::optional<Value> {
+    context.readVariable = [](const QString &name) -> std::optional<Value> {
         return name == "offset" ? std::optional<Value>(10.0) : std::nullopt;
     };
     expectScalar(analysis, output, context, 65.0);

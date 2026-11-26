@@ -3,10 +3,10 @@
 #include <core/Element.h>
 #include <core/ElementRange.h>
 
-#include <string>
+#include <QString>
 #include <unordered_map>
 #include <utility>
-#include <vector>
+#include <QVector>
 
 namespace qds::core {
 
@@ -35,7 +35,7 @@ struct RoutePoint {
 
 struct Route {
     RouteMode mode = RouteMode::Straight;
-    std::vector<RoutePoint> controlPoints;
+    QVector<RoutePoint> controlPoints;
     bool manual = false;
     bool locked = false;
 
@@ -49,7 +49,7 @@ struct Route {
 Route defaultConnectorRoute();
 
 struct FontStyle {
-    std::string family;
+    QString family;
     int pointSize = 0;
 
     bool operator==(const FontStyle &other) const { return family == other.family && pointSize == other.pointSize; }
@@ -105,13 +105,13 @@ public:
     {
     }
 
-    const std::string &content() const { return m_content; }
+    const QString &content() const { return m_content; }
 
 private:
     friend class Document;
-    void setContent(std::string content) { m_content = std::move(content); }
+    void setContent(QString content) { m_content = std::move(content); }
 
-    std::string m_content;
+    QString m_content;
 };
 
 class Document;

@@ -21,7 +21,7 @@ EvaluationResult success(double value)
     return success(Value(value));
 }
 
-EvaluationResult failure(const FormulaNode *node, std::string message)
+EvaluationResult failure(const FormulaNode *node, QString message)
 {
     return {std::nullopt, std::move(message), node ? node->span() : SourceSpan {}};
 }
@@ -36,7 +36,7 @@ const ArrayValue *arrayOf(const Value &value)
     return std::get_if<ArrayValue>(&value);
 }
 
-std::size_t elementCount(const std::vector<std::size_t> &shape)
+std::size_t elementCount(const QVector<std::size_t> &shape)
 {
     std::size_t count = 1;
     for (std::size_t size : shape) {
@@ -49,22 +49,22 @@ std::size_t elementCount(const std::vector<std::size_t> &shape)
 
 bool validArray(const ArrayValue &array)
 {
-    return !array.dimensions.empty() && array.dimensions.size() == array.shape.size()
+    return !array.dimensions.isEmpty() && array.dimensions.size() == array.shape.size()
         && elementCount(array.shape) == array.values.size();
 }
 
-std::vector<std::size_t> strides(const std::vector<std::size_t> &shape)
+QVector<std::size_t> strides(const QVector<std::size_t> &shape)
 {
-    std::vector<std::size_t> result(shape.size(), 1);
+    QVector<std::size_t> result(shape.size(), 1);
     for (std::size_t index = shape.size(); index-- > 1;)
         result[index - 1] = result[index] * shape[index];
     return result;
 }
 
-std::vector<std::size_t> coordinates(std::size_t flat, const std::vector<std::size_t> &shape)
+QVector<std::size_t> coordinates(std::size_t flat, const QVector<std::size_t> &shape)
 {
-    const std::vector<std::size_t> steps = strides(shape);
-    std::vector<std::size_t> result(shape.size());
+    const QVector<std::size_t> steps = strides(shape);
+    QVector<std::size_t> result(shape.size());
     for (std::size_t index = 0; index < shape.size(); ++index) {
         result[index] = flat / steps[index];
         flat %= steps[index];
@@ -118,7 +118,7 @@ public:
     }
 
 private:
-    EvaluationResult constant(const FormulaNode &node, const std::string &nameKey)
+    EvaluationResult constant(const FormulaNode &node, const QString &nameKey)
     {
         if (nameKey == "time")
             return success(m_context.time);
@@ -135,9 +135,9 @@ private:
         return failure(&node, "Constant is not supported: " + nameKey);
     }
 
-    EvaluationResult readVariable(const std::string &nameKey, const FormulaNode &node)
+    EvaluationResult readVariable(const QString &nameKey, const FormulaNode &node)
     {
-        if (nameKey.empty())
+        if (nameKey.isEmpty())
             return failure(&node, "Unresolved variable");
         if (!m_context.readVariable)
             return failure(&node, "No variable reader for: " + nameKey);
@@ -157,15 +157,14 @@ private:
                 return readVariable(m_context.scope.self, node);
             return constant(node, node.nameKey());
         }
-        const std::size_t separator = node.nameKey().find('.');
-        if (separator != std::string::npos) {
+        const int separator = node.nameKey().indexOf('.');
+        if (separator >= 0) {
             const Dimension *dimension = m_context.readDimension
-                ? m_context.readDimension(node.nameKey().substr(0, separator)) : nullptr;
+                ? m_context.readDimension(node.nameKey().left(separator)) : nullptr;
             const DimensionElement *element = dimension
-                ? dimension->findElement(node.nameKey().substr(separator + 1)) : nullptr;
+                ? dimension->findElement(node.nameKey().mid(separator + 1)) : nullptr;
             if (element)
                 return success(static_cast<double>(element - dimension->elements.data() + 1));
-
         }
         if (m_context.readDimension) {
             if (const Dimension *dimension = m_context.readDimension(node.nameKey())) {
@@ -180,13 +179,13 @@ private:
         return readVariable(node.nameKey(), node);
     }
 
-    EvaluationResult broadcast(const Value &value, const std::vector<std::string> &dimensions, const FormulaNode &node)
+    EvaluationResult broadcast(const Value &value, const QVector<QString> &dimensions, const FormulaNode &node)
     {
-        if (dimensions.empty())
+        if (dimensions.isEmpty())
             return success(value);
-        std::vector<std::size_t> shape;
+        QVector<std::size_t> shape;
         shape.reserve(dimensions.size());
-        for (const std::string &name : dimensions) {
+        for (const QString &name : dimensions) {
             const Dimension *dimension = m_context.readDimension ? m_context.readDimension(name) : nullptr;
             if (!dimension)
                 return failure(&node, "Unknown output dimension: " + name);
@@ -194,14 +193,14 @@ private:
         }
         const std::size_t count = elementCount(shape);
         if (const auto *scalar = std::get_if<double>(&value))
-            return success(ArrayValue {dimensions, shape, std::vector<double>(count, *scalar)});
+            return success(ArrayValue {dimensions, shape, QVector<double>(count, *scalar)});
 
         const ArrayValue &input = *arrayOf(value);
         if (!validArray(input) || input.dimensions.size() != dimensions.size())
             return failure(&node, "Array dimensions are incompatible");
-        std::vector<std::size_t> inputPositions;
+        QVector<std::size_t> inputPositions;
         inputPositions.reserve(dimensions.size());
-        for (const std::string &name : dimensions) {
+        for (const QString &name : dimensions) {
             const auto found = std::find(input.dimensions.begin(), input.dimensions.end(), name);
             if (found == input.dimensions.end())
                 return failure(&node, "Array dimensions are incompatible");
@@ -217,9 +216,9 @@ private:
 
         ArrayValue output {dimensions, shape, {}};
         output.values.resize(count);
-        const std::vector<std::size_t> inputSteps = strides(input.shape);
+        const QVector<std::size_t> inputSteps = strides(input.shape);
         for (std::size_t flat = 0; flat < count; ++flat) {
-            const std::vector<std::size_t> outputCoordinates = coordinates(flat, shape);
+            const QVector<std::size_t> outputCoordinates = coordinates(flat, shape);
             std::size_t inputFlat = 0;
             for (std::size_t index = 0; index < dimensions.size(); ++index)
                 inputFlat += outputCoordinates[index] * inputSteps[inputPositions[index]];
@@ -235,9 +234,9 @@ private:
             if (const auto *rhs = std::get_if<double>(&right))
                 return success(operation(*lhs, *rhs));
         }
-        std::vector<std::string> dimensions = m_context.scope.indices.empty()
-            ? m_context.scope.dimensions : std::vector<std::string> {};
-        if (dimensions.empty()) {
+        QVector<QString> dimensions = m_context.scope.indices.isEmpty()
+            ? m_context.scope.dimensions : QVector<QString> {};
+        if (dimensions.isEmpty()) {
             if (arrayOf(left))
                 dimensions = arrayOf(left)->dimensions;
             else if (arrayOf(right))
@@ -263,7 +262,7 @@ private:
     {
         if (const auto *scalar = std::get_if<double>(&input))
             return success(operation(*scalar));
-        EvaluationResult value = broadcast(input, m_context.scope.dimensions.empty() || !m_context.scope.indices.empty()
+        EvaluationResult value = broadcast(input, m_context.scope.dimensions.isEmpty() || !m_context.scope.indices.isEmpty()
                 ? arrayOf(input)->dimensions : m_context.scope.dimensions, node);
         if (!value.value)
             return value;
@@ -350,7 +349,7 @@ private:
     EvaluationResult elementwise(const Value &condition, const Value &thenValue, const Value &elseValue,
         const FormulaNode &node)
     {
-        std::vector<std::string> dimensions = m_context.scope.dimensions.empty() || !m_context.scope.indices.empty()
+        QVector<QString> dimensions = m_context.scope.dimensions.isEmpty() || !m_context.scope.indices.isEmpty()
             ? arrayOf(condition)->dimensions : m_context.scope.dimensions;
         EvaluationResult test = broadcast(condition, dimensions, node);
         if (!test.value)
@@ -390,9 +389,9 @@ private:
         ArrayValue output {input.dimensions, input.shape, input.values};
         std::reverse(output.dimensions.begin(), output.dimensions.end());
         std::reverse(output.shape.begin(), output.shape.end());
-        const std::vector<std::size_t> outputSteps = strides(output.shape);
+        const QVector<std::size_t> outputSteps = strides(output.shape);
         for (std::size_t flat = 0; flat < input.values.size(); ++flat) {
-            const std::vector<std::size_t> inputCoordinates = coordinates(flat, input.shape);
+            const QVector<std::size_t> inputCoordinates = coordinates(flat, input.shape);
             std::size_t outputFlat = 0;
             for (std::size_t index = 0; index < inputCoordinates.size(); ++index)
                 outputFlat += inputCoordinates[index] * outputSteps[output.shape.size() - 1 - index];
@@ -417,7 +416,7 @@ private:
             std::size_t end = 0;
             bool preserve = false;
         };
-        std::vector<Selection> selections(input->dimensions.size());
+        QVector<Selection> selections(input->dimensions.size());
         for (std::size_t position = 0; position < selections.size(); ++position) {
             selections[position].end = input->shape[position] - 1;
             selections[position].preserve = true;
@@ -444,7 +443,7 @@ private:
             } else {
                 bool resolved = false;
                 bool preserve = false;
-                std::string dimensionName;
+                QString dimensionName;
                 if (const auto *dimensionPosition = dynamic_cast<const DimensionPositionNode *>(indexNode)) {
                     if (dimensionPosition->position() == 0
                         || dimensionPosition->position() > m_context.scope.dimensions.size())
@@ -462,7 +461,7 @@ private:
                     } else if (const DimensionElement *element = dimension->findElement(referenceNode->nameKey())) {
                         selection.begin = selection.end = static_cast<std::size_t>(element - dimension->elements.data());
                         resolved = true;
-                    } else if (referenceNode->nameKey().find('.') != std::string::npos) {
+                    } else if (referenceNode->nameKey().contains(QChar('.'))) {
                         EvaluationResult value = reference(*referenceNode);
                         if (!value.value)
                             return value;
@@ -473,7 +472,7 @@ private:
                         resolved = true;
                     }
                 }
-                if (resolved && !dimensionName.empty()) {
+                if (resolved && !dimensionName.isEmpty()) {
                     const auto scope = std::find(m_context.scope.dimensions.begin(), m_context.scope.dimensions.end(), dimensionName);
                     if (scope != m_context.scope.dimensions.end()) {
                         const std::size_t scopeIndex = static_cast<std::size_t>(scope - m_context.scope.dimensions.begin());
@@ -501,7 +500,7 @@ private:
             selections[position] = selection;
         }
 
-        const std::vector<std::size_t> inputSteps = strides(input->shape);
+        const QVector<std::size_t> inputSteps = strides(input->shape);
         const bool sliced = std::any_of(selections.begin(), selections.end(), [](const Selection &selection) {
             return selection.preserve;
         });
@@ -519,7 +518,7 @@ private:
             output.shape.push_back(selections[position].end - selections[position].begin + 1);
         }
         for (std::size_t flat = 0; flat < input->values.size(); ++flat) {
-            const std::vector<std::size_t> inputCoordinates = coordinates(flat, input->shape);
+            const QVector<std::size_t> inputCoordinates = coordinates(flat, input->shape);
             bool included = true;
             for (std::size_t position = 0; position < selections.size(); ++position) {
                 const std::size_t coordinate = inputCoordinates[position];
@@ -538,10 +537,10 @@ private:
 
     EvaluationResult arrayLiteral(const ArrayLiteralNode &node)
     {
-        if (m_context.scope.dimensions.empty())
+        if (m_context.scope.dimensions.isEmpty())
             return failure(&node, "Array literal requires output dimensions");
-        std::vector<std::size_t> shape;
-        for (const std::string &name : m_context.scope.dimensions) {
+        QVector<std::size_t> shape;
+        for (const QString &name : m_context.scope.dimensions) {
             const Dimension *dimension = m_context.readDimension ? m_context.readDimension(name) : nullptr;
             if (!dimension)
                 return failure(&node, "Unknown output dimension: " + name);
@@ -550,7 +549,7 @@ private:
         const std::size_t count = elementCount(shape);
         if (node.valueCount() != count)
             return failure(&node, "Array literal size does not match output dimensions");
-        std::vector<double> values;
+        QVector<double> values;
         values.reserve(count);
         for (std::size_t position = 0; position < node.valueCount(); ++position) {
             const FormulaNode *item = node.value(position);
@@ -562,10 +561,10 @@ private:
                 return failure(item, "Array literal items must be scalar");
             values.push_back(*scalar);
         }
-        if (!m_context.scope.indices.empty()) {
+        if (!m_context.scope.indices.isEmpty()) {
             if (m_context.scope.indices.size() != shape.size())
                 return failure(&node, "Array literal scope does not match output dimensions");
-            const std::vector<std::size_t> steps = strides(shape);
+            const QVector<std::size_t> steps = strides(shape);
             std::size_t flat = 0;
             for (std::size_t index = 0; index < shape.size(); ++index) {
                 if (m_context.scope.indices[index] >= shape[index])
@@ -608,7 +607,7 @@ private:
         return failure(&node, "Unknown array reduction: " + node.nameKey());
     }
 
-    EvaluationResult rank(const CallNode &node, const std::vector<Value> &arguments)
+    EvaluationResult rank(const CallNode &node, const QVector<Value> &arguments)
     {
         const auto *rankValue = std::get_if<double>(&arguments[1]);
         const ArrayValue *primary = arrayOf(arguments[0]);
@@ -621,7 +620,7 @@ private:
                 return array->values[index];
             return *std::get_if<double>(&arguments[0]);
         };
-        std::vector<std::size_t> order(count);
+        QVector<std::size_t> order(count);
         std::iota(order.begin(), order.end(), 0);
         EvaluationResult alignedSecondary;
         const ArrayValue *secondary = nullptr;
@@ -666,7 +665,7 @@ private:
             && !arrayReduction && node.nameKey() != "rank")
             return failure(&node, "Function is not supported: " + node.nameKey());
 
-        std::vector<Value> arguments;
+        QVector<Value> arguments;
         arguments.reserve(node.argumentCount());
         for (std::size_t position = 0; position < node.argumentCount(); ++position) {
             EvaluationResult value = evaluate(node.argument(position));

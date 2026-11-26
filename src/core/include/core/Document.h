@@ -7,10 +7,12 @@
 
 #include <memory>
 #include <optional>
-#include <string>
+#include <QHash>
+#include <QSet>
+#include <QString>
 #include <unordered_map>
 #include <unordered_set>
-#include <vector>
+#include <QVector>
 
 namespace qds::core {
 
@@ -33,13 +35,13 @@ struct Workspace {
 struct ElementData {
     EntityId id = 0;
     ElementKind kind = ElementKind::Stock;
-    std::string displayName;
-    std::string equation;
-    std::vector<std::string> dimensions;
-    std::vector<ArrayElementEquation> elementEquations;
-    std::string unit;
-    std::string comment;
-    std::string content;
+    QString displayName;
+    QString equation;
+    QVector<QString> dimensions;
+    QVector<ArrayElementEquation> elementEquations;
+    QString unit;
+    QString comment;
+    QString content;
     FlowEndpoints flowEndpoints;
     EntityId from = 0;
     EntityId to = 0;
@@ -70,14 +72,14 @@ public:
     Document &operator=(const Document &) = delete;
 
     const DocumentElement *find(EntityId id) const;
-    const ModelElement *findByName(const std::string &name) const;
-    const Dimension *findDimension(const std::string &name) const;
-    const std::vector<Dimension> &dimensions() const { return m_dimensions; }
-    bool defineDimension(const std::string &displayName, std::size_t size);
-    bool defineDimension(const std::string &displayName, const std::vector<std::string> &elements);
+    const ModelElement *findByName(const QString &name) const;
+    const Dimension *findDimension(const QString &name) const;
+    const QVector<Dimension> &dimensions() const { return m_dimensions; }
+    bool defineDimension(const QString &displayName, std::size_t size);
+    bool defineDimension(const QString &displayName, const QVector<QString> &elements);
     bool defineMacro(MacroDefinition macro);
-    const MacroDefinition *findMacro(const std::string &name, std::size_t argumentCount) const;
-    const std::vector<MacroDefinition> &macros() const { return m_macros; }
+    const MacroDefinition *findMacro(const QString &name, std::size_t argumentCount) const;
+    const QVector<MacroDefinition> &macros() const { return m_macros; }
 
     DocumentRange elements() const { return DocumentRange(m_elements); }
     const Model &model() const { return m_model; }
@@ -89,21 +91,21 @@ public:
     EntityId createFlow(EntityId from, EntityId to);
     EntityId createConnector(EntityId from, EntityId to);
     EntityId createCloud(Vec2 position = {});
-    EntityId createComment(const std::string &text, Vec2 position = {});
+    EntityId createComment(const QString &text, Vec2 position = {});
 
-    std::vector<EntityId> cascade(EntityId id) const;
-    std::vector<EntityId> remove(EntityId id);
+    QVector<EntityId> cascade(EntityId id) const;
+    QVector<EntityId> remove(EntityId id);
     bool restore(const ElementData &data);
     bool apply(const ElementData &data);
     std::optional<ElementData> capture(EntityId id) const;
 
-    bool rename(EntityId id, const std::string &displayName);
-    bool setEquation(EntityId id, const std::string &equation);
-    bool setDimensions(EntityId id, const std::vector<std::string> &dimensions);
-    bool setElementEquation(EntityId id, const std::vector<std::size_t> &indices, const std::string &equation);
-    bool setUnit(EntityId id, const std::string &unit);
-    bool setComment(EntityId id, const std::string &comment);
-    bool setCommentContent(EntityId id, const std::string &content);
+    bool rename(EntityId id, const QString &displayName);
+    bool setEquation(EntityId id, const QString &equation);
+    bool setDimensions(EntityId id, const QVector<QString> &dimensions);
+    bool setElementEquation(EntityId id, const QVector<std::size_t> &indices, const QString &equation);
+    bool setUnit(EntityId id, const QString &unit);
+    bool setComment(EntityId id, const QString &comment);
+    bool setCommentContent(EntityId id, const QString &content);
     bool setPosition(EntityId id, Vec2 position);
     bool setFontStyle(EntityId id, const FontStyle &font);
     bool reconnectFlow(EntityId id, EntityId from, EntityId to);
@@ -120,24 +122,24 @@ private:
     template <typename T>
     EntityId insert(std::unique_ptr<T> element, Vec2 position);
     bool defineDimensionData(Dimension dimension);
-    bool validRename(EntityId id, const std::string &displayName) const;
+    bool validRename(EntityId id, const QString &displayName) const;
     bool validFlowEndpoint(EntityId id) const;
     bool validFlowConnection(EntityId ignoredId, EntityId from, EntityId to) const;
     bool validConnectorEndpoints(EntityId from, EntityId to) const;
     bool validConnectorConnection(EntityId ignoredId, EntityId from, EntityId to) const;
     static bool validFontData(ElementKind kind, const FontStyle &font);
     static bool validRouteData(ElementKind kind, const Route &route);
-    bool validArrayData(const std::vector<std::string> &dimensions,
-        const std::vector<ArrayElementEquation> &elementEquations, const std::string &equation) const;
-    std::string uniqueName(ElementKind kind);
-    void updateReferences(EntityId id, const std::string &oldName, const std::string &newName);
+    bool validArrayData(const QVector<QString> &dimensions,
+        const QVector<ArrayElementEquation> &elementEquations, const QString &equation) const;
+    QString uniqueName(ElementKind kind);
+    void updateReferences(EntityId id, const QString &oldName, const QString &newName);
 
     std::unordered_map<EntityId, std::unique_ptr<DocumentElement>> m_elements;
-    std::unordered_map<std::string, EntityId> m_nameIndex;
-    std::vector<Dimension> m_dimensions;
-    std::unordered_map<std::string, std::size_t> m_dimensionIndex;
-    std::vector<MacroDefinition> m_macros;
-    std::unordered_set<std::string> m_macroNames;
+    QHash<QString, EntityId> m_nameIndex;
+    QVector<Dimension> m_dimensions;
+    QHash<QString, int> m_dimensionIndex;
+    QVector<MacroDefinition> m_macros;
+    QSet<QString> m_macroNames;
     std::unordered_map<ElementKind, std::uint64_t> m_nextNameSuffix;
     EntityId m_nextId = 1;
     Model m_model;

@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
-#include <vector>
+#include <QVector>
 
 namespace qds::io {
 namespace {
@@ -80,9 +80,9 @@ QStringList splitSubscripts(const QString &text)
     return result;
 }
 
-QString quotedIdentifier(const std::string &name)
+QString quotedIdentifier(const QString &name)
 {
-    QString value = QString::fromStdString(name);
+    QString value = (name);
     value.replace('\\', "\\\\");
     value.replace('"', "\\\"");
     value.replace('\n', "\\n");
@@ -113,31 +113,31 @@ QString variableTag(core::ElementKind kind)
 QString elementName(const core::DocumentElement &element)
 {
     if (const auto *model = dynamic_cast<const core::ModelElement *>(&element))
-        return QString::fromStdString(model->displayName());
+        return (model->displayName());
     if (const auto *comment = dynamic_cast<const core::Comment *>(&element))
-        return QString::fromStdString(comment->content());
+        return (comment->content());
     return {};
 }
 
-const core::ModelElement *findElementByName(const core::Document &document, const std::string &name)
+const core::ModelElement *findElementByName(const core::Document &document, const QString &name)
 {
     return document.model().findByName(name);
 }
 
 void writeXmileDimensions(QXmlStreamWriter &writer, const core::Document &document)
 {
-    if (document.dimensions().empty())
+    if (document.dimensions().isEmpty())
         return;
     writer.writeStartElement(QStringLiteral("dimensions"));
     for (const core::Dimension &dimension : document.dimensions()) {
         writer.writeStartElement(QStringLiteral("dim"));
-        writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(dimension.displayName));
-        if (dimension.elements.front().nameKey.empty()) {
+        writer.writeAttribute(QStringLiteral("name"), (dimension.displayName));
+        if (dimension.elements.front().nameKey.isEmpty()) {
             writer.writeAttribute(QStringLiteral("size"), QString::number(dimension.elements.size()));
         } else {
             for (const core::DimensionElement &element : dimension.elements) {
                 writer.writeStartElement(QStringLiteral("elem"));
-                writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(element.displayName));
+                writer.writeAttribute(QStringLiteral("name"), (element.displayName));
                 writer.writeEndElement();
             }
         }
@@ -150,27 +150,27 @@ void writeXmileMacros(QXmlStreamWriter &writer, const core::Document &document)
 {
     for (const core::MacroDefinition &macro : document.macros()) {
         writer.writeStartElement(QStringLiteral("macro"));
-        writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(macro.displayName));
+        writer.writeAttribute(QStringLiteral("name"), (macro.displayName));
         for (const core::MacroParameter &parameter : macro.parameters) {
             writer.writeStartElement(QStringLiteral("parm"));
-            if (!parameter.defaultEquation.empty())
-                writer.writeAttribute(QStringLiteral("default"), QString::fromStdString(parameter.defaultEquation));
-            writer.writeCharacters(QString::fromStdString(parameter.displayName));
+            if (!parameter.defaultEquation.isEmpty())
+                writer.writeAttribute(QStringLiteral("default"), (parameter.defaultEquation));
+            writer.writeCharacters((parameter.displayName));
             writer.writeEndElement();
         }
-        writer.writeTextElement(QStringLiteral("eqn"), QString::fromStdString(macro.equation));
+        writer.writeTextElement(QStringLiteral("eqn"), (macro.equation));
         writer.writeEndElement();
     }
 }
 
 void writeXmileArrayDefinition(QXmlStreamWriter &writer, const core::Document &document, const core::ModelElement &element)
 {
-    if (element.dimensions().empty())
+    if (element.dimensions().isEmpty())
         return;
     writer.writeStartElement(QStringLiteral("dimensions"));
-    for (const std::string &name : element.dimensions()) {
+    for (const QString &name : element.dimensions()) {
         writer.writeStartElement(QStringLiteral("dim"));
-        writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(document.findDimension(name)->displayName));
+        writer.writeAttribute(QStringLiteral("name"), (document.findDimension(name)->displayName));
         writer.writeEndElement();
     }
     writer.writeEndElement();
@@ -180,10 +180,10 @@ void writeXmileArrayDefinition(QXmlStreamWriter &writer, const core::Document &d
         for (std::size_t position = 0; position < entry.indices.size(); ++position) {
             const core::Dimension *dimension = document.findDimension(element.dimensions()[position]);
             const core::DimensionElement &index = dimension->elements[entry.indices[position]];
-            indices.append(index.nameKey.empty() ? QString::number(entry.indices[position] + 1) : quotedIdentifier(index.displayName));
+            indices.append(index.nameKey.isEmpty() ? QString::number(entry.indices[position] + 1) : quotedIdentifier(index.displayName));
         }
         writer.writeAttribute(QStringLiteral("subscript"), indices.join(','));
-        writer.writeTextElement(QStringLiteral("eqn"), QString::fromStdString(entry.equation));
+        writer.writeTextElement(QStringLiteral("eqn"), (entry.equation));
         writer.writeEndElement();
     }
 }
@@ -208,17 +208,17 @@ QByteArray writeXml(const core::Document &document)
     writer.writeTextElement(QStringLiteral("product"), QStringLiteral("QDynamicSimulator"));
     writer.writeEndElement();
 
-    if (!document.dimensions().empty() || !document.macros().empty()) {
+    if (!document.dimensions().isEmpty() || !document.macros().isEmpty()) {
         writer.writeStartElement(QStringLiteral("options"));
-        if (!document.dimensions().empty()) {
+        if (!document.dimensions().isEmpty()) {
             std::size_t maximumDimensions = 0;
             for (const core::ModelElement &element : model.elements())
-                maximumDimensions = std::max(maximumDimensions, element.dimensions().size());
+                maximumDimensions = std::max(maximumDimensions, static_cast<std::size_t>(element.dimensions().size()));
             writer.writeStartElement(QStringLiteral("uses_arrays"));
             writer.writeAttribute(QStringLiteral("maximum_dimensions"), QString::number(maximumDimensions));
             writer.writeEndElement();
         }
-        if (!document.macros().empty())
+        if (!document.macros().isEmpty())
             writer.writeEmptyElement(QStringLiteral("uses_macros"));
         writer.writeEndElement();
     }
@@ -235,27 +235,27 @@ QByteArray writeXml(const core::Document &document)
     writer.writeStartElement(QStringLiteral("model"));
     writer.writeStartElement(QStringLiteral("variables"));
     for (const core::ModelElement &variable : model.elements()) {
-        const QString name = QString::fromStdString(variable.displayName());
+        const QString name = (variable.displayName());
         writer.writeStartElement(variableTag(variable.kind()));
         writer.writeAttribute(QStringLiteral("name"), name);
         writeXmileArrayDefinition(writer, document, variable);
-        if (variable.elementEquations().empty())
+        if (variable.elementEquations().isEmpty())
             writer.writeTextElement(
                 QStringLiteral("eqn"),
-                variable.equation().empty() ? QStringLiteral("0") : QString::fromStdString(variable.equation()));
-        if (!variable.unit().empty())
-            writer.writeTextElement(QStringLiteral("units"), QString::fromStdString(variable.unit()));
-        if (!variable.comment().empty())
-            writer.writeTextElement(QStringLiteral("doc"), QString::fromStdString(variable.comment()));
+                variable.equation().isEmpty() ? QStringLiteral("0") : (variable.equation()));
+        if (!variable.unit().isEmpty())
+            writer.writeTextElement(QStringLiteral("units"), (variable.unit()));
+        if (!variable.comment().isEmpty())
+            writer.writeTextElement(QStringLiteral("doc"), (variable.comment()));
         if (variable.kind() == core::ElementKind::Stock) {
             for (const core::ModelElement &candidate : model.elements()) {
                 if (candidate.kind() != core::ElementKind::Flow)
                     continue;
                 const auto &flow = static_cast<const core::Flow &>(candidate);
                 if (flow.endpoints().to == variable.id())
-                    writer.writeTextElement(QStringLiteral("inflow"), QString::fromStdString(flow.displayName()));
+                    writer.writeTextElement(QStringLiteral("inflow"), (flow.displayName()));
                 if (flow.endpoints().from == variable.id())
-                    writer.writeTextElement(QStringLiteral("outflow"), QString::fromStdString(flow.displayName()));
+                    writer.writeTextElement(QStringLiteral("outflow"), (flow.displayName()));
             }
         }
         writer.writeEndElement();
@@ -333,21 +333,21 @@ QByteArray writeXml(const core::Document &document)
 }
 
 struct PendingConnection {
-    std::string from;
-    std::string to;
+    QString from;
+    QString to;
     quint64 fromUid = 0;
     quint64 toUid = 0;
 };
 
 struct PendingFlowEndpoint {
-    std::string flow;
-    std::string stock;
+    QString flow;
+    QString stock;
     bool inflow = false;
 };
 
 struct PendingFlowLayout {
-    std::string flow;
-    std::vector<core::Vec2> anchorPoints;
+    QString flow;
+    QVector<core::Vec2> anchorPoints;
     core::Vec2 valveCenter;
     bool hasValveCenter = false;
 };
@@ -355,7 +355,7 @@ struct PendingFlowLayout {
 bool parseXmileMacro(QXmlStreamReader &reader, core::Document &document, QString *errorMessage)
 {
     core::MacroDefinition macro;
-    macro.displayName = reader.attributes().value(QStringLiteral("name")).toString().toStdString();
+    macro.displayName = reader.attributes().value(QStringLiteral("name")).toString();
     while (reader.readNext() != QXmlStreamReader::Invalid) {
         if (reader.isEndElement() && reader.name() == QStringLiteral("macro")) {
             if (document.defineMacro(std::move(macro)))
@@ -367,14 +367,14 @@ bool parseXmileMacro(QXmlStreamReader &reader, core::Document &document, QString
             continue;
         if (reader.name() == QStringLiteral("parm")) {
             core::MacroParameter parameter;
-            parameter.displayName = reader.attributes().value(QStringLiteral("name")).toString().toStdString();
-            parameter.defaultEquation = reader.attributes().value(QStringLiteral("default")).toString().toStdString();
+            parameter.displayName = reader.attributes().value(QStringLiteral("name")).toString();
+            parameter.defaultEquation = reader.attributes().value(QStringLiteral("default")).toString();
             const QString text = reader.readElementText().trimmed();
             if (!text.isEmpty())
-                parameter.displayName = text.toStdString();
+                parameter.displayName = text;
             macro.parameters.push_back(std::move(parameter));
         } else if (reader.name() == QStringLiteral("eqn")) {
-            macro.equation = reader.readElementText().trimmed().toStdString();
+            macro.equation = reader.readElementText().trimmed();
         } else {
             reader.skipCurrentElement();
         }
@@ -403,12 +403,12 @@ bool parseXmileDimensions(QXmlStreamReader &reader, core::Document &document, QS
         }
         bool valid = false;
         if (elements.isEmpty() && sizeOk && size > 0) {
-            valid = document.defineDimension(name.toStdString(), static_cast<std::size_t>(size));
+            valid = document.defineDimension(name, static_cast<std::size_t>(size));
         } else if (!elements.isEmpty() && !sizeOk) {
-            std::vector<std::string> names;
+            QVector<QString> names;
             for (const QString &element : elements)
-                names.push_back(element.toStdString());
-            valid = document.defineDimension(name.toStdString(), names);
+                names.push_back(element);
+            valid = document.defineDimension(name, names);
         }
         if (!valid) {
             setError(errorMessage, translate("The XMILE dimensions are invalid or conflict with a variable."));
@@ -418,13 +418,13 @@ bool parseXmileDimensions(QXmlStreamReader &reader, core::Document &document, QS
     return false;
 }
 
-bool parseXmileVariableDimensions(QXmlStreamReader &reader, std::vector<std::string> &dimensions)
+bool parseXmileVariableDimensions(QXmlStreamReader &reader, QVector<QString> &dimensions)
 {
     while (reader.readNext() != QXmlStreamReader::Invalid) {
         if (reader.isEndElement() && reader.name() == QStringLiteral("dimensions"))
-            return !dimensions.empty();
+            return !dimensions.isEmpty();
         if (reader.isStartElement() && reader.name() == QStringLiteral("dim")) {
-            dimensions.push_back(reader.attributes().value(QStringLiteral("name")).toString().toStdString());
+            dimensions.push_back(reader.attributes().value(QStringLiteral("name")).toString());
             reader.skipCurrentElement();
         }
     }
@@ -432,7 +432,7 @@ bool parseXmileVariableDimensions(QXmlStreamReader &reader, std::vector<std::str
 }
 
 bool parseXmileArrayElement(QXmlStreamReader &reader, const core::Document &document,
-    const std::vector<std::string> &dimensions, core::ArrayElementEquation &entry)
+    const QVector<QString> &dimensions, core::ArrayElementEquation &entry)
 {
     const QStringList indices = splitSubscripts(reader.attributes().value(QStringLiteral("subscript")).toString());
     if (indices.size() != static_cast<int>(dimensions.size()))
@@ -449,7 +449,7 @@ bool parseXmileArrayElement(QXmlStreamReader &reader, const core::Document &docu
             entry.indices.push_back(static_cast<std::size_t>(number - 1));
             continue;
         }
-        const std::string name = referenceName(indices[position]).toStdString();
+        const QString name = referenceName(indices[position]);
         const core::DimensionElement *element = dimension->findElement(name);
         if (!element)
             return false;
@@ -462,7 +462,7 @@ bool parseXmileArrayElement(QXmlStreamReader &reader, const core::Document &docu
         if (reader.isStartElement() && reader.name() == QStringLiteral("eqn")) {
             if (foundEquation)
                 return false;
-            entry.equation = reader.readElementText().trimmed().toStdString();
+            entry.equation = reader.readElementText().trimmed();
             foundEquation = true;
         } else if (reader.isStartElement()) {
             reader.skipCurrentElement();
@@ -474,9 +474,9 @@ bool parseXmileArrayElement(QXmlStreamReader &reader, const core::Document &docu
 bool parseVariable(
     QXmlStreamReader &reader,
     core::Document &model,
-    std::vector<core::ElementData> &pendingFlows,
-    std::vector<core::ElementData> &pendingAuxiliaries,
-    std::vector<PendingFlowEndpoint> &pendingFlowEndpoints,
+    QVector<core::ElementData> &pendingFlows,
+    QVector<core::ElementData> &pendingAuxiliaries,
+    QVector<PendingFlowEndpoint> &pendingFlowEndpoints,
     QString *errorMessage)
 {
     const QString tag = reader.name().toString();
@@ -487,7 +487,7 @@ bool parseVariable(
     }
 
     core::ElementData variable;
-    variable.displayName = name.toStdString();
+    variable.displayName = name;
     if (tag == QStringLiteral("stock"))
         variable.kind = core::ElementKind::Stock;
     else if (tag == QStringLiteral("flow")) {
@@ -506,7 +506,7 @@ bool parseVariable(
             continue;
         const QString child = reader.name().toString();
         if (child == QStringLiteral("eqn"))
-            variable.equation = reader.readElementText().trimmed().toStdString();
+            variable.equation = reader.readElementText().trimmed();
         else if (child == QStringLiteral("dimensions")) {
             if (!parseXmileVariableDimensions(reader, variable.dimensions)) {
                 setError(errorMessage, translate("An array variable has invalid dimensions: %1").arg(name));
@@ -520,9 +520,9 @@ bool parseVariable(
             }
             variable.elementEquations.push_back(std::move(entry));
         } else if (child == QStringLiteral("units"))
-            variable.unit = reader.readElementText().trimmed().toStdString();
+            variable.unit = reader.readElementText().trimmed();
         else if (child == QStringLiteral("doc"))
-            variable.comment = reader.readElementText().toStdString();
+            variable.comment = reader.readElementText();
         else if (child == QStringLiteral("inflow"))
             inflows.append(referenceName(reader.readElementText()));
         else if (child == QStringLiteral("outflow"))
@@ -531,9 +531,9 @@ bool parseVariable(
             reader.skipCurrentElement();
     }
 
-    if (!variable.elementEquations.empty()) {
+    if (!variable.elementEquations.isEmpty()) {
         std::size_t expected = 1;
-        for (const std::string &dimension : variable.dimensions) {
+        for (const QString &dimension : variable.dimensions) {
             const core::Dimension *definition = model.findDimension(dimension);
             if (!definition) {
                 setError(errorMessage, translate("An array references an undefined dimension: %1").arg(name));
@@ -541,7 +541,7 @@ bool parseVariable(
             }
             expected *= definition->elements.size();
         }
-        if (variable.elementEquations.size() != expected || !variable.equation.empty()) {
+        if (variable.elementEquations.size() != expected || !variable.equation.isEmpty()) {
             setError(errorMessage, translate("A non-apply-to-all array is incomplete: %1").arg(name));
             return false;
         }
@@ -556,18 +556,18 @@ bool parseVariable(
         return false;
     }
     for (const QString &flow : inflows)
-        pendingFlowEndpoints.push_back({flow.toStdString(), variable.displayName, true});
+        pendingFlowEndpoints.push_back({flow, variable.displayName, true});
     for (const QString &flow : outflows)
-        pendingFlowEndpoints.push_back({flow.toStdString(), variable.displayName, false});
+        pendingFlowEndpoints.push_back({flow, variable.displayName, false});
     return true;
 }
 
 bool parseVariables(
     QXmlStreamReader &reader,
     core::Document &model,
-    std::vector<core::ElementData> &pendingFlows,
-    std::vector<core::ElementData> &pendingAuxiliaries,
-    std::vector<PendingFlowEndpoint> &pendingFlowEndpoints,
+    QVector<core::ElementData> &pendingFlows,
+    QVector<core::ElementData> &pendingAuxiliaries,
+    QVector<PendingFlowEndpoint> &pendingFlowEndpoints,
     QString *errorMessage)
 {
     while (reader.readNext() != QXmlStreamReader::Invalid) {
@@ -583,7 +583,7 @@ bool parseVariables(
                     pendingFlows.push_back(std::move(auxiliary));
                 } else if (!model.restore(auxiliary)) {
                     setError(errorMessage, translate("The model contains a duplicate variable name: %1")
-                        .arg(QString::fromStdString(auxiliary.displayName)));
+                        .arg((auxiliary.displayName)));
                     return false;
                 }
             }
@@ -625,19 +625,19 @@ void parseConnectorEndpoint(QXmlStreamReader &reader, PendingConnection &pending
         name += reader.readElementText(QXmlStreamReader::IncludeChildElements);
     }
     if (from) {
-        pending.from = referenceName(name).toStdString();
+        pending.from = referenceName(name);
         pending.fromUid = uid;
     } else {
-        pending.to = referenceName(name).toStdString();
+        pending.to = referenceName(name);
         pending.toUid = uid;
     }
 }
 
-void parseConnector(QXmlStreamReader &reader, std::vector<PendingConnection> &pendingConnections)
+void parseConnector(QXmlStreamReader &reader, QVector<PendingConnection> &pendingConnections)
 {
     PendingConnection pending;
-    pending.from = reader.attributes().value(QStringLiteral("from")).toString().toStdString();
-    pending.to = reader.attributes().value(QStringLiteral("to")).toString().toStdString();
+    pending.from = reader.attributes().value(QStringLiteral("from")).toString();
+    pending.to = reader.attributes().value(QStringLiteral("to")).toString();
     while (reader.readNext() != QXmlStreamReader::Invalid) {
         if (reader.isEndElement() && reader.name() == QStringLiteral("connector"))
             break;
@@ -653,15 +653,15 @@ void parseConnector(QXmlStreamReader &reader, std::vector<PendingConnection> &pe
             reader.skipCurrentElement();
         }
     }
-    if ((!pending.from.empty() || pending.fromUid != 0) && (!pending.to.empty() || pending.toUid != 0))
+    if ((!pending.from.isEmpty() || pending.fromUid != 0) && (!pending.to.isEmpty() || pending.toUid != 0))
         pendingConnections.push_back(std::move(pending));
 }
 
 void parseView(
     QXmlStreamReader &reader,
     core::Document &model,
-    std::vector<PendingConnection> &pendingConnections,
-    std::vector<PendingFlowLayout> &pendingFlowLayouts,
+    QVector<PendingConnection> &pendingConnections,
+    QVector<PendingFlowLayout> &pendingFlowLayouts,
     std::unordered_set<core::EntityId> &positioned,
     UidMap &uids)
 {
@@ -675,7 +675,7 @@ void parseView(
         if (tag == QStringLiteral("stock") || tag == QStringLiteral("flow") || tag == QStringLiteral("aux")
             || tag == QStringLiteral("cloud") || tag == QStringLiteral("text_box")) {
             const QXmlStreamAttributes attributes = reader.attributes();
-            const std::string name = attributes.value(QStringLiteral("name")).toString().toStdString();
+            const QString name = attributes.value(QStringLiteral("name")).toString();
             const core::DocumentElement *variable = findElementByName(model, name);
             if (!variable && (tag == QStringLiteral("cloud") || tag == QStringLiteral("text_box"))) {
                 core::EntityId created = 0;
@@ -683,7 +683,7 @@ void parseView(
                     QString content = reader.readElementText(QXmlStreamReader::IncludeChildElements);
                     if (content.isEmpty())
                         content = attributes.value(QStringLiteral("name")).toString();
-                    created = model.createComment(content.toStdString());
+                    created = model.createComment(content);
                 } else {
                     created = model.createCloud();
                 }
@@ -734,7 +734,7 @@ void parseView(
 
 void layoutMissingVariables(core::Document &document, const std::unordered_set<core::EntityId> &positioned)
 {
-    std::vector<const core::ModelElement *> missing;
+    QVector<const core::ModelElement *> missing;
     for (const core::ModelElement &element : document.model().elements()) {
         if (element.kind() != core::ElementKind::Flow && !positioned.count(element.id()))
             missing.push_back(&element);
@@ -750,7 +750,7 @@ void layoutMissingVariables(core::Document &document, const std::unordered_set<c
     }
 }
 
-const PendingFlowLayout *findFlowLayout(const std::vector<PendingFlowLayout> &routes, const std::string &name)
+const PendingFlowLayout *findFlowLayout(const QVector<PendingFlowLayout> &routes, const QString &name)
 {
     const auto found = std::find_if(routes.begin(), routes.end(), [&name](const PendingFlowLayout &route) {
         return core::normalizeIdentifier(route.flow) == core::normalizeIdentifier(name);
@@ -760,9 +760,9 @@ const PendingFlowLayout *findFlowLayout(const std::vector<PendingFlowLayout> &ro
 
 bool createImportedFlows(
     core::Document &document,
-    const std::vector<core::ElementData> &flows,
-    const std::vector<PendingFlowEndpoint> &endpoints,
-    const std::vector<PendingFlowLayout> &routes,
+    const QVector<core::ElementData> &flows,
+    const QVector<PendingFlowEndpoint> &endpoints,
+    const QVector<PendingFlowLayout> &routes,
     QString *errorMessage)
 {
     for (const PendingFlowEndpoint &endpoint : endpoints) {
@@ -785,20 +785,20 @@ bool createImportedFlows(
             const core::ModelElement *stock = document.model().findByName(endpoint.stock);
             if (!stock || stock->kind() != core::ElementKind::Stock) {
                 setError(errorMessage, translate("A flow endpoint is not a stock: %1")
-                    .arg(QString::fromStdString(endpoint.stock)));
+                    .arg((endpoint.stock)));
                 return false;
             }
             core::EntityId &slot = endpoint.inflow ? toStock : fromStock;
             if (slot != 0 && slot != stock->id()) {
                 setError(errorMessage, translate("A flow has multiple source or target stocks: %1")
-                    .arg(QString::fromStdString(source.displayName)));
+                    .arg((source.displayName)));
                 return false;
             }
             slot = stock->id();
         }
 
         const PendingFlowLayout *view = findFlowLayout(routes, source.displayName);
-        const std::vector<core::Vec2> points = view ? view->anchorPoints : std::vector<core::Vec2> {};
+        const QVector<core::Vec2> points = view ? view->anchorPoints : QVector<core::Vec2> {};
         const bool hasPath = points.size() >= 2;
         core::Vec2 fromPosition;
         core::Vec2 toPosition;
@@ -831,7 +831,7 @@ bool createImportedFlows(
         const core::EntityId id = document.createFlow(from, to);
         if (id == 0) {
             setError(errorMessage, translate("Could not create flow endpoints for: %1")
-                .arg(QString::fromStdString(source.displayName)));
+                .arg((source.displayName)));
             return false;
         }
         core::ElementData target = source;
@@ -842,7 +842,7 @@ bool createImportedFlows(
         target.route.mode = core::RouteMode::Straight;
         if (!document.apply(target)) {
             setError(errorMessage, translate("The model contains a duplicate or invalid flow: %1")
-                .arg(QString::fromStdString(source.displayName)));
+                .arg((source.displayName)));
             return false;
         }
         ++flowIndex;
@@ -859,11 +859,11 @@ bool parseXml(
     QXmlStreamReader reader(xml);
     reader.setNamespaceProcessing(false);
     core::Document parsed;
-    std::vector<PendingConnection> pendingConnections;
-    std::vector<core::ElementData> pendingFlows;
-    std::vector<core::ElementData> pendingAuxiliaries;
-    std::vector<PendingFlowEndpoint> pendingFlowEndpoints;
-    std::vector<PendingFlowLayout> pendingFlowLayouts;
+    QVector<PendingConnection> pendingConnections;
+    QVector<core::ElementData> pendingFlows;
+    QVector<core::ElementData> pendingAuxiliaries;
+    QVector<PendingFlowEndpoint> pendingFlowEndpoints;
+    QVector<PendingFlowLayout> pendingFlowLayouts;
     std::unordered_set<core::EntityId> positioned;
     bool foundRoot = false;
     bool foundModel = false;

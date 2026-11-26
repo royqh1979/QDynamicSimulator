@@ -29,7 +29,7 @@
 #include <QTextStream>
 #include <QTranslator>
 
-#include <vector>
+#include <QVector>
 
 using namespace qds::core;
 
@@ -70,7 +70,7 @@ int main(int argc, char **argv)
 
     DocumentController controller;
     DiagramScene scene(&controller);
-    std::vector<EntityId> ids;
+    QVector<EntityId> ids;
     ids.reserve(static_cast<std::size_t>(count));
     QElapsedTimer timer;
     timer.start();
@@ -91,7 +91,7 @@ int main(int argc, char **argv)
 
     timer.restart();
     int connectionCount = 0;
-    std::vector<EntityId> connectionIds;
+    QVector<EntityId> connectionIds;
     for (int index = 1; index < count; ++index) {
         const EntityId id = controller.createConnector(ids[static_cast<std::size_t>(index - 1)], ids[static_cast<std::size_t>(index)]);
         if (id != 0) {
@@ -479,7 +479,7 @@ int main(int argc, char **argv)
         QMouseEvent release(QEvent::MouseButtonRelease, end, flowTargetView.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
         QApplication::sendEvent(flowTargetView.viewport(), &release);
         connectorToFlowNs += timer.nsecsElapsed();
-        const std::vector<EntityId> selection = flowTargetScene.selectedElementIds();
+        const QVector<EntityId> selection = flowTargetScene.selectedElementIds();
         if (selection.size() != 1)
             return 17;
         const auto *connector = dynamic_cast<const Connector *>(flowTargetController.document().find(selection.front()));
@@ -636,7 +636,7 @@ int main(int argc, char **argv)
         timer.restart();
         fontController.setFontStyle(fontStock, font);
         fontStyleNs += timer.nsecsElapsed();
-        const FontStyle expected {font.family().toStdString(), font.pointSize()};
+        const FontStyle expected {font.family(), font.pointSize()};
         if (fontController.document().diagram().fontStyle(fontStock) != expected
             || fontScene.item(fontStock)->labelFont().family() != font.family()
             || fontScene.item(fontStock)->labelFont().pointSize() != font.pointSize())
@@ -670,7 +670,7 @@ int main(int argc, char **argv)
 
     DocumentController pngController;
     DiagramScene pngScene(&pngController);
-    std::vector<EntityId> pngIds;
+    QVector<EntityId> pngIds;
     for (int index = 0; index < 20; ++index) {
         const ElementKind kind = index % 2 == 0 ? ElementKind::Stock : ElementKind::Auxiliary;
         pngIds.push_back(pngController.createVariable(kind, QPointF((index % 5) * 180.0, (index / 5) * 140.0)));
@@ -834,7 +834,7 @@ int main(int argc, char **argv)
     const ModelElement *infectious = sirController.document().findByName("infectious");
     if (!infectious)
         return 14;
-    std::vector<ArrowItem *> dependentArrows;
+    QVector<ArrowItem *> dependentArrows;
     for (const ViewElement &element : sirController.document().diagram().elements()) {
         if (element.kind() != ElementKind::Connector)
             continue;

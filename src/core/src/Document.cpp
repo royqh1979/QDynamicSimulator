@@ -9,7 +9,7 @@
 namespace qds::core {
 namespace {
 
-std::string defaultName(ElementKind kind)
+QString defaultName(ElementKind kind)
 {
     switch (kind) {
     case ElementKind::Stock:
@@ -27,43 +27,44 @@ std::string defaultName(ElementKind kind)
     }
 }
 
-bool identifierStart(unsigned char c)
+bool identifierStart(QChar c)
 {
-    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_' || c >= 128;
+    return (c >= QChar('A') && c <= QChar('Z')) || (c >= QChar('a') && c <= QChar('z'))
+        || c == QChar('_') || c.unicode() >= 128;
 }
 
-bool identifierPart(unsigned char c)
+bool identifierPart(QChar c)
 {
-    return identifierStart(c) || (c >= '0' && c <= '9') || c == '$';
+    return identifierStart(c) || (c >= QChar('0') && c <= QChar('9')) || c == QChar('$');
 }
 
-std::string quotedIdentifier(const std::string &name)
+QString quotedIdentifier(const QString &name)
 {
-    bool plain = !name.empty() && identifierStart(static_cast<unsigned char>(name.front()));
-    for (unsigned char c : name)
+    bool plain = !name.isEmpty() && identifierStart(name.front());
+    for (QChar c : name)
         plain = plain && identifierPart(c);
     if (plain)
         return name;
-    std::string quoted = "\"";
-    for (char c : name) {
-        if (c == '\\' || c == '"')
-            quoted.push_back('\\');
-        if (c == '\n')
+    QString quoted = "\"";
+    for (QChar c : name) {
+        if (c == QChar('\\') || c == QChar('"'))
+            quoted.push_back(QChar('\\'));
+        if (c == QChar('\n'))
             quoted += "\\n";
         else
             quoted.push_back(c);
     }
-    quoted.push_back('"');
+    quoted.push_back(QChar('"'));
     return quoted;
 }
 
-std::string unescapeIdentifier(const std::string &name)
+QString unescapeIdentifier(const QString &name)
 {
-    std::string result;
-    for (std::size_t index = 0; index < name.size(); ++index) {
-        if (name[index] == '\\' && index + 1 < name.size()) {
-            const char escaped = name[++index];
-            result.push_back(escaped == 'n' ? '\n' : escaped);
+    QString result;
+    for (int index = 0; index < name.size(); ++index) {
+        if (name[index] == QChar('\\') && index + 1 < name.size()) {
+            const QChar escaped = name[++index];
+            result.push_back(escaped == QChar('n') ? QChar('\n') : escaped);
         } else {
             result.push_back(name[index]);
         }
@@ -71,19 +72,19 @@ std::string unescapeIdentifier(const std::string &name)
     return result;
 }
 
-std::string replaceReference(const std::string &equation, const std::string &oldName, const std::string &newName)
+QString replaceReference(const QString &equation, const QString &oldName, const QString &newName)
 {
-    std::string result;
-    for (std::size_t index = 0; index < equation.size();) {
-        if (equation[index] == '"') {
-            const std::size_t start = index++;
-            std::string value;
+    QString result;
+    for (int index = 0; index < equation.size();) {
+        if (equation[index] == QChar('"')) {
+            const int start = index++;
+            QString value;
             bool closed = false;
             while (index < equation.size()) {
-                if (equation[index] == '\\' && index + 1 < equation.size()) {
+                if (equation[index] == QChar('\\') && index + 1 < equation.size()) {
                     value.push_back(equation[index++]);
                     value.push_back(equation[index++]);
-                } else if (equation[index] == '"') {
+                } else if (equation[index] == QChar('"')) {
                     ++index;
                     closed = true;
                     break;
@@ -94,18 +95,17 @@ std::string replaceReference(const std::string &equation, const std::string &old
             if (closed && normalizeIdentifier(unescapeIdentifier(value)) == normalizeIdentifier(oldName))
                 result += quotedIdentifier(newName);
             else
-                result += equation.substr(start, index - start);
+                result += equation.mid(start, index - start);
             continue;
         }
-        const unsigned char c = static_cast<unsigned char>(equation[index]);
-        if (!identifierStart(c)) {
+        if (!identifierStart(equation[index])) {
             result.push_back(equation[index++]);
             continue;
         }
-        const std::size_t start = index++;
-        while (index < equation.size() && identifierPart(static_cast<unsigned char>(equation[index])))
+        const int start = index++;
+        while (index < equation.size() && identifierPart(equation[index]))
             ++index;
-        const std::string token = equation.substr(start, index - start);
+        const QString token = equation.mid(start, index - start);
         result += normalizeIdentifier(token) == normalizeIdentifier(oldName) ? quotedIdentifier(newName) : token;
     }
     return result;
@@ -177,21 +177,21 @@ const DocumentElement *Document::find(EntityId id) const
     return it == m_elements.end() ? nullptr : it->second.get();
 }
 
-const ModelElement *Document::findByName(const std::string &name) const
+const ModelElement *Document::findByName(const QString &name) const
 {
     const auto it = m_nameIndex.find(normalizeIdentifier(name));
     if (it == m_nameIndex.end())
         return nullptr;
-    return dynamic_cast<const ModelElement *>(find(it->second));
+    return dynamic_cast<const ModelElement *>(find(it.value()));
 }
 
-const Dimension *Document::findDimension(const std::string &name) const
+const Dimension *Document::findDimension(const QString &name) const
 {
     const auto found = m_dimensionIndex.find(normalizeIdentifier(name));
-    return found == m_dimensionIndex.end() ? nullptr : &m_dimensions[found->second];
+    return found == m_dimensionIndex.end() ? nullptr : &m_dimensions[found.value()];
 }
 
-bool Document::defineDimension(const std::string &displayName, std::size_t size)
+bool Document::defineDimension(const QString &displayName, std::size_t size)
 {
     if (size == 0)
         return false;
@@ -200,16 +200,16 @@ bool Document::defineDimension(const std::string &displayName, std::size_t size)
     dimension.nameKey = normalizeIdentifier(dimension.displayName);
     dimension.elements.resize(size);
     for (std::size_t index = 0; index < size; ++index)
-        dimension.elements[index].displayName = std::to_string(index + 1);
+        dimension.elements[index].displayName = QString::number(index + 1);
     return defineDimensionData(std::move(dimension));
 }
 
-bool Document::defineDimension(const std::string &displayName, const std::vector<std::string> &elements)
+bool Document::defineDimension(const QString &displayName, const QVector<QString> &elements)
 {
     Dimension dimension;
     dimension.displayName = trimDisplayName(displayName);
     dimension.nameKey = normalizeIdentifier(dimension.displayName);
-    for (const std::string &name : elements) {
+    for (const QString &name : elements) {
         DimensionElement element;
         element.displayName = trimDisplayName(name);
         element.nameKey = normalizeIdentifier(element.displayName);
@@ -220,16 +220,18 @@ bool Document::defineDimension(const std::string &displayName, const std::vector
 
 bool Document::defineDimensionData(Dimension dimension)
 {
-    if (dimension.nameKey.empty() || dimension.elements.empty() || m_nameIndex.count(dimension.nameKey)
-        || m_dimensionIndex.count(dimension.nameKey) || m_macroNames.count(dimension.nameKey))
+    if (dimension.nameKey.isEmpty() || dimension.elements.isEmpty() || m_nameIndex.count(dimension.nameKey)
+        || m_dimensionIndex.count(dimension.nameKey) || m_macroNames.contains(dimension.nameKey))
         return false;
-    const bool numbered = dimension.elements.front().nameKey.empty();
-    std::unordered_set<std::string> elementNames;
+    const bool numbered = dimension.elements.front().nameKey.isEmpty();
+    QSet<QString> elementNames;
     for (const DimensionElement &element : dimension.elements) {
-        if (numbered != element.nameKey.empty())
+        if (numbered != element.nameKey.isEmpty())
             return false;
-        if (!numbered && !elementNames.insert(element.nameKey).second)
+        if (!numbered && elementNames.contains(element.nameKey))
             return false;
+        if (!numbered)
+            elementNames.insert(element.nameKey);
     }
     m_dimensionIndex[dimension.nameKey] = m_dimensions.size();
     m_dimensions.push_back(std::move(dimension));
@@ -240,17 +242,18 @@ bool Document::defineMacro(MacroDefinition macro)
 {
     macro.displayName = trimDisplayName(macro.displayName);
     macro.nameKey = normalizeIdentifier(macro.displayName);
-    if (macro.nameKey.empty() || macro.equation.empty() || m_nameIndex.count(macro.nameKey)
+    if (macro.nameKey.isEmpty() || macro.equation.isEmpty() || m_nameIndex.count(macro.nameKey)
         || m_dimensionIndex.count(macro.nameKey))
         return false;
-    std::unordered_set<std::string> parameters;
+    QSet<QString> parameters;
     bool hasDefault = false;
     for (MacroParameter &parameter : macro.parameters) {
         parameter.displayName = trimDisplayName(parameter.displayName);
         parameter.nameKey = normalizeIdentifier(parameter.displayName);
-        if (parameter.nameKey.empty() || !parameters.insert(parameter.nameKey).second)
+        if (parameter.nameKey.isEmpty() || parameters.contains(parameter.nameKey))
             return false;
-        if (parameter.defaultEquation.empty()) {
+        parameters.insert(parameter.nameKey);
+        if (parameter.defaultEquation.isEmpty()) {
             if (hasDefault)
                 return false;
         } else {
@@ -268,9 +271,9 @@ bool Document::defineMacro(MacroDefinition macro)
     return true;
 }
 
-const MacroDefinition *Document::findMacro(const std::string &name, std::size_t argumentCount) const
+const MacroDefinition *Document::findMacro(const QString &name, std::size_t argumentCount) const
 {
-    const std::string key = normalizeIdentifier(name);
+    const QString key = normalizeIdentifier(name);
     for (const MacroDefinition &macro : m_macros) {
         if (macro.nameKey == key && argumentCount >= macro.requiredArguments()
             && argumentCount <= macro.parameters.size())
@@ -287,8 +290,8 @@ EntityId Document::insert(std::unique_ptr<T> element, Vec2 position)
     if (id == 0 || m_elements.count(id))
         return 0;
     if (auto *model = dynamic_cast<ModelElement *>(element.get())) {
-        if (model->nameKey().empty() || m_nameIndex.count(model->nameKey()) || m_dimensionIndex.count(model->nameKey())
-            || m_macroNames.count(model->nameKey()))
+        if (model->nameKey().isEmpty() || m_nameIndex.count(model->nameKey()) || m_dimensionIndex.count(model->nameKey())
+            || m_macroNames.contains(model->nameKey()))
             return 0;
         m_nameIndex[model->nameKey()] = id;
     }
@@ -309,7 +312,7 @@ EntityId Document::createVariable(ElementKind kind, Vec2 position)
         && kind != ElementKind::Data)
         return 0;
     auto variable = std::make_unique<Variable>(m_nextId++, kind);
-    const std::string name = uniqueName(kind);
+    const QString name = uniqueName(kind);
     variable->setName(name, normalizeIdentifier(name));
     return insert(std::move(variable), position);
 }
@@ -319,7 +322,7 @@ EntityId Document::createFlow(EntityId from, EntityId to)
     if (!validFlowConnection(0, from, to))
         return 0;
     auto flow = std::make_unique<Flow>(m_nextId++);
-    const std::string name = uniqueName(ElementKind::Flow);
+    const QString name = uniqueName(ElementKind::Flow);
     flow->setName(name, normalizeIdentifier(name));
     flow->setEndpoints({from, to});
     const Vec2 source = diagram().position(from);
@@ -344,19 +347,19 @@ EntityId Document::createCloud(Vec2 position)
     return insert(std::make_unique<Cloud>(m_nextId++), position);
 }
 
-EntityId Document::createComment(const std::string &text, Vec2 position)
+EntityId Document::createComment(const QString &text, Vec2 position)
 {
     auto comment = std::make_unique<Comment>(m_nextId++);
     comment->setContent(text);
     return insert(std::move(comment), position);
 }
 
-std::vector<EntityId> Document::cascade(EntityId id) const
+QVector<EntityId> Document::cascade(EntityId id) const
 {
     if (!find(id))
         return {};
     std::unordered_set<EntityId> included;
-    std::vector<EntityId> pending {id};
+    QVector<EntityId> pending {id};
     for (std::size_t index = 0; index < pending.size(); ++index) {
         const EntityId current = pending[index];
         if (!included.insert(current).second)
@@ -373,7 +376,7 @@ std::vector<EntityId> Document::cascade(EntityId id) const
             }
         }
     }
-    std::vector<EntityId> removed(included.begin(), included.end());
+    QVector<EntityId> removed(included.begin(), included.end());
     std::sort(removed.begin(), removed.end(), [this](EntityId left, EntityId right) {
         const int leftRank = removalRank(find(left)->kind());
         const int rightRank = removalRank(find(right)->kind());
@@ -382,12 +385,12 @@ std::vector<EntityId> Document::cascade(EntityId id) const
     return removed;
 }
 
-std::vector<EntityId> Document::remove(EntityId id)
+QVector<EntityId> Document::remove(EntityId id)
 {
-    const std::vector<EntityId> removed = cascade(id);
+    const QVector<EntityId> removed = cascade(id);
     for (EntityId removedId : removed) {
         if (auto *model = dynamic_cast<ModelElement *>(findMutable(removedId)))
-            m_nameIndex.erase(model->nameKey());
+            m_nameIndex.remove(model->nameKey());
         m_elements.erase(removedId);
         m_diagram.m_positions.erase(removedId);
         m_diagram.m_routes.erase(removedId);
@@ -431,9 +434,9 @@ bool Document::restore(const ElementData &data)
     const EntityId id = data.id == 0 ? m_nextId++ : data.id;
     if (find(id))
         return false;
-    const std::string normalized = normalizeIdentifier(data.displayName);
-    if (data.kind <= ElementKind::Data && (normalized.empty() || m_nameIndex.count(normalized)
-            || m_dimensionIndex.count(normalized) || m_macroNames.count(normalized)
+    const QString normalized = normalizeIdentifier(data.displayName);
+    if (data.kind <= ElementKind::Data && (normalized.isEmpty() || m_nameIndex.count(normalized)
+            || m_dimensionIndex.count(normalized) || m_macroNames.contains(normalized)
             || !validArrayData(data.dimensions, data.elementEquations, data.equation)))
         return false;
     if (!validFontData(data.kind, data.font))
@@ -464,10 +467,10 @@ bool Document::restore(const ElementData &data)
         return false;
     }
     if (auto *model = dynamic_cast<ModelElement *>(element.get())) {
-        const std::string displayName = trimDisplayName(data.displayName);
+        const QString displayName = trimDisplayName(data.displayName);
         model->setName(displayName, normalizeIdentifier(displayName));
-        std::vector<std::string> dimensions = data.dimensions;
-        for (std::string &name : dimensions)
+        QVector<QString> dimensions = data.dimensions;
+        for (QString &name : dimensions)
             name = normalizeIdentifier(name);
         model->setFormulaData(data.equation, std::move(dimensions), data.elementEquations);
         model->setUnit(data.unit);
@@ -510,8 +513,8 @@ bool Document::apply(const ElementData &data)
 
     if (auto *model = dynamic_cast<ModelElement *>(element)) {
         rename(data.id, data.displayName);
-        std::vector<std::string> dimensions = data.dimensions;
-        for (std::string &name : dimensions)
+        QVector<QString> dimensions = data.dimensions;
+        for (QString &name : dimensions)
             name = normalizeIdentifier(name);
         model->setFormulaData(data.equation, std::move(dimensions), data.elementEquations);
         model->setUnit(data.unit);
@@ -534,36 +537,36 @@ bool Document::apply(const ElementData &data)
     return true;
 }
 
-bool Document::validRename(EntityId id, const std::string &displayName) const
+bool Document::validRename(EntityId id, const QString &displayName) const
 {
     if (!dynamic_cast<const ModelElement *>(find(id)))
         return false;
-    const std::string normalized = normalizeIdentifier(trimDisplayName(displayName));
-    if (normalized.empty())
+    const QString normalized = normalizeIdentifier(trimDisplayName(displayName));
+    if (normalized.isEmpty())
         return false;
     const auto existing = m_nameIndex.find(normalized);
-    return (existing == m_nameIndex.end() || existing->second == id) && !m_dimensionIndex.count(normalized)
-        && !m_macroNames.count(normalized);
+    return (existing == m_nameIndex.end() || existing.value() == id) && !m_dimensionIndex.count(normalized)
+        && !m_macroNames.contains(normalized);
 }
 
-bool Document::rename(EntityId id, const std::string &displayName)
+bool Document::rename(EntityId id, const QString &displayName)
 {
     if (!validRename(id, displayName))
         return false;
     auto *model = dynamic_cast<ModelElement *>(findMutable(id));
-    const std::string trimmed = trimDisplayName(displayName);
-    const std::string normalized = normalizeIdentifier(trimmed);
+    const QString trimmed = trimDisplayName(displayName);
+    const QString normalized = normalizeIdentifier(trimmed);
     if (model->displayName() == trimmed)
         return true;
-    const std::string oldName = model->displayName();
+    const QString oldName = model->displayName();
     updateReferences(id, oldName, trimmed);
-    m_nameIndex.erase(model->nameKey());
+    m_nameIndex.remove(model->nameKey());
     model->setName(trimmed, normalized);
     m_nameIndex[normalized] = id;
     return true;
 }
 
-bool Document::setEquation(EntityId id, const std::string &equation)
+bool Document::setEquation(EntityId id, const QString &equation)
 {
     auto *model = dynamic_cast<ModelElement *>(findMutable(id));
     if (!model)
@@ -572,14 +575,14 @@ bool Document::setEquation(EntityId id, const std::string &equation)
     return true;
 }
 
-bool Document::setDimensions(EntityId id, const std::vector<std::string> &dimensions)
+bool Document::setDimensions(EntityId id, const QVector<QString> &dimensions)
 {
     auto *model = dynamic_cast<ModelElement *>(findMutable(id));
     if (!model)
         return false;
-    std::vector<std::string> keys;
+    QVector<QString> keys;
     keys.reserve(dimensions.size());
-    for (const std::string &name : dimensions)
+    for (const QString &name : dimensions)
         keys.push_back(normalizeIdentifier(name));
     if (!validArrayData(keys, {}, model->equation()))
         return false;
@@ -587,12 +590,12 @@ bool Document::setDimensions(EntityId id, const std::vector<std::string> &dimens
     return true;
 }
 
-bool Document::setElementEquation(EntityId id, const std::vector<std::size_t> &indices, const std::string &equation)
+bool Document::setElementEquation(EntityId id, const QVector<std::size_t> &indices, const QString &equation)
 {
     auto *model = dynamic_cast<ModelElement *>(findMutable(id));
     if (!model)
         return false;
-    std::vector<ArrayElementEquation> updated = model->elementEquations();
+    QVector<ArrayElementEquation> updated = model->elementEquations();
     const auto found = std::find_if(updated.begin(), updated.end(), [&indices](const ArrayElementEquation &entry) {
         return entry.indices == indices;
     });
@@ -606,7 +609,7 @@ bool Document::setElementEquation(EntityId id, const std::vector<std::size_t> &i
     return true;
 }
 
-bool Document::setUnit(EntityId id, const std::string &unit)
+bool Document::setUnit(EntityId id, const QString &unit)
 {
     auto *model = dynamic_cast<ModelElement *>(findMutable(id));
     if (!model)
@@ -615,7 +618,7 @@ bool Document::setUnit(EntityId id, const std::string &unit)
     return true;
 }
 
-bool Document::setComment(EntityId id, const std::string &comment)
+bool Document::setComment(EntityId id, const QString &comment)
 {
     auto *model = dynamic_cast<ModelElement *>(findMutable(id));
     if (!model)
@@ -624,7 +627,7 @@ bool Document::setComment(EntityId id, const std::string &comment)
     return true;
 }
 
-bool Document::setCommentContent(EntityId id, const std::string &content)
+bool Document::setCommentContent(EntityId id, const QString &content)
 {
     auto *comment = dynamic_cast<Comment *>(findMutable(id));
     if (!comment)
@@ -731,30 +734,31 @@ bool Document::validRouteData(ElementKind kind, const Route &route)
         && !(kind == ElementKind::Flow && route.mode == RouteMode::Orthogonal);
 }
 
-bool Document::validArrayData(const std::vector<std::string> &dimensions,
-    const std::vector<ArrayElementEquation> &elementEquations, const std::string &equation) const
+bool Document::validArrayData(const QVector<QString> &dimensions,
+    const QVector<ArrayElementEquation> &elementEquations, const QString &equation) const
 {
-    if (dimensions.empty())
-        return elementEquations.empty();
-    if (!equation.empty() && !elementEquations.empty())
+    if (dimensions.isEmpty())
+        return elementEquations.isEmpty();
+    if (!equation.isEmpty() && !elementEquations.isEmpty())
         return false;
-    for (const std::string &name : dimensions) {
+    for (const QString &name : dimensions) {
         if (!findDimension(name))
             return false;
     }
-    std::unordered_set<std::string> uniqueIndices;
+    QSet<QString> uniqueIndices;
     for (const ArrayElementEquation &entry : elementEquations) {
         if (entry.indices.size() != dimensions.size())
             return false;
-        std::string key;
+        QString key;
         for (std::size_t index = 0; index < entry.indices.size(); ++index) {
             const Dimension *dimension = findDimension(dimensions[index]);
             if (entry.indices[index] >= dimension->elements.size())
                 return false;
-            key += std::to_string(entry.indices[index]) + ",";
+            key += QString::number(entry.indices[index]) + ",";
         }
-        if (!uniqueIndices.insert(key).second)
+        if (uniqueIndices.contains(key))
             return false;
+        uniqueIndices.insert(key);
     }
     return true;
 }
@@ -803,26 +807,26 @@ bool Document::validConnectorConnection(EntityId ignoredId, EntityId from, Entit
     return true;
 }
 
-std::string Document::uniqueName(ElementKind kind)
+QString Document::uniqueName(ElementKind kind)
 {
-    const std::string base = defaultName(kind);
+    const QString base = defaultName(kind);
     std::uint64_t &suffix = m_nextNameSuffix[kind];
     if (suffix == 0)
         suffix = 1;
     for (;;) {
-        const std::string candidate = base + std::to_string(suffix++);
+        const QString candidate = base + QString::number(suffix++);
         if (!m_nameIndex.count(normalizeIdentifier(candidate)) && !m_dimensionIndex.count(normalizeIdentifier(candidate))
-            && !m_macroNames.count(normalizeIdentifier(candidate)))
+            && !m_macroNames.contains(normalizeIdentifier(candidate)))
             return candidate;
     }
 }
 
-void Document::updateReferences(EntityId, const std::string &oldName, const std::string &newName)
+void Document::updateReferences(EntityId, const QString &oldName, const QString &newName)
 {
     for (auto &entry : m_elements) {
         if (auto *model = dynamic_cast<ModelElement *>(entry.second.get())) {
-            std::string equation = replaceReference(model->equation(), oldName, newName);
-            std::vector<ArrayElementEquation> elementEquations = model->elementEquations();
+            QString equation = replaceReference(model->equation(), oldName, newName);
+            QVector<ArrayElementEquation> elementEquations = model->elementEquations();
             for (ArrayElementEquation &element : elementEquations)
                 element.equation = replaceReference(element.equation, oldName, newName);
             model->setFormulaData(std::move(equation), model->dimensions(), std::move(elementEquations));

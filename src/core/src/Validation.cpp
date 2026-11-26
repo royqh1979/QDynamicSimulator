@@ -3,7 +3,7 @@
 
 namespace qds::core {
 
-std::vector<ModelIssue> validateDocument(const Document &document)
+QVector<ModelIssue> validateDocument(const Document &document)
 {
     return analyzeDocument(document).issues;
 }

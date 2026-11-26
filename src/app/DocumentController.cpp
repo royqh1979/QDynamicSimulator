@@ -71,12 +71,12 @@ Vec2 vec(const QPointF &value)
     return {value.x(), value.y()};
 }
 
-std::string uniqueCopyName(const Document &document, const std::string &base)
+QString uniqueCopyName(const Document &document, const QString &base)
 {
     if (!document.findByName(base))
         return base;
     for (int suffix = 2;; ++suffix) {
-        const std::string candidate = base + " " + std::to_string(suffix);
+        const QString candidate = base + " " + QString::number(suffix);
         if (!document.findByName(candidate))
             return candidate;
     }
@@ -186,13 +186,13 @@ EntityId DocumentController::createCloud(const QPointF &position)
 
 EntityId DocumentController::createComment(const QString &text, const QPointF &position)
 {
-    const EntityId id = m_document.createComment(text.toStdString(), vec(position));
+    const EntityId id = m_document.createComment(text, vec(position));
     if (id != 0)
         pushChanges(ChangeSet {{addedRecord(m_document, id)}}, true);
     return id;
 }
 
-void DocumentController::removeElements(const std::vector<EntityId> &ids)
+void DocumentController::removeElements(const QVector<EntityId> &ids)
 {
     ChangeSet changes;
     std::unordered_set<EntityId> included;
@@ -217,7 +217,7 @@ bool DocumentController::renameElement(EntityId id, const QString &name)
     record.id = id;
     record.kind = m_document.find(id)->kind();
     record.before = m_document.capture(id);
-    if (!m_document.rename(id, name.toStdString()))
+    if (!m_document.rename(id, name))
         return false;
     record.after = m_document.capture(id);
     if (*record.before == *record.after)
@@ -234,7 +234,7 @@ void DocumentController::setEquation(EntityId id, const QString &equation)
     record.id = id;
     record.kind = m_document.find(id)->kind();
     record.before = m_document.capture(id);
-    if (!m_document.setEquation(id, equation.toStdString()))
+    if (!m_document.setEquation(id, equation))
         return;
     record.after = m_document.capture(id);
     pushChanges(ChangeSet {{std::move(record)}}, true);
@@ -248,7 +248,7 @@ void DocumentController::setUnit(EntityId id, const QString &unit)
     record.id = id;
     record.kind = m_document.find(id)->kind();
     record.before = m_document.capture(id);
-    if (!m_document.setUnit(id, unit.toStdString()))
+    if (!m_document.setUnit(id, unit))
         return;
     record.after = m_document.capture(id);
     pushChanges(ChangeSet {{std::move(record)}}, true);
@@ -262,7 +262,7 @@ void DocumentController::setComment(EntityId id, const QString &comment)
     record.id = id;
     record.kind = m_document.find(id)->kind();
     record.before = m_document.capture(id);
-    if (!m_document.setComment(id, comment.toStdString()))
+    if (!m_document.setComment(id, comment))
         return;
     record.after = m_document.capture(id);
     pushChanges(ChangeSet {{std::move(record)}}, true);
@@ -271,13 +271,13 @@ void DocumentController::setComment(EntityId id, const QString &comment)
 void DocumentController::setCommentContent(EntityId id, const QString &content)
 {
     const auto *comment = dynamic_cast<const Comment *>(m_document.find(id));
-    if (!comment || comment->content() == content.toStdString())
+    if (!comment || comment->content() == content)
         return;
     ChangeRecord record;
     record.id = id;
     record.kind = ElementKind::Comment;
     record.before = m_document.capture(id);
-    if (!m_document.setCommentContent(id, content.toStdString()))
+    if (!m_document.setCommentContent(id, content))
         return;
     record.after = m_document.capture(id);
     pushChanges(ChangeSet {{std::move(record)}}, true);
@@ -287,7 +287,7 @@ void DocumentController::setFontStyle(EntityId id, const QFont &font)
 {
     const QFont defaultFont;
     const FontStyle style = font.family() == defaultFont.family() && font.pointSize() == defaultFont.pointSize()
-        ? FontStyle {} : FontStyle {font.family().toStdString(), font.pointSize()};
+        ? FontStyle {} : FontStyle {font.family(), font.pointSize()};
     if (!m_document.find(id) || m_document.diagram().fontStyle(id) == style)
         return;
     ChangeRecord record;
@@ -300,7 +300,7 @@ void DocumentController::setFontStyle(EntityId id, const QFont &font)
     pushChanges(ChangeSet {{std::move(record)}}, true);
 }
 
-void DocumentController::moveElements(const std::vector<std::pair<EntityId, QPointF>> &positions)
+void DocumentController::moveElements(const QVector<std::pair<EntityId, QPointF>> &positions)
 {
     ChangeSet changes;
     for (const auto &entry : positions) {
@@ -380,7 +380,7 @@ void DocumentController::replaceDocument(Document document)
     notify(notification);
 }
 
-ClipboardData DocumentController::copyElements(const std::vector<EntityId> &ids) const
+ClipboardData DocumentController::copyElements(const QVector<EntityId> &ids) const
 {
     ClipboardData clipboard;
     const std::unordered_set<EntityId> selected(ids.begin(), ids.end());
@@ -403,10 +403,10 @@ ClipboardData DocumentController::copyElements(const std::vector<EntityId> &ids)
     return clipboard;
 }
 
-std::vector<EntityId> DocumentController::pasteClipboard(const ClipboardData &clipboard, const QPointF &offset)
+QVector<EntityId> DocumentController::pasteClipboard(const ClipboardData &clipboard, const QPointF &offset)
 {
     ChangeSet changes;
-    std::vector<EntityId> created;
+    QVector<EntityId> created;
     std::unordered_map<EntityId, EntityId> idMap;
     const auto rollback = [&created, this]() {
         for (auto it = created.rbegin(); it != created.rend(); ++it)

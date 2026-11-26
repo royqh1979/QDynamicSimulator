@@ -4,15 +4,15 @@
 #include <core/ElementRange.h>
 
 #include <cstddef>
-#include <string>
+#include <QString>
 #include <utility>
-#include <vector>
+#include <QVector>
 
 namespace qds::core {
 
 struct ArrayElementEquation {
-    std::vector<std::size_t> indices;
-    std::string equation;
+    QVector<std::size_t> indices;
+    QString equation;
 
     bool operator==(const ArrayElementEquation &other) const { return indices == other.indices && equation == other.equation; }
     bool operator!=(const ArrayElementEquation &other) const { return !(*this == other); }
@@ -21,13 +21,13 @@ struct ArrayElementEquation {
 class ModelElement : public DocumentElement
 {
 public:
-    const std::string &displayName() const { return m_displayName; }
-    const std::string &nameKey() const { return m_nameKey; }
-    const std::string &equation() const { return m_equation; }
-    const std::vector<std::string> &dimensions() const { return m_dimensions; }
-    const std::vector<ArrayElementEquation> &elementEquations() const { return m_elementEquations; }
-    const std::string &unit() const { return m_unit; }
-    const std::string &comment() const { return m_comment; }
+    const QString &displayName() const { return m_displayName; }
+    const QString &nameKey() const { return m_nameKey; }
+    const QString &equation() const { return m_equation; }
+    const QVector<QString> &dimensions() const { return m_dimensions; }
+    const QVector<ArrayElementEquation> &elementEquations() const { return m_elementEquations; }
+    const QString &unit() const { return m_unit; }
+    const QString &comment() const { return m_comment; }
 
 protected:
     ModelElement(EntityId id, ElementKind kind)
@@ -38,43 +38,43 @@ protected:
 private:
     friend class Document;
 
-    void setName(std::string displayName, std::string nameKey)
+    void setName(QString displayName, QString nameKey)
     {
         m_displayName = std::move(displayName);
         m_nameKey = std::move(nameKey);
     }
-    void setFormulaData(std::string equation, std::vector<std::string> dimensions,
-        std::vector<ArrayElementEquation> elementEquations)
+    void setFormulaData(QString equation, QVector<QString> dimensions,
+        QVector<ArrayElementEquation> elementEquations)
     {
         m_equation = std::move(equation);
         m_dimensions = std::move(dimensions);
         m_elementEquations = std::move(elementEquations);
     }
-    void setEquation(std::string equation)
+    void setEquation(QString equation)
     {
         m_equation = std::move(equation);
         m_elementEquations.clear();
     }
-    void setDimensions(std::vector<std::string> dimensions)
+    void setDimensions(QVector<QString> dimensions)
     {
         m_dimensions = std::move(dimensions);
         m_elementEquations.clear();
     }
-    void setElementEquations(std::vector<ArrayElementEquation> equations)
+    void setElementEquations(QVector<ArrayElementEquation> equations)
     {
         m_equation.clear();
         m_elementEquations = std::move(equations);
     }
-    void setUnit(std::string unit) { m_unit = std::move(unit); }
-    void setComment(std::string comment) { m_comment = std::move(comment); }
+    void setUnit(QString unit) { m_unit = std::move(unit); }
+    void setComment(QString comment) { m_comment = std::move(comment); }
 
-    std::string m_displayName;
-    std::string m_nameKey;
-    std::string m_equation;
-    std::vector<std::string> m_dimensions;
-    std::vector<ArrayElementEquation> m_elementEquations;
-    std::string m_unit;
-    std::string m_comment;
+    QString m_displayName;
+    QString m_nameKey;
+    QString m_equation;
+    QVector<QString> m_dimensions;
+    QVector<ArrayElementEquation> m_elementEquations;
+    QString m_unit;
+    QString m_comment;
 };
 
 class Variable final : public ModelElement
@@ -123,7 +123,7 @@ public:
     }
 
     ModelRange elements() const;
-    const ModelElement *findByName(const std::string &name) const;
+    const ModelElement *findByName(const QString &name) const;
 
 private:
     const Document &m_document;

@@ -1,10 +1,10 @@
 #pragma once
 
-#include <string>
+#include <QString>
 
 namespace qds::core {
 
-std::string normalizeIdentifier(const std::string &name);
-std::string trimDisplayName(const std::string &name);
+QString normalizeIdentifier(const QString &name);
+QString trimDisplayName(const QString &name);
 
 } // namespace qds::core

@@ -3,6 +3,9 @@
 #include <core/formula/Function.h>
 #include <core/Identifier.h>
 
+#include <QHash>
+#include <QVector>
+
 #include <algorithm>
 #include <functional>
 #include <unordered_map>
@@ -12,7 +15,7 @@
 namespace qds::core {
 namespace {
 
-void addIssue(ModelAnalysis &result, EntityId id, IssueSeverity severity, std::string message, std::string code, SourceSpan span)
+void addIssue(ModelAnalysis &result, EntityId id, IssueSeverity severity, QString message, QString code, SourceSpan span)
 {
     result.issues.push_back({id, severity, std::move(message), std::move(code), span});
 }
@@ -26,17 +29,17 @@ void addReference(ModelAnalysis &result, ElementAnalysis &owner, EntityId depend
         edges.push_back(owner.id);
 }
 
-using Substitutions = std::unordered_map<std::string, const FormulaNode *>;
+using Substitutions = QHash<QString, const FormulaNode *>;
 
 std::unique_ptr<FormulaNode> expandFormula(const Document &document, ModelAnalysis &result, ElementAnalysis &owner,
-    const FormulaNode *node, const Substitutions &substitutions, std::vector<std::string> &macroStack)
+    const FormulaNode *node, const Substitutions &substitutions, QVector<QString> &macroStack)
 {
     if (!node)
         return nullptr;
     if (const auto *reference = dynamic_cast<const ReferenceNode *>(node)) {
         const auto found = substitutions.find(reference->nameKey());
         if (found != substitutions.end())
-            return expandFormula(document, result, owner, found->second, {}, macroStack);
+            return expandFormula(document, result, owner, found.value(), {}, macroStack);
         return std::make_unique<ReferenceNode>(reference->nameKey(), reference->span());
     }
     if (const auto *number = dynamic_cast<const NumberNode *>(node))
@@ -127,13 +130,13 @@ std::unique_ptr<FormulaNode> expandFormula(const Document &document, ModelAnalys
     return expanded;
 }
 
-bool isDimensionElement(const Document &document, const std::string &nameKey)
+bool isDimensionElement(const Document &document, const QString &nameKey)
 {
-    const std::size_t separator = nameKey.find('.');
-    if (separator == std::string::npos)
+    const int separator = nameKey.indexOf('.');
+    if (separator < 0)
         return false;
-    const Dimension *dimension = document.findDimension(nameKey.substr(0, separator));
-    return dimension && dimension->findElement(nameKey.substr(separator + 1));
+    const Dimension *dimension = document.findDimension(nameKey.left(separator));
+    return dimension && dimension->findElement(nameKey.mid(separator + 1));
 }
 
 void resolveNode(const Document &document, ModelAnalysis &result, ElementAnalysis &owner, const FormulaNode *node)
@@ -281,7 +284,7 @@ ModelAnalysis analyzeDocument(const Document &document)
         const auto analyzeOwned = [&](FormulaAnalysis formula) {
             for (const FormulaIssue &issue : formula.issues())
                 addIssue(result, element.id(), IssueSeverity::Error, issue.message, "parse", issue.span);
-            std::vector<std::string> macroStack;
+            QVector<QString> macroStack;
             auto ast = expandFormula(document, result, owner, formula.root(), {}, macroStack);
             resolveNode(document, result, owner, ast.get());
             return FormulaAnalysis(std::move(ast), formula.issues());
@@ -295,7 +298,7 @@ ModelAnalysis analyzeDocument(const Document &document)
         }
         if (!element.elementEquations().empty()) {
             std::size_t expected = 1;
-            for (const std::string &name : element.dimensions())
+            for (const QString &name : element.dimensions())
                 expected *= document.findDimension(name)->elements.size();
             if (element.elementEquations().size() != expected)
                 addIssue(result, element.id(), IssueSeverity::Error, "Array element equations are incomplete",

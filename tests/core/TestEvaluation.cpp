@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
-#include <string>
+#include <QString>
 
 #include <QtTest>
 
@@ -17,24 +17,24 @@ EvaluationResult evaluate(const FormulaAnalysis &analysis, const EvaluationConte
     return evaluateFormula(analysis.root(), context);
 }
 
-void expectValue(const std::string &equation, double expected, const EvaluationContext &context = {})
+void expectValue(const QString &equation, double expected, const EvaluationContext &context = {})
 {
     const FormulaAnalysis analysis = analyzeFormula(equation);
-    QVERIFY2(analysis.issues().empty(), equation.c_str());
+    QVERIFY2(analysis.issues().empty(), qPrintable(equation));
     const EvaluationResult result = evaluate(analysis, context);
-    QVERIFY2(result.value.has_value(), result.error.c_str());
+    QVERIFY2(result.value.has_value(), qPrintable(result.error));
     const auto *scalar = std::get_if<double>(&*result.value);
     QVERIFY(scalar);
-    QVERIFY2(qAbs(*scalar - expected) < 1e-12, equation.c_str());
+    QVERIFY2(qAbs(*scalar - expected) < 1e-12, qPrintable(equation));
 }
 
-void expectError(const std::string &equation, const EvaluationContext &context = {})
+void expectError(const QString &equation, const EvaluationContext &context = {})
 {
     const FormulaAnalysis analysis = analyzeFormula(equation);
-    QVERIFY2(analysis.issues().empty(), equation.c_str());
+    QVERIFY2(analysis.issues().empty(), qPrintable(equation));
     const EvaluationResult result = evaluate(analysis, context);
     QVERIFY(!result.value);
-    QVERIFY(!result.error.empty());
+    QVERIFY(!result.error.isEmpty());
 }
 
 const ElementAnalysis &element(const ModelAnalysis &analysis, EntityId id)
@@ -71,7 +71,7 @@ void TestEvaluation::resolvedReferences()
     const ElementAnalysis &entry = element(analysis, result);
 
     EvaluationContext context;
-    context.readVariable = [](const std::string &name) -> std::optional<Value> {
+    context.readVariable = [](const QString &name) -> std::optional<Value> {
         if (name == "input" || name == "input.value")
             return 3.5;
         if (name == "offset")
@@ -79,7 +79,7 @@ void TestEvaluation::resolvedReferences()
         return std::nullopt;
     };
     EvaluationResult evaluated = evaluateFormula(entry.formula.root(), context);
-    QVERIFY2(evaluated.value.has_value(), evaluated.error.c_str());
+    QVERIFY2(evaluated.value.has_value(), qPrintable(evaluated.error));
     const auto *scalar = std::get_if<double>(&*evaluated.value);
     QVERIFY(scalar);
     QCOMPARE(*scalar, 8.5);
@@ -87,7 +87,7 @@ void TestEvaluation::resolvedReferences()
     const std::size_t originalNodes = formulaNodeCount(entry.formula.root());
     const SourceSpan originalSpan = entry.formula.root()->span();
     EvaluationContext otherContext;
-    otherContext.readVariable = [](const std::string &name) -> std::optional<Value> {
+    otherContext.readVariable = [](const QString &name) -> std::optional<Value> {
         if (name == "input")
             return 5.0;
         if (name == "offset")
@@ -95,7 +95,7 @@ void TestEvaluation::resolvedReferences()
         return std::nullopt;
     };
     evaluated = evaluateFormula(entry.formula.root(), otherContext);
-    QVERIFY2(evaluated.value.has_value(), evaluated.error.c_str());
+    QVERIFY2(evaluated.value.has_value(), qPrintable(evaluated.error));
     QCOMPARE(*std::get_if<double>(&*evaluated.value), 12.0);
     QCOMPARE(formulaNodeCount(entry.formula.root()), originalNodes);
     QCOMPARE(entry.formula.root()->span(), originalSpan);
@@ -105,14 +105,14 @@ void TestEvaluation::resolvedReferences()
     const ModelAnalysis qualifiedAnalysis = analyzeDocument(document);
     const ElementAnalysis &qualifiedEntry = element(qualifiedAnalysis, result);
     evaluated = evaluateFormula(qualifiedEntry.formula.root(), context);
-    QVERIFY2(evaluated.value.has_value(), evaluated.error.c_str());
+    QVERIFY2(evaluated.value.has_value(), qPrintable(evaluated.error));
     scalar = std::get_if<double>(&*evaluated.value);
     QVERIFY(scalar);
     QCOMPARE(*scalar, 8.5);
 
     context.readVariable = {};
     QVERIFY(!evaluateFormula(entry.formula.root(), context).value);
-    context.readVariable = [](const std::string &) -> std::optional<Value> { return std::nullopt; };
+    context.readVariable = [](const QString &) -> std::optional<Value> { return std::nullopt; };
     QVERIFY(!evaluateFormula(entry.formula.root(), context).value);
 }
 
@@ -149,7 +149,7 @@ void TestEvaluation::arithmeticAndLogic()
 {
     QFETCH(QString, equation);
     QFETCH(double, expected);
-    expectValue(equation.toStdString(), expected);
+    expectValue(equation, expected);
 }
 
 void TestEvaluation::constantsAndMath()
@@ -187,7 +187,7 @@ void TestEvaluation::shortCircuit()
 void TestEvaluation::errorsAndUnsupported()
 {
     const EvaluationResult missingExpression = evaluateFormula(nullptr, {});
-    QVERIFY(!missingExpression.value && !missingExpression.error.empty());
+    QVERIFY(!missingExpression.value && !missingExpression.error.isEmpty());
 
     const EvaluationResult unresolved = evaluate(analyzeFormula("Missing"));
     QVERIFY(!unresolved.value);

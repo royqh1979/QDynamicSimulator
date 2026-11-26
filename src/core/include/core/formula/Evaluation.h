@@ -5,16 +5,16 @@
 
 #include <functional>
 #include <optional>
-#include <string>
+#include <QString>
 #include <variant>
-#include <vector>
+#include <QVector>
 
 namespace qds::core {
 
 struct ArrayValue {
-    std::vector<std::string> dimensions;
-    std::vector<std::size_t> shape;
-    std::vector<double> values;
+    QVector<QString> dimensions;
+    QVector<std::size_t> shape;
+    QVector<double> values;
 
     bool operator==(const ArrayValue &other) const
     {
@@ -23,13 +23,13 @@ struct ArrayValue {
 };
 
 using Value = std::variant<double, ArrayValue>;
-using VariableReader = std::function<std::optional<Value>(const std::string &nameKey)>;
-using DimensionReader = std::function<const Dimension *(const std::string &)>;
+using VariableReader = std::function<std::optional<Value>(const QString &nameKey)>;
+using DimensionReader = std::function<const Dimension *(const QString &)>;
 
 struct EvaluationScope {
-    std::vector<std::string> dimensions;
-    std::vector<std::size_t> indices;
-    std::string self;
+    QVector<QString> dimensions;
+    QVector<std::size_t> indices;
+    QString self;
 };
 
 struct EvaluationContext {
@@ -44,7 +44,7 @@ struct EvaluationContext {
 
 struct EvaluationResult {
     std::optional<Value> value;
-    std::string error;
+    QString error;
     SourceSpan errorSpan;
 };
 

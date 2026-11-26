@@ -45,7 +45,7 @@
 
 阶段 1 必须先读取完整 Document 中全部模型元素和宏定义，再开始阶段 2 的模型公式分析；不得把遍历到某个 Flow 时的结构收集和公式分析混在同一循环中。这样，模型公式可以引用文件后面定义的变量或宏，宏也可以引用其他宏，不需要前置声明。最终 Document 中不存在的变量或宏仍分别报告未定义变量或未知函数。
 
-所有公式共用手写 Lexer 和 Pratt/precedence-climbing Parser，不引入第三方 parser 依赖。Pratt 实现右结合乘方、一元运算符、函数调用和 IF THEN ELSE，并保留每个节点的 UTF-8 SourceSpan。宏采用自定义函数语义，而不是 C 预处理器宏语义：分析期不替换文本、不复制实参到宏体、不级联展开；非递归、直接递归和间接递归都通过同一运行期调用机制执行。
+所有公式共用手写 Lexer 和 Pratt/precedence-climbing Parser，不引入第三方 parser 依赖。Pratt 实现右结合乘方、一元运算符、函数调用和 IF THEN ELSE，并保留每个节点与 QString 字符位置一致的 SourceSpan。宏采用自定义函数语义，而不是 C 预处理器宏语义：分析期不替换文本、不复制实参到宏体、不级联展开；非递归、直接递归和间接递归都通过同一运行期调用机制执行。
 
 AST 在语法分析完成后完全不可变，只保存语法结构、规范化名称、字面量和 SourceSpan。Resolve 是独立的按需过程，不在 AST 中写入 EntityId、内置函数目标、宏定义、签名或其它语义绑定，也不生成另一份 Resolved AST。`validateDocument()` 只是返回 ModelAnalysis.issues 的薄接口，不另建检查流程。
 
@@ -53,8 +53,8 @@ AST 在语法分析完成后完全不可变，只保存语法结构、规范化�
 
 ```cpp
 struct SourceSpan {
-    std::size_t begin = 0; // UTF-8 byte offset，含 begin，不含 end
-    std::size_t end = 0;
+    int begin = 0; // QString 字符位置，含 begin，不含 end
+    int end = 0;
 };
 
 class FormulaNode {

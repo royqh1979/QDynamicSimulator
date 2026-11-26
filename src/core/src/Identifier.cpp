@@ -1,41 +1,46 @@
 #include <core/Identifier.h>
 
-namespace qds::core {
+#include <QString>
 
-std::string trimDisplayName(const std::string &name)
+namespace qds::core {
+namespace {
+
+bool trimCharacter(QChar c)
 {
-    const auto first = name.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos)
-        return {};
-    const auto last = name.find_last_not_of(" \t\r\n");
-    return name.substr(first, last - first + 1);
+    return c == QChar(' ') || c == QChar('\t') || c == QChar('\r') || c == QChar('\n');
 }
 
-std::string normalizeIdentifier(const std::string &name)
+} // namespace
+
+QString trimDisplayName(const QString &name)
 {
-    std::string normalized;
+    int first = 0;
+    while (first < name.size() && trimCharacter(name.at(first)))
+        ++first;
+    int last = name.size() - 1;
+    while (last >= first && trimCharacter(name.at(last)))
+        --last;
+    return first > last ? QString {} : name.mid(first, last - first + 1);
+}
+
+QString normalizeIdentifier(const QString &name)
+{
+    QString normalized;
     normalized.reserve(name.size());
     bool separator = false;
-    for (std::size_t index = 0; index < name.size();) {
-        const unsigned char c = static_cast<unsigned char>(name[index]);
-        if (c == 0xC2 && index + 1 < name.size() && static_cast<unsigned char>(name[index + 1]) == 0xA0) {
+    for (int index = 0; index < name.size(); ++index) {
+        const QChar c = name.at(index);
+        if (c == QChar(0x00A0) || c == QChar('_') || trimCharacter(c)) {
             separator = true;
-            index += 2;
             continue;
         }
-        if (c == '_' || c == ' ' || c == '\t' || c == '\r' || c == '\n') {
-            separator = true;
-            ++index;
-            continue;
-        }
-        if (separator && !normalized.empty())
-            normalized.push_back('_');
+        if (separator && !normalized.isEmpty())
+            normalized.push_back(QChar('_'));
         separator = false;
-        if (c >= 'A' && c <= 'Z')
-            normalized.push_back(static_cast<char>(c - 'A' + 'a'));
+        if (c >= QChar('A') && c <= QChar('Z'))
+            normalized.push_back(QChar(c.unicode() - QChar('A').unicode() + QChar('a').unicode()));
         else
-            normalized.push_back(static_cast<char>(c));
-        ++index;
+            normalized.push_back(c);
     }
     return normalized;
 }

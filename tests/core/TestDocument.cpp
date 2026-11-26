@@ -1,6 +1,7 @@
 #include <core/Document.h>
 #include <core/Validation.h>
 
+#include <QVector>
 #include <QtTest>
 
 #include <limits>
@@ -48,7 +49,7 @@ void TestDocument::createAndLookup()
     QCOMPARE(document.model().findByName("population")->id(), stock);
     QCOMPARE(document.model().findByName("POPULATION")->id(), stock);
     QVERIFY(document.setEquation(stock, "100"));
-    QCOMPARE(static_cast<const ModelElement *>(document.find(stock))->equation(), std::string("100"));
+    QCOMPARE(static_cast<const ModelElement *>(document.find(stock))->equation(), QString("100"));
     std::size_t modelCount = 0;
     for (const ModelElement &element : document.model().elements()) {
         Q_UNUSED(element)
@@ -77,14 +78,14 @@ void TestDocument::namingNormalization()
     QVERIFY(document.setEquation(auxiliary, "\"\u6D41\u5165 \u901F\u7387\" * 2"));
     QVERIFY(document.rename(flow, "\u6D41\u5165_\u901F\u7387"));
     QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->equation(),
-             std::string("\u6D41\u5165_\u901F\u7387 * 2"));
+             QString("\u6D41\u5165_\u901F\u7387 * 2"));
     QVERIFY(document.rename(auxiliary, "BIRTH RATE"));
-    QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->displayName(), std::string("BIRTH RATE"));
+    QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->displayName(), QString("BIRTH RATE"));
     const EntityId comment = document.createComment("\u5E93\u5B58");
     QVERIFY(document.find(comment));
     QVERIFY(document.rename(stock, "Population"));
     QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->equation(),
-             std::string("\u6D41\u5165_\u901F\u7387 * 2"));
+             QString("\u6D41\u5165_\u901F\u7387 * 2"));
 }
 
 void TestDocument::generatedNamesUseNameKeyIndex()
@@ -93,14 +94,14 @@ void TestDocument::generatedNamesUseNameKeyIndex()
     const EntityId firstStock = document.createVariable(ElementKind::Stock);
     const EntityId secondStock = document.createVariable(ElementKind::Stock);
     const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
-    QCOMPARE(static_cast<const ModelElement *>(document.find(firstStock))->displayName(), std::string("Stock1"));
-    QCOMPARE(static_cast<const ModelElement *>(document.find(secondStock))->displayName(), std::string("Stock2"));
-    QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->displayName(), std::string("Auxiliary1"));
-    QCOMPARE(static_cast<const ModelElement *>(document.find(firstStock))->nameKey(), std::string("stock1"));
+    QCOMPARE(static_cast<const ModelElement *>(document.find(firstStock))->displayName(), QString("Stock1"));
+    QCOMPARE(static_cast<const ModelElement *>(document.find(secondStock))->displayName(), QString("Stock2"));
+    QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->displayName(), QString("Auxiliary1"));
+    QCOMPARE(static_cast<const ModelElement *>(document.find(firstStock))->nameKey(), QString("stock1"));
 
     QVERIFY(document.rename(auxiliary, "Stock3"));
     const EntityId thirdStock = document.createVariable(ElementKind::Stock);
-    QCOMPARE(static_cast<const ModelElement *>(document.find(thirdStock))->displayName(), std::string("Stock4"));
+    QCOMPARE(static_cast<const ModelElement *>(document.find(thirdStock))->displayName(), QString("Stock4"));
     QVERIFY(document.model().findByName("stock4"));
     QCOMPARE(document.model().findByName("stock3")->id(), auxiliary);
 
@@ -136,7 +137,7 @@ void TestDocument::removeCascades()
     const EntityId flow = document.createFlow(stock, cloud);
     const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
     const EntityId connector = document.createConnector(auxiliary, flow);
-    const std::vector<EntityId> removed = document.remove(stock);
+    const QVector<EntityId> removed = document.remove(stock);
     QVERIFY(document.find(stock) == nullptr);
     QVERIFY(document.find(flow) == nullptr);
     QVERIFY(document.find(connector) == nullptr);
@@ -251,12 +252,12 @@ void TestDocument::entityAndConnectorTypes()
     const EntityId secondCloud = document.createCloud();
     const EntityId comment = document.createComment("Note");
     QVERIFY(constant && data && cloud && secondCloud && comment);
-    QCOMPARE(static_cast<const Comment *>(document.find(comment))->content(), std::string("Note"));
+    QCOMPARE(static_cast<const Comment *>(document.find(comment))->content(), QString("Note"));
     const EntityId secondComment = document.createComment("Note");
     QVERIFY(secondComment != 0);
-    QCOMPARE(static_cast<const Comment *>(document.find(secondComment))->content(), std::string("Note"));
+    QCOMPARE(static_cast<const Comment *>(document.find(secondComment))->content(), QString("Note"));
     QVERIFY(document.setCommentContent(secondComment, "Updated note"));
-    QCOMPARE(static_cast<const Comment *>(document.find(secondComment))->content(), std::string("Updated note"));
+    QCOMPARE(static_cast<const Comment *>(document.find(secondComment))->content(), QString("Updated note"));
     QVERIFY(!document.setCommentContent(stock, "Invalid"));
     const EntityId flow = document.createFlow(stock, cloud);
     QVERIFY(flow != 0);
@@ -298,8 +299,8 @@ void TestDocument::metadata()
     QVERIFY(document.setUnit(id, "people"));
     QVERIFY(document.setComment(id, "Population stock"));
     const auto *model = static_cast<const ModelElement *>(document.find(id));
-    QCOMPARE(model->unit(), std::string("people"));
-    QCOMPARE(model->comment(), std::string("Population stock"));
+    QCOMPARE(model->unit(), QString("people"));
+    QCOMPARE(model->comment(), QString("Population stock"));
     QVERIFY(!document.setUnit(9999, "x"));
     QVERIFY(!document.setComment(9999, "x"));
 }
@@ -418,8 +419,8 @@ void TestDocument::validation()
     bool cycle = false;
     bool unused = false;
     for (const ModelIssue &issue : issues) {
-        undefined = undefined || issue.message.find("Undefined variable") != std::string::npos;
-        cycle = cycle || issue.message.find("cycle") != std::string::npos;
+        undefined = undefined || issue.message.contains("Undefined variable");
+        cycle = cycle || issue.message.contains("cycle");
         unused = unused || issue.severity == IssueSeverity::Warning;
     }
     QVERIFY(undefined);

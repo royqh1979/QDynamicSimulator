@@ -109,7 +109,7 @@ private slots:
                 }
                 failures.append(path + ": isolated element " + QString::number(element.id()));
             }
-            const auto checkFormula = [&corpusFormulaCount](const std::string &equation) {
+            const auto checkFormula = [&corpusFormulaCount](const QString &equation) {
                 if (equation.empty())
                     return;
                 ++corpusFormulaCount;

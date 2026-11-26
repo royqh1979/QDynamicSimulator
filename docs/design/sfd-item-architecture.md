@@ -523,7 +523,9 @@ ChangeRecord/ChangeSet 的逻辑字段通过受控构造确定，完成后只读
 | 画布图元 | QGraphicsScene | `addItem()` 接管 DiagramItem* | Scene 的 ID 索引、RoutedItem 的端点 Item* |
 | 临时控制句柄 | QGraphicsScene | `addItem()` 接管 | Scene 当前句柄列表 |
 
-Document 是唯一核心所有者，Model 与 DiagramDefinition 只是分类视图。Scene 索引不拥有图元。命令不得保存已删除对象指针；核心对象不得保存 QGraphicsItem/QObject；DocumentElement 的地址只在对象存活期间有效，查找结果不得缓存到删除之后。
+Document 是唯一核心所有者，Model 与 DiagramDefinition 只是分类视图。Scene 索引不拥有图元。命令不得保存已删除对象指针；核心对象不得保存 QGraphicsItem/QObject；DocumentElement 的地址只在对象存活期间有效。
+
+find() 等查询返回的 raw pointer 只能在当前调用栈上即时使用，不得保存为成员、放入长期容器或由异步任务/长命 lambda 持有。Document 修改、删除、移动、清空或替换后，旧指针一律失效，需要时重新通过 EntityId 获取。对象地址不承担身份语义。
 
 ### 7.2 创建
 

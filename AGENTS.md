@@ -37,6 +37,7 @@
 - 使用 Qt 惯用法：signals/slots、用户可见字符串 `tr()`、QObject 父子所有权。
 - 新代码与所在文件现有命名、结构和行尾风格保持一致。
 - 容器优先使用语义合适的 Qt 容器（如 QVector、QHash、QMap、QSet）；std::unique_ptr、std::optional、std::variant 等非容器能力不作机械替换。既有 STL 容器只在相关重构中逐步迁移，不单独进行无收益的全量替换。
+- 文本统一使用 QString，禁止 `std::string` 和 `std::string_view`。QByteArray 只允许用于 I/O 的原始字节和编码转换，不得进入 Core 或业务逻辑；公式、词法位置和 SourceSpan 直接使用 QString 的字符位置，不做 UTF-8 字节映射。
 - 源代码和测试源码不得直接包含中文字符；用户可见源字符串使用英文，中文兼容性测试数据使用 Unicode 转义，设计文档不受此限制。
 - `translations/` 保存 Qt Linguist TS 源文件，构建通过 `qt5_create_translation` 生成并内嵌 QM；中文翻译只修改 TS，不在 C++ 源码中直接写入中文界面文本。
 - 不提交密钥、凭据或本机专有配置；执行外部工具和不可信代码前必须进行参数与转义检查。
@@ -46,6 +47,7 @@
 - `connect()`、`QTimer::singleShot()` 等以 lambda 作槽时必须传入合适的 QObject context，且连接寿命不得超过其捕获对象寿命。
 - 不得用 `&` 引用捕获局部变量供长命连接使用；需要写回局部变量时，使用与局部变量同生命周期的局部 QObject context，或在返回前显式 disconnect。
 - 按值捕获的裸指针必须明显比 context 长寿，优先捕获值类型或 shared_ptr。
+- Document::find 等接口返回的 raw pointer 只能在调用栈上即时使用；不得保存为成员、放入长期容器、供异步任务/长命 lambda 持有，Document 发生修改、移动、清空或删除后必须重新获取。该纪律不替代后续生命周期接口设计。
 
 ## 5. 构建与测试规则
 

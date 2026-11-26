@@ -3,6 +3,7 @@
 
 #include <QFile>
 #include <QTemporaryDir>
+#include <QVector>
 #include <QtTest>
 #include <zlib.h>
 
@@ -198,9 +199,9 @@ void TestXmileFile::nativeRoundTrip()
     QCOMPARE(connectorCount, std::size_t(4));
     const auto *loadedStock = dynamic_cast<const ModelElement *>(loaded.findByName("\u5E93\u5B58 & Population"));
     QVERIFY(loadedStock);
-    QCOMPARE(loadedStock->equation(), std::string("100"));
-    QCOMPARE(loadedStock->unit(), std::string("people"));
-    QCOMPARE(loadedStock->comment(), std::string("Population stock"));
+    QCOMPARE(loadedStock->equation(), QString("100"));
+    QCOMPARE(loadedStock->unit(), QString("people"));
+    QCOMPARE(loadedStock->comment(), QString("Population stock"));
     QCOMPARE(loaded.diagram().position(loadedStock->id()), Vec2({120.5, 80.25}));
     QCOMPARE(loaded.diagram().fontStyle(loadedStock->id()), (FontStyle {"Arial", 18}));
     QCOMPARE(loaded.findByName("\u5E38\u91CF")->kind(), ElementKind::Constant);
@@ -209,12 +210,12 @@ void TestXmileFile::nativeRoundTrip()
     const auto *loadedFlow = dynamic_cast<const Flow *>(loaded.findByName("Flow1"));
     QVERIFY(loadedFlow);
     QCOMPARE(loaded.diagram().fontStyle(loadedFlow->id()), (FontStyle {"Times New Roman", 16}));
-    QCOMPARE(loadedFlow->equation(), std::string("\u8F85\u52A9\u53D8\u91CF * 0.5"));
+    QCOMPARE(loadedFlow->equation(), QString("\u8F85\u52A9\u53D8\u91CF * 0.5"));
     QCOMPARE(loadedFlow->endpoints().from, loadedStock->id());
     QVERIFY(loadedFlow->endpoints().to != 0);
     QCOMPARE(loaded.find(loadedFlow->endpoints().to)->kind(), ElementKind::Cloud);
     const Route loadedRoute = loaded.diagram().route(loadedFlow->id());
-    QVERIFY(loadedRoute.controlPoints == std::vector<RoutePoint>({{0.25, 100.0}, {0.75, 120.0}}));
+    QVERIFY(loadedRoute.controlPoints == QVector<RoutePoint>({{0.25, 100.0}, {0.75, 120.0}}));
     QCOMPARE(loadedRoute.mode, RouteMode::Bezier);
     QVERIFY(loadedRoute.locked);
     QCOMPARE(loaded.diagram().position(loadedFlow->endpoints().to), Vec2({450.0, 80.25}));
@@ -234,7 +235,7 @@ void TestXmileFile::nativeRoundTrip()
             if (first)
                 QCOMPARE(loaded.diagram().fontStyle(element.id()), (FontStyle {"", 14}));
             QCOMPARE(static_cast<const Comment &>(element).content(),
-                     first ? std::string("\u66F4\u65B0\u540E\u7684\u6CE8\u91CA") : std::string("\u6CE8\u91CA"));
+                     first ? QString("\u66F4\u65B0\u540E\u7684\u6CE8\u91CA") : QString("\u6CE8\u91CA"));
         } else if (element.kind() == ElementKind::Connector) {
             const Route loadedConnectorRoute = loaded.diagram().route(element.id());
             const Route expectedRoute = defaultConnectorRoute();

@@ -64,9 +64,9 @@ DiagramItem *connectionEndpointAt(QGraphicsScene &scene, const QPointF &position
 QString documentElementName(const DocumentElement &element)
 {
     if (const auto *model = dynamic_cast<const ModelElement *>(&element))
-        return QString::fromStdString(model->displayName());
+        return (model->displayName());
     if (const auto *comment = dynamic_cast<const Comment *>(&element))
-        return QString::fromStdString(comment->content());
+        return (comment->content());
     return {};
 }
 
@@ -162,9 +162,9 @@ const Comment *DiagramScene::selectedComment() const
     return item ? dynamic_cast<const Comment *>(m_controller->document().find(item->id())) : nullptr;
 }
 
-std::vector<EntityId> DiagramScene::selectedElementIds() const
+QVector<EntityId> DiagramScene::selectedElementIds() const
 {
-    std::vector<EntityId> ids;
+    QVector<EntityId> ids;
     for (QGraphicsItem *graphicsItem : selectedItems()) {
         if (auto *item = dynamic_cast<DiagramItem *>(graphicsItem))
             ids.push_back(item->id());
@@ -172,9 +172,9 @@ std::vector<EntityId> DiagramScene::selectedElementIds() const
     return ids;
 }
 
-std::vector<EntityId> DiagramScene::findElements(const QString &text) const
+QVector<EntityId> DiagramScene::findElements(const QString &text) const
 {
-    std::vector<EntityId> matches;
+    QVector<EntityId> matches;
     for (const DocumentElement &element : m_controller->document().elements()) {
         if (documentElementName(element).contains(text, Qt::CaseInsensitive))
             matches.push_back(element.id());
@@ -202,7 +202,7 @@ void DiagramScene::alignSelected(Qt::Alignment alignment)
     if (selected.size() < 2)
         return;
 
-    std::vector<std::pair<EntityId, QPointF>> positions;
+    QVector<std::pair<EntityId, QPointF>> positions;
     for (DiagramItem *item : selected) {
         QPointF position = item->pos();
         if (alignment & Qt::AlignLeft)
@@ -228,7 +228,7 @@ void DiagramScene::alignSelected(Qt::Alignment alignment)
                 center += other->pos().y();
             position.setY(center / selected.size());
         }
-        positions.emplace_back(item->id(), position);
+        positions.push_back({item->id(), position});
     }
     m_controller->moveElements(positions);
 }
@@ -249,14 +249,14 @@ void DiagramScene::distributeSelected(bool horizontal)
     const double start = horizontal ? selected.front()->pos().x() : selected.front()->pos().y();
     const double end = horizontal ? selected.back()->pos().x() : selected.back()->pos().y();
     const double spacing = (end - start) / (selected.size() - 1);
-    std::vector<std::pair<EntityId, QPointF>> positions;
+    QVector<std::pair<EntityId, QPointF>> positions;
     for (int index = 1; index < selected.size() - 1; ++index) {
         QPointF position = selected[index]->pos();
         if (horizontal)
             position.setX(start + spacing * index);
         else
             position.setY(start + spacing * index);
-        positions.emplace_back(selected[index]->id(), position);
+        positions.push_back({selected[index]->id(), position});
     }
     m_controller->moveElements(positions);
 }
@@ -615,7 +615,7 @@ void DiagramScene::applyChangeNotification(const ChangeNotification &notificatio
         m_items.clear();
         m_connectionSource = 0;
         m_areaSelecting = false;
-        std::vector<EntityId> ids;
+        QVector<EntityId> ids;
         for (const DocumentElement &element : m_controller->document().elements())
             ids.push_back(element.id());
         createCanvasItems(std::move(ids));
@@ -697,7 +697,7 @@ DiagramItem *DiagramScene::createCanvasItem(EntityId id)
     return item;
 }
 
-void DiagramScene::createCanvasItems(std::vector<EntityId> ids)
+void DiagramScene::createCanvasItems(QVector<EntityId> ids)
 {
     std::sort(ids.begin(), ids.end(), [this](EntityId left, EntityId right) {
         const ElementKind leftKind = m_controller->document().find(left)->kind();
@@ -712,7 +712,7 @@ void DiagramScene::createCanvasItems(std::vector<EntityId> ids)
 
 void DiagramScene::updateDependentRoutes(EntityId id)
 {
-    std::vector<EntityId> updatedFlows;
+    QVector<EntityId> updatedFlows;
     for (DiagramItem *item : m_items) {
         if (auto *flow = dynamic_cast<FlowItem *>(item); flow && flow->connects(id)) {
             flow->updatePosition();
@@ -913,7 +913,7 @@ void DiagramScene::beginInlineRename(DiagramItem *item)
     editor->setFont(item->labelFont());
     editor->setStyleSheet(QStringLiteral("QLineEdit { border: 2px solid %1; border-radius: 4px; padding: 2px 4px; background: %2; color: %3; }")
         .arg(diagram_palette::SelectionColor.name(), diagram_palette::EntityFillColor.name(), diagram_palette::EntityTextColor.name()));
-    editor->setText(QString::fromStdString(model->displayName()));
+    editor->setText((model->displayName()));
     editor->resize(editorRect.size().toSize());
     proxy->setWidget(editor);
     proxy->setPos(editorRect.topLeft());
@@ -1003,14 +1003,14 @@ void DiagramScene::finishMove(EntityId id, const QPointF &position, Qt::Keyboard
         const QPointF offset = snapPoint(position) - QPointF(origin.x, origin.y);
         if (offset.isNull())
             return;
-        std::vector<EntityId> ids;
+        QVector<EntityId> ids;
         for (QGraphicsItem *selected : selection) {
             auto *item = dynamic_cast<DiagramItem *>(selected);
             if (item && (item->flags() & QGraphicsItem::ItemIsMovable))
                 ids.push_back(item->id());
         }
         const ClipboardData clipboard = m_controller->copyElements(ids);
-        const std::vector<EntityId> copies = m_controller->pasteClipboard(clipboard, offset);
+        const QVector<EntityId> copies = m_controller->pasteClipboard(clipboard, offset);
         for (EntityId original : ids) {
             DiagramItem *item = m_items.value(original);
             const Vec2 originalPosition = m_controller->document().diagram().position(original);
@@ -1025,11 +1025,11 @@ void DiagramScene::finishMove(EntityId id, const QPointF &position, Qt::Keyboard
         return;
     }
 
-    std::vector<std::pair<EntityId, QPointF>> positions;
+    QVector<std::pair<EntityId, QPointF>> positions;
     for (QGraphicsItem *item : selection) {
         auto *diagramItem = dynamic_cast<DiagramItem *>(item);
         if (diagramItem && (diagramItem->flags() & QGraphicsItem::ItemIsMovable))
-            positions.emplace_back(diagramItem->id(), snapPoint(diagramItem->pos()));
+            positions.push_back({diagramItem->id(), snapPoint(diagramItem->pos())});
     }
     m_controller->moveElements(positions);
 }

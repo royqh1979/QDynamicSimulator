@@ -25,11 +25,11 @@ void verifyMacro(const Document &document)
 {
     QCOMPARE(document.macros().size(), std::size_t(1));
     const MacroDefinition &macro = document.macros().front();
-    QCOMPARE(macro.displayName, std::string("Scale"));
+    QCOMPARE(macro.displayName, QString("Scale"));
     QCOMPARE(macro.parameters.size(), std::size_t(2));
-    QCOMPARE(macro.parameters[0].nameKey, std::string("x"));
-    QCOMPARE(macro.parameters[1].defaultEquation, std::string("2"));
-    QCOMPARE(macro.equation, std::string("x * factor"));
+    QCOMPARE(macro.parameters[0].nameKey, QString("x"));
+    QCOMPARE(macro.parameters[1].defaultEquation, QString("2"));
+    QCOMPARE(macro.equation, QString("x * factor"));
     const ModelAnalysis analysis = analyzeDocument(document);
     const auto found = std::find_if(analysis.elements.begin(), analysis.elements.end(), [](const ElementAnalysis &entry) {
         return entry.formula.root() != nullptr;

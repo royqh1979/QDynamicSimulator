@@ -5,6 +5,7 @@
 
 #include <QFile>
 #include <QTemporaryDir>
+#include <QVector>
 #include <QtTest>
 
 using namespace qds::core;
@@ -27,21 +28,21 @@ void verifyArrayDefinitions(const Document &document)
     const Dimension *number = document.findDimension("N");
     QVERIFY(location && number);
     QCOMPARE(location->elements.size(), std::size_t(2));
-    QCOMPARE(location->elements[1].nameKey, std::string("new_york"));
+    QCOMPARE(location->elements[1].nameKey, QString("new_york"));
     QCOMPARE(number->elements.size(), std::size_t(2));
 
     const auto *apply = document.model().findByName("Apply");
     const auto *individual = document.model().findByName("Individual");
     QVERIFY(apply && individual);
-    QCOMPARE(apply->dimensions(), (std::vector<std::string> {"location", "n"}));
-    QCOMPARE(apply->equation(), std::string("1"));
+    QCOMPARE(apply->dimensions(), (QVector<QString> {"location", "n"}));
+    QCOMPARE(apply->equation(), QString("1"));
     QVERIFY(apply->elementEquations().empty());
-    QCOMPARE(individual->dimensions(), std::vector<std::string> {"location"});
+    QCOMPARE(individual->dimensions(), QVector<QString> {"location"});
     QCOMPARE(individual->elementEquations().size(), std::size_t(2));
-    QCOMPARE(individual->elementEquations()[0].indices, std::vector<std::size_t> {0});
-    QCOMPARE(individual->elementEquations()[0].equation, std::string("10"));
-    QCOMPARE(individual->elementEquations()[1].indices, std::vector<std::size_t> {1});
-    QCOMPARE(individual->elementEquations()[1].equation, std::string("20"));
+    QCOMPARE(individual->elementEquations()[0].indices, QVector<std::size_t> {0});
+    QCOMPARE(individual->elementEquations()[0].equation, QString("10"));
+    QCOMPARE(individual->elementEquations()[1].indices, QVector<std::size_t> {1});
+    QCOMPARE(individual->elementEquations()[1].equation, QString("20"));
 }
 
 void TestArrayFiles::arrayRoundTrips()
@@ -93,26 +94,26 @@ void TestArrayFiles::realArrayImports()
     QCOMPARE(dimension->elements.size(), std::size_t(3));
     const auto *array = apply.model().findByName("var1");
     QVERIFY(array);
-    QCOMPARE(array->dimensions(), std::vector<std::string> {"dim1"});
-    QCOMPARE(array->equation(), std::string("1, 2, 3"));
+    QCOMPARE(array->dimensions(), QVector<QString> {"dim1"});
+    QCOMPARE(array->equation(), QString("1, 2, 3"));
     const FormulaAnalysis literal = analyzeFormula(array->equation());
     QVERIFY(literal.issues().empty());
     QVERIFY(dynamic_cast<const ArrayLiteralNode *>(literal.root()));
     EvaluationContext context;
-    context.readDimension = [&apply](const std::string &name) { return apply.findDimension(name); };
+    context.readDimension = [&apply](const QString &name) { return apply.findDimension(name); };
     context.scope.dimensions = {"dim1"};
     const EvaluationResult evaluated = evaluateFormula(literal.root(), context);
     const auto *values = evaluated.value ? std::get_if<ArrayValue>(&*evaluated.value) : nullptr;
     QVERIFY(values);
-    QCOMPARE(values->values, (std::vector<double> {1, 2, 3}));
+    QCOMPARE(values->values, (QVector<double> {1, 2, 3}));
 
     Document individual;
     QVERIFY2(qds::io::XmileFile::importFile(QStringLiteral(QDS_ARRAY_INDIVIDUAL_XMILE_PATH), individual, &error), qPrintable(error));
     const auto *rate = individual.model().findByName("Rate A");
     QVERIFY(rate);
     QCOMPARE(rate->elementEquations().size(), std::size_t(3));
-    QCOMPARE(rate->elementEquations()[1].indices, std::vector<std::size_t> {1});
-    QCOMPARE(rate->elementEquations()[2].equation, std::string("0.3"));
+    QCOMPARE(rate->elementEquations()[1].indices, QVector<std::size_t> {1});
+    QCOMPARE(rate->elementEquations()[2].equation, QString("0.3"));
 
     QTemporaryDir directory;
     const QString path = directory.filePath(QStringLiteral("individual.xmile"));
@@ -122,7 +123,7 @@ void TestArrayFiles::realArrayImports()
     rate = reimported.model().findByName("Rate A");
     QVERIFY(rate);
     QCOMPARE(rate->elementEquations().size(), std::size_t(3));
-    QCOMPARE(rate->elementEquations()[0].equation, std::string("0.01"));
+    QCOMPARE(rate->elementEquations()[0].equation, QString("0.01"));
 }
 
 } // namespace

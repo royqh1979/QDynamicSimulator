@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstddef>
-#include <string>
+#include <QString>
 
 namespace qds::core {
 
@@ -22,6 +22,6 @@ struct FunctionSignature {
     FunctionCategory category = FunctionCategory::Miscellaneous;
 };
 
-const FunctionSignature *findFunctionSignature(const std::string &nameKey);
+const FunctionSignature *findFunctionSignature(const QString &nameKey);
 
 } // namespace qds::core

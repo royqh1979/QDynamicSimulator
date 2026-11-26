@@ -4,11 +4,11 @@
 
 namespace qds::core {
 
-const DimensionElement *Dimension::findElement(const std::string &name) const
+const DimensionElement *Dimension::findElement(const QString &name) const
 {
-    const std::string key = normalizeIdentifier(name);
+    const QString key = normalizeIdentifier(name);
     for (const DimensionElement &element : elements) {
-        if (!element.nameKey.empty() && element.nameKey == key)
+        if (!element.nameKey.isEmpty() && element.nameKey == key)
             return &element;
     }
     return nullptr;

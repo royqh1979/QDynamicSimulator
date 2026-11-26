@@ -10,7 +10,7 @@
 namespace qds::core {
 
 struct ArrayElementAnalysis {
-    std::vector<std::size_t> indices;
+    QVector<std::size_t> indices;
     FormulaAnalysis formula;
 };
 
@@ -28,7 +28,7 @@ struct MacroAnalysis {
 };
 
 struct DependencyGraph {
-    std::unordered_map<EntityId, std::vector<EntityId>> edges;
+    std::unordered_map<EntityId, QVector<EntityId>> edges;
 };
 
 struct ModelAnalysis {
@@ -36,7 +36,7 @@ struct ModelAnalysis {
     std::vector<MacroAnalysis> macros;
     DependencyGraph dependencies;
     std::unordered_set<EntityId> structurallyUsed;
-    std::vector<ModelIssue> issues;
+    QVector<ModelIssue> issues;
 };
 
 ModelAnalysis analyzeDocument(const Document &document);

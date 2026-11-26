@@ -1,13 +1,13 @@
 #pragma once
 
-#include <string>
-#include <vector>
+#include <QString>
+#include <QVector>
 
 namespace qds::core {
 
 struct DimensionElement {
-    std::string displayName;
-    std::string nameKey;
+    QString displayName;
+    QString nameKey;
 
     bool operator==(const DimensionElement &other) const
     {
@@ -17,11 +17,11 @@ struct DimensionElement {
 };
 
 struct Dimension {
-    std::string displayName;
-    std::string nameKey;
-    std::vector<DimensionElement> elements;
+    QString displayName;
+    QString nameKey;
+    QVector<DimensionElement> elements;
 
-    const DimensionElement *findElement(const std::string &name) const;
+    const DimensionElement *findElement(const QString &name) const;
     bool operator==(const Dimension &other) const
     {
         return displayName == other.displayName && nameKey == other.nameKey && elements == other.elements;

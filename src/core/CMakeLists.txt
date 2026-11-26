@@ -1,3 +1,5 @@
+find_package(Qt5 5.12 REQUIRED COMPONENTS Core)
+
 add_library(qds-core STATIC
     include/core/ChangeSet.h
     include/core/Diagram.h
@@ -32,3 +34,5 @@ target_include_directories(qds-core
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
+target_link_libraries(qds-core PUBLIC Qt5::Core)

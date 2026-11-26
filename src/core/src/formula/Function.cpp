@@ -1,13 +1,13 @@
 #include <core/formula/Function.h>
 
-#include <unordered_map>
+#include <QHash>
 
 namespace qds::core {
 
-const FunctionSignature *findFunctionSignature(const std::string &nameKey)
+const FunctionSignature *findFunctionSignature(const QString &nameKey)
 {
     using Category = FunctionCategory;
-    static const std::unordered_map<std::string, FunctionSignature> signatures {
+    static const QHash<QString, FunctionSignature> signatures {
         {"abs", {1, 1, Category::Mathematical}}, {"arccos", {1, 1, Category::Mathematical}},
         {"arcsin", {1, 1, Category::Mathematical}}, {"arctan", {1, 1, Category::Mathematical}},
         {"cos", {1, 1, Category::Mathematical}}, {"exp", {1, 1, Category::Mathematical}},
@@ -35,7 +35,7 @@ const FunctionSignature *findFunctionSignature(const std::string &nameKey)
         {"smooth", {2, 3, Category::Compatibility}}, {"lookup", {1, 2, Category::Compatibility}}
     };
     const auto found = signatures.find(nameKey);
-    return found == signatures.end() ? nullptr : &found->second;
+    return found == signatures.end() ? nullptr : &found.value();
 }
 
 } // namespace qds::core

@@ -3,9 +3,10 @@
 
 #include <algorithm>
 #include <cmath>
-#include <string>
+#include <QString>
 #include <unordered_map>
-#include <vector>
+#include <QHash>
+#include <QVector>
 
 #include <QtTest>
 
@@ -27,13 +28,13 @@ private slots:
     void conditionsAndErrors();
 
 private:
-    EvaluationResult evaluate(const std::string &equation);
-    void setArray(const std::string &name, std::vector<std::string> dimensions, std::vector<std::size_t> shape,
-        std::vector<double> values);
+    EvaluationResult evaluate(const QString &equation);
+    void setArray(const QString &name, QVector<QString> dimensions, QVector<std::size_t> shape,
+        QVector<double> values);
 
     Document document;
     EvaluationContext context;
-    std::unordered_map<std::string, ArrayValue> arrays;
+    QHash<QString, ArrayValue> arrays;
     EntityId a = 0;
     EntityId b = 0;
     EntityId c = 0;
@@ -59,21 +60,21 @@ void TestArrayEvaluation::initTestCase()
     setArray("a", {"location", "n"}, {3, 2}, {1, 2, 3, 4, 5, 6});
     setArray("b", {"n", "location"}, {2, 3}, {10, 30, 50, 20, 40, 60});
     setArray("c", {"n"}, {2}, {7, 8});
-    context.readDimension = [this](const std::string &name) { return document.findDimension(name); };
-    context.readVariable = [this](const std::string &name) -> std::optional<Value> {
+    context.readDimension = [this](const QString &name) { return document.findDimension(name); };
+    context.readVariable = [this](const QString &name) -> std::optional<Value> {
         const auto found = arrays.find(name);
-        return found == arrays.end() ? std::nullopt : std::optional<Value>(found->second);
+        return found == arrays.end() ? std::nullopt : std::optional<Value>(found.value());
     };
     context.scope.dimensions = {"location", "n"};
 }
 
-void TestArrayEvaluation::setArray(const std::string &name, std::vector<std::string> dimensions,
-    std::vector<std::size_t> shape, std::vector<double> values)
+void TestArrayEvaluation::setArray(const QString &name, QVector<QString> dimensions,
+    QVector<std::size_t> shape, QVector<double> values)
 {
     arrays[name] = {std::move(dimensions), std::move(shape), std::move(values)};
 }
 
-EvaluationResult TestArrayEvaluation::evaluate(const std::string &equation)
+EvaluationResult TestArrayEvaluation::evaluate(const QString &equation)
 {
     document.setEquation(result, equation);
     const ModelAnalysis analysis = analyzeDocument(document);
@@ -85,16 +86,16 @@ EvaluationResult TestArrayEvaluation::evaluate(const std::string &equation)
 
 void expectScalar(const EvaluationResult &result, double expected)
 {
-    QVERIFY2(result.value.has_value(), result.error.c_str());
+    QVERIFY2(result.value.has_value(), qPrintable(result.error));
     const auto *scalar = std::get_if<double>(&*result.value);
     QVERIFY(scalar);
     QVERIFY(qAbs(*scalar - expected) < 1e-12);
 }
 
-void expectArray(const EvaluationResult &result, const std::vector<std::string> &dimensions,
-    const std::vector<std::size_t> &shape, const std::vector<double> &values)
+void expectArray(const EvaluationResult &result, const QVector<QString> &dimensions,
+    const QVector<std::size_t> &shape, const QVector<double> &values)
 {
-    QVERIFY2(result.value.has_value(), result.error.c_str());
+    QVERIFY2(result.value.has_value(), qPrintable(result.error));
     const auto *array = std::get_if<ArrayValue>(&*result.value);
     QVERIFY(array);
     QCOMPARE(array->dimensions, dimensions);
@@ -140,7 +141,7 @@ void TestArrayEvaluation::applyToAllScope()
     setArray("result", {"location", "n"}, {3, 2}, {1, 2, 3, 4, 5, 6});
     expectScalar(evaluate("SIZE(SELF)"), 6.0);
     context.scope.self.clear();
-    arrays.erase("result");
+    arrays.remove("result");
 }
 
 void TestArrayEvaluation::arrayFunctions()

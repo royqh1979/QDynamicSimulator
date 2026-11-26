@@ -17,7 +17,7 @@ namespace {
 QString viewObjectText(const qds::core::ViewElement &object)
 {
     if (const auto *comment = dynamic_cast<const qds::core::Comment *>(&object))
-        return QString::fromStdString(comment->content());
+        return (comment->content());
     return {};
 }
 
@@ -95,8 +95,8 @@ void DiagramItem::setEndpointTargetHighlighted(bool highlighted)
 void DiagramItem::setFontStyle(const qds::core::FontStyle &style)
 {
     QFont font;
-    if (!style.family.empty())
-        font.setFamily(QString::fromStdString(style.family));
+    if (!style.family.isEmpty())
+        font.setFamily((style.family));
     if (style.pointSize > 0)
         font.setPointSize(style.pointSize);
     if (m_labelFont == font)
@@ -133,7 +133,7 @@ void DiagramItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 VariableItem::VariableItem(const qds::core::ModelElement &variable, const QPointF &position, QGraphicsItem *parent)
     : DiagramItem(parent)
     , m_id(variable.id())
-    , m_name(QString::fromStdString(variable.displayName()))
+    , m_name((variable.displayName()))
     , m_kind(variable.kind())
 {
     setFlags(ItemIsMovable | ItemIsSelectable | ItemSendsGeometryChanges);
@@ -215,7 +215,7 @@ QPointF VariableItem::boundaryPointToward(const QPointF &target) const
 
 void VariableItem::refresh(const qds::core::ModelElement &variable, const QPointF &position)
 {
-    m_name = QString::fromStdString(variable.displayName());
+    m_name = (variable.displayName());
     m_kind = variable.kind();
     if (pos() != position)
         setPos(position);
@@ -505,7 +505,7 @@ QVector<QPointF> RoutedItem::points() const
         return QLineF(left, right).length() < 1e-9;
     };
     QVector<QPointF> controls;
-    for (const qds::core::RoutePoint &point : m_previewEndpoint == 0 ? m_route.controlPoints : std::vector<qds::core::RoutePoint> {}) {
+    for (const qds::core::RoutePoint &point : m_previewEndpoint == 0 ? m_route.controlPoints : QVector<qds::core::RoutePoint> {}) {
         const QPointF candidate = scenePoint(point);
         if ((m_from && samePoint(candidate, m_from->center())) || (m_to && samePoint(candidate, m_to->center())))
             continue;
@@ -591,7 +591,7 @@ FlowItem::FlowItem(
     QGraphicsItem *parent)
     : RoutedItem(from, to, route, parent)
     , m_id(flow.id())
-    , m_name(QString::fromStdString(flow.displayName()))
+    , m_name((flow.displayName()))
 {
     m_fallbackPosition = fallbackPosition;
 }
@@ -681,7 +681,7 @@ void FlowItem::refresh(
     const QPointF &fallbackPosition)
 {
     prepareGeometryChange();
-    m_name = QString::fromStdString(flow.displayName());
+    m_name = (flow.displayName());
     m_from = from;
     m_to = to;
     m_fallbackPosition = fallbackPosition;

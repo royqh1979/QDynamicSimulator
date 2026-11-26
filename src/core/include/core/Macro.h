@@ -1,27 +1,27 @@
 #pragma once
 
 #include <cstddef>
-#include <string>
-#include <vector>
+#include <QString>
+#include <QVector>
 
 namespace qds::core {
 
 struct MacroParameter {
-    std::string displayName;
-    std::string nameKey;
-    std::string defaultEquation;
+    QString displayName;
+    QString nameKey;
+    QString defaultEquation;
 };
 
 struct MacroDefinition {
-    std::string displayName;
-    std::string nameKey;
-    std::vector<MacroParameter> parameters;
-    std::string equation;
+    QString displayName;
+    QString nameKey;
+    QVector<MacroParameter> parameters;
+    QString equation;
 
     std::size_t requiredArguments() const
     {
         std::size_t count = parameters.size();
-        while (count > 0 && !parameters[count - 1].defaultEquation.empty())
+        while (count > 0 && !parameters[count - 1].defaultEquation.isEmpty())
             --count;
         return count;
     }

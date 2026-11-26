@@ -9,7 +9,7 @@ ModelRange Model::elements() const
     return ModelRange(m_document.m_elements);
 }
 
-const ModelElement *Model::findByName(const std::string &name) const
+const ModelElement *Model::findByName(const QString &name) const
 {
     return m_document.findByName(name);
 }

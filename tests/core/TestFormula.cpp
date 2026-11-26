@@ -110,7 +110,7 @@ void TestFormula::callsAndConditionals()
     QVERIFY(sum);
     const auto *max = call(sum->left());
     QVERIFY(max && max->argumentCount() == 2);
-    QCOMPARE(max->nameKey(), std::string("max"));
+    QCOMPARE(max->nameKey(), QString("max"));
     const auto *abs = call(sum->right());
     QVERIFY(abs && abs->argumentCount() == 1);
     QVERIFY(dynamic_cast<const UnaryNode *>(abs->argument(0)));
@@ -125,16 +125,16 @@ void TestFormula::callsAndConditionals()
     const auto alternativeAnalysis = analyzeFormula("if_then_else(a,b,c)");
     const auto *alternative = call(alternativeAnalysis.root());
     QVERIFY(alternative && alternative->argumentCount() == 3);
-    QCOMPARE(alternative->nameKey(), std::string("if_then_else"));
+    QCOMPARE(alternative->nameKey(), QString("if_then_else"));
     const auto emptyCallAnalysis = analyzeFormula("F()");
     const auto *emptyCall = call(emptyCallAnalysis.root());
     QVERIFY(emptyCall && emptyCall->argumentCount() == 0);
     const auto namespacedAnalysis = analyzeFormula("isee.HISTORY(x)");
     const auto *namespaced = call(namespacedAnalysis.root());
     QVERIFY(namespaced);
-    QCOMPARE(namespaced->nameKey(), std::string("isee.history"));
+    QCOMPARE(namespaced->nameKey(), QString("isee.history"));
     const auto timeAnalysis = analyzeFormula("TIME");
-    QCOMPARE(reference(timeAnalysis.root())->nameKey(), std::string("time"));
+    QCOMPARE(reference(timeAnalysis.root())->nameKey(), QString("time"));
 }
 
 void TestFormula::identifiersCommentsAndSubscripts()
@@ -142,10 +142,10 @@ void TestFormula::identifiersCommentsAndSubscripts()
     const auto productAnalysis = analyzeFormula("\"流入 速率\" { comment } * \"库存\"");
     const auto *product = binary(productAnalysis, BinaryOperator::Multiply);
     QVERIFY(product);
-    QCOMPARE(reference(product->left())->nameKey(), std::string("流入_速率"));
-    QCOMPARE(reference(product->right())->nameKey(), std::string("库存"));
+    QCOMPARE(reference(product->left())->nameKey(), QString("流入_速率"));
+    QCOMPARE(reference(product->right())->nameKey(), QString("库存"));
     const auto escapedAnalysis = analyzeFormula("\"a\\\"b\"");
-    QCOMPARE(reference(escapedAnalysis.root())->nameKey(), std::string("a\"b"));
+    QCOMPARE(reference(escapedAnalysis.root())->nameKey(), QString("a\"b"));
 
     const auto transposeAnalysis = analyzeFormula("A[1,x+2]'");
     const auto *transpose = unary(transposeAnalysis, UnaryOperator::Transpose);
@@ -175,10 +175,10 @@ void TestFormula::spans()
     const auto analysis = analyzeFormula("a + \"库存\"");
     const auto *root = binary(analysis, BinaryOperator::Add);
     QVERIFY(root);
-    QCOMPARE(root->span(), (SourceSpan {0, 12}));
+    QCOMPARE(root->span(), (SourceSpan {0, 8}));
     const auto *name = reference(root->right());
     QVERIFY(name);
-    QCOMPARE(name->span(), (SourceSpan {4, 12}));
+    QCOMPARE(name->span(), (SourceSpan {4, 8}));
 
     const auto conditionalSpanAnalysis = analyzeFormula("IF a THEN b ELSE c");
     const auto *conditional = dynamic_cast<const ConditionalNode *>(conditionalSpanAnalysis.root());
