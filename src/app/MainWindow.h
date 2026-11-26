@@ -15,6 +15,10 @@ class DiagramView;
 class DocumentController;
 class PropertyPanel;
 
+namespace qds::io {
+struct Workspace;
+}
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -50,7 +54,8 @@ private:
     void refreshValidation();
     void updateRecentFiles();
     void updateCursorStatus();
-    void updateWorkspace();
+    qds::io::Workspace currentWorkspace() const;
+    void applyWorkspace(const qds::io::Workspace &workspace);
     void autoSave();
     QString recoveryFileName() const;
 

@@ -4,8 +4,6 @@
 #include <QVector>
 #include <QtTest>
 
-#include <limits>
-
 using namespace qds::core;
 
 class TestDocument : public QObject
@@ -26,7 +24,6 @@ private slots:
     void reconnectRoutes();
     void metadata();
     void applyFailureIsAtomic();
-    void workspaceValidation();
     void validation();
 };
 
@@ -373,32 +370,6 @@ void TestDocument::applyFailureIsAtomic()
     edit.equation = "1";
     QVERIFY(!document.apply(edit));
     QCOMPARE(*document.capture(stock), originalArray);
-}
-
-void TestDocument::workspaceValidation()
-{
-    Document document;
-    Workspace workspace;
-    workspace.hasViewport = true;
-    workspace.zoom = 1.5;
-    workspace.center = {10.0, 20.0};
-    workspace.hasScrollValues = true;
-    workspace.scrollX = 30;
-    workspace.scrollY = 40;
-    QVERIFY(document.setWorkspace(workspace));
-    QCOMPARE(document.workspace(), workspace);
-
-    const Workspace original = document.workspace();
-    for (double zoom : {0.0, -1.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
-        Workspace invalid = original;
-        invalid.zoom = zoom;
-        QVERIFY(!document.setWorkspace(invalid));
-        QCOMPARE(document.workspace(), original);
-    }
-    Workspace invalid = original;
-    invalid.center.x = std::numeric_limits<double>::infinity();
-    QVERIFY(!document.setWorkspace(invalid));
-    QCOMPARE(document.workspace(), original);
 }
 
 void TestDocument::validation()

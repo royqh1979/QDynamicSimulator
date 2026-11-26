@@ -218,8 +218,8 @@ CMake 使用 `qt5_create_translation` 更新 TS 并生成 QM，再通过 RCC 内
 
 ## QDS 工作区往返
 
-运行 `profile-editor 1000`，使用同上述静态 Release 环境。`workspace_roundtrip` 对包含缩放、中心点和滚动值的 Document 执行 100 次真实 QDS 保存/打开，校验完整 Workspace 相等。MainWindow 测试另外验证绝对缩放和滚动条值精确恢复，覆盖旧空 workspace 回退和 Document 移动语义。
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`workspace_roundtrip` 将独立的 `qds::io::Workspace` DTO 与 Document 一并执行 100 次真实 QDS 保存/打开，逐轮校验完整 Workspace 相等；DTO 不属于 Document。MainWindow 测试另外验证绝对缩放、中心点和滚动条值恢复，并覆盖无保存视口回退及恢复副本的视口应用。
 
 | 操作 | 数量 | 总耗时 ms | 每操作 μs |
 | --- | ---: | ---: | ---: |
-| workspace_roundtrip | 100 | 64.1535 | 641.535 |
+| workspace_roundtrip | 100 | 232.992 | 2329.92 |

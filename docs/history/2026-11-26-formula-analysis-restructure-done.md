@@ -2,7 +2,7 @@
 
 创建时间：2026-11-26 16:30:23 +0800
 
-状态：Formula 归属与 AnalysisReport 迁移已实现并通过全量验证，等待审核
+状态：已完成并合并；Formula 归属与 AnalysisReport 迁移通过全量验证
 
 ## 1. 决策
 

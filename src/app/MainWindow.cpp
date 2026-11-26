@@ -118,9 +118,10 @@ MainWindow::MainWindow(QWidget *parent)
 bool MainWindow::openFile(const QString &fileName)
 {
     qds::core::Document document;
+    qds::io::Workspace workspace;
     QString error;
     bool nativeFormat = false;
-    if (!qds::io::DocumentFile::open(fileName, document, &error, &nativeFormat)) {
+    if (!qds::io::DocumentFile::open(fileName, document, workspace, &error, &nativeFormat)) {
         QMessageBox::warning(this, tr("Open failed"), error);
         return false;
     }
@@ -132,18 +133,7 @@ bool MainWindow::openFile(const QString &fileName)
     updateRecentFiles();
     QFile::remove(recoveryFileName());
     m_propertyPanel->refresh();
-    const qds::core::Workspace &workspace = m_controller->document().workspace();
-    if (nativeFormat && workspace.hasViewport) {
-        m_view->setTransform(QTransform::fromScale(workspace.zoom, workspace.zoom));
-        if (workspace.hasScrollValues) {
-            m_view->horizontalScrollBar()->setValue(workspace.scrollX);
-            m_view->verticalScrollBar()->setValue(workspace.scrollY);
-        } else {
-            m_view->centerOn(QPointF(workspace.center.x, workspace.center.y));
-        }
-    } else if (!m_scene->items().isEmpty()) {
-        m_view->centerOn(m_scene->itemsBoundingRect().center());
-    }
+    applyWorkspace(workspace);
     updateCursorStatus();
     return true;
 }
@@ -483,9 +473,9 @@ void MainWindow::updateCursorStatus()
         .arg(qRound(m_view->transform().m11() * 100.0)));
 }
 
-void MainWindow::updateWorkspace()
+qds::io::Workspace MainWindow::currentWorkspace() const
 {
-    qds::core::Workspace workspace;
+    qds::io::Workspace workspace;
     workspace.hasViewport = true;
     workspace.zoom = m_view->transform().m11();
     const QPointF center = m_view->mapToScene(m_view->viewport()->rect().center());
@@ -493,7 +483,22 @@ void MainWindow::updateWorkspace()
     workspace.hasScrollValues = true;
     workspace.scrollX = m_view->horizontalScrollBar()->value();
     workspace.scrollY = m_view->verticalScrollBar()->value();
-    m_controller->setWorkspace(workspace);
+    return workspace;
+}
+
+void MainWindow::applyWorkspace(const qds::io::Workspace &workspace)
+{
+    if (workspace.hasViewport) {
+        m_view->setTransform(QTransform::fromScale(workspace.zoom, workspace.zoom));
+        if (workspace.hasScrollValues) {
+            m_view->horizontalScrollBar()->setValue(workspace.scrollX);
+            m_view->verticalScrollBar()->setValue(workspace.scrollY);
+        } else {
+            m_view->centerOn(QPointF(workspace.center.x, workspace.center.y));
+        }
+    } else if (!m_scene->items().isEmpty()) {
+        m_view->centerOn(m_scene->itemsBoundingRect().center());
+    }
 }
 
 void MainWindow::newFile()
@@ -602,9 +607,8 @@ void MainWindow::copyPng()
 
 bool MainWindow::saveFile(const QString &fileName)
 {
-    updateWorkspace();
     QString error;
-    if (!qds::io::DocumentFile::save(fileName, m_controller->document(), &error)) {
+    if (!qds::io::DocumentFile::save(fileName, m_controller->document(), currentWorkspace(), &error)) {
         QMessageBox::warning(this, tr("Save failed"), error);
         return false;
     }
@@ -713,9 +717,8 @@ void MainWindow::autoSave()
     const QString path = recoveryFileName();
     if (!QDir().mkpath(QFileInfo(path).absolutePath()))
         return;
-    updateWorkspace();
     QString error;
-    if (!qds::io::DocumentFile::save(path, m_controller->document(), &error))
+    if (!qds::io::DocumentFile::save(path, m_controller->document(), currentWorkspace(), &error))
         statusBar()->showMessage(tr("Auto-save failed: %1").arg(error), 5000);
 }
 
@@ -729,12 +732,14 @@ void MainWindow::offerRecovery()
     if (choice != QMessageBox::Yes)
         return;
     qds::core::Document document;
+    qds::io::Workspace workspace;
     QString error;
-    if (!qds::io::DocumentFile::open(path, document, &error)) {
+    if (!qds::io::DocumentFile::open(path, document, workspace, &error)) {
         QMessageBox::warning(this, tr("Restore failed"), error);
         return;
     }
     m_controller->replaceDocument(std::move(document));
+    applyWorkspace(workspace);
     setCurrentFile(QString());
     setDirty(true);
 }

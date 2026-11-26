@@ -205,7 +205,8 @@ int main(int argc, char **argv)
 
     Document moveUndoDocument;
     QString moveUndoError;
-    if (!qds::io::DocumentFile::open(QStringLiteral(QDS_MOVE_UNDO_QDS_PATH), moveUndoDocument, &moveUndoError))
+    qds::io::Workspace moveUndoWorkspace;
+    if (!qds::io::DocumentFile::open(QStringLiteral(QDS_MOVE_UNDO_QDS_PATH), moveUndoDocument, moveUndoWorkspace, &moveUndoError))
         return 37;
     MainWindow moveUndoWindow;
     const QList<QDockWidget *> moveUndoDocks = moveUndoWindow.findChildren<QDockWidget *>();
@@ -648,7 +649,7 @@ int main(int argc, char **argv)
     Document workspaceDocument;
     const EntityId workspaceStock = workspaceDocument.createVariable(ElementKind::Stock);
     Q_UNUSED(workspaceStock)
-    workspaceDocument.setWorkspace({true, 0.66, {123.5, 456.25}});
+    const qds::io::Workspace workspace {true, 0.66, {123.5, 456.25}};
     QTemporaryDir workspaceDirectory;
     if (!workspaceDirectory.isValid())
         return 40;
@@ -658,11 +659,12 @@ int main(int argc, char **argv)
     timer.restart();
     int workspaceCount = 0;
     for (int index = 0; index < workspaceIterations; ++index) {
-        if (!qds::io::DocumentFile::save(workspacePath, workspaceDocument, &workspaceError))
+        if (!qds::io::DocumentFile::save(workspacePath, workspaceDocument, workspace, &workspaceError))
             return 41;
         Document loaded;
-        if (!qds::io::DocumentFile::open(workspacePath, loaded, &workspaceError)
-            || loaded.workspace() != workspaceDocument.workspace())
+        qds::io::Workspace loadedWorkspace;
+        if (!qds::io::DocumentFile::open(workspacePath, loaded, loadedWorkspace, &workspaceError)
+            || loadedWorkspace != workspace)
             return 42;
         ++workspaceCount;
     }
@@ -781,13 +783,14 @@ int main(int argc, char **argv)
     QString error;
     controller.setFontStyle(ids.front(), QFont(QStringLiteral("Arial"), 18));
     timer.restart();
-    if (!qds::io::DocumentFile::save(path, controller.document(), &error))
+    if (!qds::io::DocumentFile::save(path, controller.document(), qds::io::Workspace {}, &error))
         return 4;
     const qint64 saveNs = timer.nsecsElapsed();
 
     Document loaded;
     timer.restart();
-    if (!qds::io::DocumentFile::open(path, loaded, &error))
+    qds::io::Workspace loadedWorkspace;
+    if (!qds::io::DocumentFile::open(path, loaded, loadedWorkspace, &error))
         return 5;
     const qint64 loadNs = timer.nsecsElapsed();
     const ModelElement *loadedFontStock = loaded.findByName("Stock1");

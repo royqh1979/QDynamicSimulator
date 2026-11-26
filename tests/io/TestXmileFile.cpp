@@ -7,6 +7,7 @@
 #include <QtTest>
 #include <zlib.h>
 
+#include <limits>
 #include <unordered_set>
 
 using namespace qds::core;
@@ -109,6 +110,7 @@ private slots:
     void xmileExport();
     void xmileRejectsZip();
     void missingViewsAreCompleted();
+    void workspaceValidation();
     void invalidInput();
     void duplicateNames();
     void missingFile();
@@ -154,10 +156,10 @@ void TestXmileFile::nativeRoundTrip()
     route.mode = RouteMode::Bezier;
     route.controlPoints = {{0.25, 100.0}, {0.75, 120.0}};
     document.setRoute(flow, route);
-    document.setWorkspace({true, 0.66, {123.5, 456.25}});
+    const qds::io::Workspace workspace {true, 0.66, {123.5, 456.25}};
 
     QString error;
-    QVERIFY2(qds::io::DocumentFile::save(path, document, &error), qPrintable(error));
+    QVERIFY2(qds::io::DocumentFile::save(path, document, workspace, &error), qPrintable(error));
     QFile file(path);
     QVERIFY(file.open(QIODevice::ReadOnly));
     QCOMPARE(file.read(2), QByteArray("PK"));
@@ -181,10 +183,11 @@ void TestXmileFile::nativeRoundTrip()
     QVERIFY(xml.contains("font-size=\"14\""));
 
     Document loaded;
+    qds::io::Workspace loadedWorkspace;
     bool nativeFormat = false;
-    QVERIFY2(qds::io::DocumentFile::open(path, loaded, &error, &nativeFormat), qPrintable(error));
+    QVERIFY2(qds::io::DocumentFile::open(path, loaded, loadedWorkspace, &error, &nativeFormat), qPrintable(error));
     QVERIFY(nativeFormat);
-    QCOMPARE(loaded.workspace(), (Workspace {true, 0.66, {123.5, 456.25}}));
+    QCOMPARE(loadedWorkspace, workspace);
     std::size_t modelCount = 0;
     std::size_t connectorCount = 0;
     for (const ModelElement &element : loaded.model().elements()) {
@@ -282,10 +285,12 @@ void TestXmileFile::plainXmlOpen()
                "</variables></model></xmile>");
     file.close();
     Document document;
+    qds::io::Workspace workspace {true, 2.0, {10.0, 20.0}};
     QString error;
     bool nativeFormat = true;
-    QVERIFY2(qds::io::DocumentFile::open(path, document, &error, &nativeFormat), qPrintable(error));
+    QVERIFY2(qds::io::DocumentFile::open(path, document, workspace, &error, &nativeFormat), qPrintable(error));
     QVERIFY(!nativeFormat);
+    QCOMPARE(workspace, qds::io::Workspace {});
     QVERIFY(document.findByName("S"));
     QCOMPARE(document.findByName("A")->kind(), ElementKind::Auxiliary);
     const auto *flow = dynamic_cast<const Flow *>(document.findByName("F"));
@@ -360,7 +365,7 @@ void TestXmileFile::xmileRejectsZip()
     Document document;
     document.createVariable(ElementKind::Stock);
     QString error;
-    QVERIFY(qds::io::DocumentFile::save(path, document, &error));
+    QVERIFY(qds::io::DocumentFile::save(path, document, qds::io::Workspace {}, &error));
     Document imported;
     QVERIFY(!qds::io::XmileFile::importFile(path, imported, &error));
     QVERIFY(error.contains("uncompressed XML"));
@@ -385,8 +390,9 @@ void TestXmileFile::missingViewsAreCompleted()
                "</view></views></xmile>");
     file.close();
     Document document;
+    qds::io::Workspace workspace;
     QString error;
-    QVERIFY2(qds::io::DocumentFile::open(path, document, &error), qPrintable(error));
+    QVERIFY2(qds::io::DocumentFile::open(path, document, workspace, &error), qPrintable(error));
     const auto *flow = dynamic_cast<const Flow *>(document.findByName("F"));
     QVERIFY(flow);
     QCOMPARE(document.find(flow->endpoints().from)->kind(), ElementKind::Stock);
@@ -409,6 +415,38 @@ void TestXmileFile::missingViewsAreCompleted()
     }
 }
 
+void TestXmileFile::workspaceValidation()
+{
+    QTemporaryDir directory;
+    const QString path = directory.filePath(QStringLiteral("workspace.qds"));
+    Document document;
+    document.createVariable(ElementKind::Stock);
+    const qds::io::Workspace valid {true, 1.5, {10.0, 20.0}, true, 30, 40};
+    QString error;
+    QVERIFY2(qds::io::DocumentFile::save(path, document, valid, &error), qPrintable(error));
+    QFile file(path);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    const QByteArray originalContents = file.readAll();
+    file.close();
+
+    QVector<qds::io::Workspace> invalidValues;
+    for (double zoom : {0.0, -1.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
+        qds::io::Workspace invalid = valid;
+        invalid.zoom = zoom;
+        invalidValues.push_back(invalid);
+    }
+    qds::io::Workspace invalidCenter = valid;
+    invalidCenter.center.x = std::numeric_limits<double>::infinity();
+    invalidValues.push_back(invalidCenter);
+    for (const qds::io::Workspace &invalid : invalidValues) {
+        QVERIFY(!qds::io::DocumentFile::save(path, document, invalid, &error));
+        QVERIFY(!error.isEmpty());
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), originalContents);
+        file.close();
+    }
+}
+
 void TestXmileFile::invalidInput()
 {
     QTemporaryDir directory;
@@ -420,8 +458,27 @@ void TestXmileFile::invalidInput()
     Document document;
     document.createVariable(ElementKind::Stock);
     QString error;
-    QVERIFY(!qds::io::DocumentFile::open(path, document, &error));
+    qds::io::Workspace workspace {true, 2.0, {10.0, 20.0}};
+    const qds::io::Workspace originalWorkspace = workspace;
+    QVERIFY(!qds::io::DocumentFile::open(path, document, workspace, &error));
     QVERIFY(!error.isEmpty());
+    QCOMPARE(workspace, originalWorkspace);
+    QCOMPARE(document.elements().begin()->kind(), ElementKind::Stock);
+
+    const QString nativePath = directory.filePath(QStringLiteral("invalid.qds"));
+    QVERIFY(qds::io::DocumentFile::save(nativePath, document, qds::io::Workspace {}, &error));
+    file.setFileName(nativePath);
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    QByteArray contents = file.readAll();
+    file.close();
+    QVERIFY(contents.size() > 50);
+    contents[50] = contents.at(50) ^ 0x7f;
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    QCOMPARE(file.write(contents), contents.size());
+    file.close();
+    QVERIFY(!qds::io::DocumentFile::open(nativePath, document, workspace, &error));
+    QVERIFY(!error.isEmpty());
+    QCOMPARE(workspace, originalWorkspace);
     QCOMPARE(document.elements().begin()->kind(), ElementKind::Stock);
 }
 
@@ -439,16 +496,20 @@ void TestXmileFile::duplicateNames()
     Document document;
     document.createVariable(ElementKind::Stock);
     QString error;
-    QVERIFY(!qds::io::DocumentFile::open(path, document, &error));
+    qds::io::Workspace workspace {true, 2.0, {10.0, 20.0}};
+    const qds::io::Workspace originalWorkspace = workspace;
+    QVERIFY(!qds::io::DocumentFile::open(path, document, workspace, &error));
     QVERIFY(!error.isEmpty());
+    QCOMPARE(workspace, originalWorkspace);
     QVERIFY(document.elements().begin()->kind() == ElementKind::Stock);
 }
 
 void TestXmileFile::missingFile()
 {
     Document document;
+    qds::io::Workspace workspace;
     QString error;
-    QVERIFY(!qds::io::DocumentFile::open(QStringLiteral("R:/definitely-missing-qds-model.xmile"), document, &error));
+    QVERIFY(!qds::io::DocumentFile::open(QStringLiteral("R:/definitely-missing-qds-model.xmile"), document, workspace, &error));
     QVERIFY(!error.isEmpty());
 }
 
