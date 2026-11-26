@@ -6,6 +6,7 @@
 - `DocumentController` 与 `QUndoStack` 统一处理编辑命令，并通过 ChangeNotification 驱动 Scene 增量同步。
 - `qds-core`（别名 `QDS::Core`）：独立于 UI 的核心静态库，承载稳定 ID、变量、连接、图形布局和后续仿真能力；可以使用 QtCore，容器优先采用合适的 Qt 容器。
 - `qds-io`（别名 `QDS::IO`）：QtCore I/O 静态库，负责标准 XMILE XML 和 ZIP deflate 容器读写。
+- 结果图表使用官方 Qt Charts，仅应用层依赖；Core 与 I/O 不依赖图表模块。
 - 应用只能依赖核心库与 I/O 库的公开头文件，核心库不得依赖 Qt Widgets、画布对象或反向依赖应用。
 
 ## 后续模块划分

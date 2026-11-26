@@ -177,7 +177,7 @@ NamedRun 发布后不可变；覆盖同名结果也创建新 RunId 和新结果�
 - 空选择显示提示，不生成空图片覆盖剪贴板；
 - PNG 导出使用离屏渲染，不截取屏幕。
 
-Qt Charts、QCustomPlot 或自绘方案只能在同一原型场景 profile 后决定。原型至少覆盖 10 万样本、10 条序列、连续缩放和 PNG 输出；不得提前引入新依赖。
+已确定使用官方 Qt Charts，不再引入 QCustomPlot 或维护通用自绘图表框架。Qt Charts 只进入应用层，Core 不依赖它；TimeSeriesChartWidget 继续隔离图表实现。10 万样本、10 条序列、连续缩放和 PNG 输出仍作为回归 profile 场景，用于发现异常，不设置当前不需要的极限性能门槛。置信区间带、Causes Strip 等领域图形可在 Qt Charts 基础上组合或少量自绘。
 
 ### 4.2 数据表
 
@@ -245,7 +245,7 @@ Qt Charts、QCustomPlot 或自绘方案只能在同一原型场景 profile 后�
 1. **运行会话基础**：不可变 Document 副本、SimulationController、Worker 生命周期、取消和文档替换保护。
 2. **设置与运行入口**：SimulationSettingsDialog、文档级撤销、Run Name/Enter、Run/Cancel、状态栏和诊断定位。
 3. **结果 Dock**：Workbench Variable、命名 Datasets、加载状态、数据表及历史结果过期提示。
-4. **折线图原型**：统一 TimeSeriesChartWidget 接口，比较候选实现的性能后选择依赖并完成 Workbench/多 Run 叠加交互。
+4. **Qt Charts 折线图**：统一 TimeSeriesChartWidget 接口，完成 Workbench/多 Run 叠加交互，并用固定场景 profile 检查回归。
 5. **结果导出与完善**：CSV/PNG、Close All Output、键盘可访问性、翻译、大结果 profile。
 6. **后续独立设计**：Causes Strip、Runs Compare（含 Lookup）、数组结果、参数实验与敏感性分析界面。
 
