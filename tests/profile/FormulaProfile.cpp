@@ -25,11 +25,11 @@ int main(int argc, char **argv)
             + "+ABS(c" + std::to_string(index) + ")-IF d" + std::to_string(index)
             + " THEN e" + std::to_string(index) + " ELSE f" + std::to_string(index);
         FormulaAnalysis analysis = analyzeFormula(equation);
-        if (!analysis.ast || !analysis.issues.empty()) {
+        if (!analysis.root() || !analysis.issues().empty()) {
             QTextStream(stderr) << "Formula analysis failed at index " << index << "\n";
             return 1;
         }
-        totalNodes += formulaNodeCount(analysis.ast.get());
+        totalNodes += formulaNodeCount(analysis.root());
     }
     const qint64 elapsedNs = timer.nsecsElapsed();
     if (totalNodes == 0)
@@ -72,23 +72,23 @@ int main(int argc, char **argv)
     if (referenceCount != static_cast<std::size_t>(count) * 6 || dependencyCount != referenceCount)
         return 6;
 
-    std::unordered_map<EntityId, double> values;
+    std::unordered_map<std::string, double> values;
     for (const ModelElement &entry : document.model().elements())
-        values[entry.id()] = static_cast<double>(entry.id() % 17) - 8.0;
+        values[entry.nameKey()] = static_cast<double>(entry.id() % 17) - 8.0;
     EvaluationContext context;
     context.time = 4.5;
     context.dt = 0.25;
-    context.readVariable = [&values](EntityId id) -> std::optional<Value> {
-        const auto found = values.find(id);
+    context.readVariable = [&values](const std::string &name) -> std::optional<Value> {
+        const auto found = values.find(name);
         return found == values.end() ? std::nullopt : std::optional<Value>(found->second);
     };
     timer.restart();
     double evaluationChecksum = 0.0;
     int evaluationCount = 0;
     for (const ElementAnalysis &entry : modelAnalysis.elements) {
-        if (!entry.formula.ast)
+        if (!entry.formula.root())
             continue;
-        const EvaluationResult evaluated = evaluateFormula(entry.formula.ast.get(), context);
+        const EvaluationResult evaluated = evaluateFormula(entry.formula.root(), context);
         if (!evaluated.value) {
             QTextStream(stderr) << "Formula evaluation failed: " << QString::fromStdString(evaluated.error) << "\n";
             return 7;
@@ -137,7 +137,7 @@ int main(int argc, char **argv)
     Document evaluatedArrays;
     evaluatedArrays.defineDimension("Location", {"Boston", "Chicago"});
     evaluatedArrays.defineDimension("N", 3);
-    std::unordered_map<EntityId, Value> arrayValues;
+    std::unordered_map<std::string, Value> arrayValues;
     std::vector<EntityId> evaluatedArrayIds;
     for (int index = 0; index < count; ++index) {
         const EntityId input = evaluatedArrays.createVariable(ElementKind::Auxiliary);
@@ -148,20 +148,20 @@ int main(int argc, char **argv)
             || !evaluatedArrays.setDimensions(array, {"Location", "N"}))
             return 12;
         evaluatedArrays.setEquation(array, inputName + " + " + arrayName + "[Location, N]");
-        arrayValues[input] = 1.0;
-        arrayValues[array] = ArrayValue {{"location", "n"}, {2, 3}, {1, 2, 3, 4, 5, 6}};
+        arrayValues["input" + std::to_string(index)] = 1.0;
+        arrayValues["array" + std::to_string(index)] = ArrayValue {{"location", "n"}, {2, 3}, {1, 2, 3, 4, 5, 6}};
         evaluatedArrayIds.push_back(array);
     }
     const ModelAnalysis evaluatedArrayAnalysis = analyzeDocument(evaluatedArrays);
     std::unordered_map<EntityId, const FormulaNode *> arrayFormulas;
     for (const ElementAnalysis &entry : evaluatedArrayAnalysis.elements)
-        arrayFormulas[entry.id] = entry.formula.ast.get();
+        arrayFormulas[entry.id] = entry.formula.root();
     EvaluationContext arrayContext;
     arrayContext.readDimension = [&evaluatedArrays](const std::string &name) {
         return evaluatedArrays.findDimension(name);
     };
-    arrayContext.readVariable = [&arrayValues](EntityId id) -> std::optional<Value> {
-        const auto found = arrayValues.find(id);
+    arrayContext.readVariable = [&arrayValues](const std::string &name) -> std::optional<Value> {
+        const auto found = arrayValues.find(name);
         return found == arrayValues.end() ? std::nullopt : std::optional<Value>(found->second);
     };
     arrayContext.scope.dimensions = {"location", "n"};
@@ -190,7 +190,7 @@ int main(int argc, char **argv)
     double literalChecksum = 0.0;
     std::size_t literalValueCount = 0;
     for (const FormulaAnalysis &literal : literals) {
-        const EvaluationResult evaluated = evaluateFormula(literal.ast.get(), arrayContext);
+        const EvaluationResult evaluated = evaluateFormula(literal.root(), arrayContext);
         const ArrayValue *value = evaluated.value ? std::get_if<ArrayValue>(&*evaluated.value) : nullptr;
         if (!value) {
             QTextStream(stderr) << "Array literal evaluation failed: " << QString::fromStdString(evaluated.error) << "\n";
@@ -212,7 +212,7 @@ int main(int argc, char **argv)
     macro.equation = "x * factor + Global";
     if (!macros.defineMacro(std::move(macro)))
         return 17;
-    std::unordered_map<EntityId, Value> macroValues {{macroGlobal, 10.0}};
+    std::unordered_map<std::string, Value> macroValues {{"global", 10.0}};
     std::vector<EntityId> macroOutputs;
     for (int index = 0; index < count; ++index) {
         const EntityId input = macros.createVariable(ElementKind::Auxiliary);
@@ -221,7 +221,7 @@ int main(int argc, char **argv)
         macros.rename(input, inputName);
         macros.rename(output, "Output" + std::to_string(index));
         macros.setEquation(output, "Scale(" + inputName + ")");
-        macroValues[input] = 1.0;
+        macroValues["input" + std::to_string(index)] = 1.0;
         macroOutputs.push_back(output);
     }
     timer.restart();
@@ -235,10 +235,10 @@ int main(int argc, char **argv)
     }
     std::unordered_map<EntityId, const FormulaNode *> macroFormulas;
     for (const ElementAnalysis &entry : macroAnalysis.elements)
-        macroFormulas[entry.id] = entry.formula.ast.get();
+        macroFormulas[entry.id] = entry.formula.root();
     EvaluationContext macroContext;
-    macroContext.readVariable = [&macroValues](EntityId id) -> std::optional<Value> {
-        const auto found = macroValues.find(id);
+    macroContext.readVariable = [&macroValues](const std::string &name) -> std::optional<Value> {
+        const auto found = macroValues.find(name);
         return found == macroValues.end() ? std::nullopt : std::optional<Value>(found->second);
     };
     timer.restart();

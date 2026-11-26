@@ -224,29 +224,27 @@ public:
 
     FormulaAnalysis parse()
     {
-        FormulaAnalysis result;
         if (m_current.type == TokenType::End)
-            return result;
-        result.ast = expression(0);
-        if (m_current.type == TokenType::Comma && result.ast) {
-            const std::size_t begin = result.ast->span.begin;
-            std::size_t end = result.ast->span.end;
+            return {};
+        auto ast = expression(0);
+        if (m_current.type == TokenType::Comma && ast) {
+            const std::size_t begin = ast->span().begin;
+            std::size_t end = ast->span().end;
             std::vector<std::unique_ptr<FormulaNode>> values;
-            values.push_back(std::move(result.ast));
+            values.push_back(std::move(ast));
             while (m_current.type == TokenType::Comma) {
                 consume();
                 auto value = expression(0);
                 if (!value)
                     break;
-                end = value->span.end;
+                end = value->span().end;
                 values.push_back(std::move(value));
             }
-            result.ast = std::make_unique<ArrayLiteralNode>(std::move(values), SourceSpan {begin, end});
+            ast = std::make_unique<ArrayLiteralNode>(std::move(values), SourceSpan {begin, end});
         }
         if (m_current.type != TokenType::End)
             fail("Unexpected token");
-        result.issues = std::move(m_issues);
-        return result;
+        return FormulaAnalysis(std::move(ast), std::move(m_issues));
     }
 
 private:
@@ -332,7 +330,7 @@ private:
             auto right = expression(type == TokenType::Caret ? currentPrecedence : currentPrecedence + 1);
             if (!right)
                 return left;
-            const SourceSpan span {left->span.begin, right->span.end};
+            const SourceSpan span {left->span().begin, right->span().end};
             left = std::make_unique<BinaryNode>(binaryOperator(type), std::move(left), std::move(right), span);
         }
         return left;
@@ -349,7 +347,7 @@ private:
             return nullptr;
         const UnaryOperator op = type == TokenType::Plus ? UnaryOperator::Positive
             : type == TokenType::Minus ? UnaryOperator::Negative : UnaryOperator::Not;
-        return std::make_unique<UnaryNode>(op, std::move(operand), SourceSpan {operation.span.begin, operand->span.end});
+        return std::make_unique<UnaryNode>(op, std::move(operand), SourceSpan {operation.span.begin, operand->span().end});
     }
 
     std::unique_ptr<FormulaNode> postfix()
@@ -361,7 +359,7 @@ private:
             if (m_current.type == TokenType::Apostrophe) {
                 const Token apostrophe = consume();
                 target = std::make_unique<UnaryNode>(UnaryOperator::Transpose, std::move(target),
-                    SourceSpan {target->span.begin, apostrophe.span.end});
+                    SourceSpan {target->span().begin, apostrophe.span.end});
                 continue;
             }
             consume();
@@ -382,7 +380,7 @@ private:
             if (!expect(TokenType::RightBracket, "Expected closing subscript bracket"))
                 return target;
             target = std::make_unique<SubscriptNode>(std::move(target), std::move(indices),
-                SourceSpan {target->span.begin, m_current.span.begin});
+                SourceSpan {target->span().begin, m_current.span.begin});
         }
         return target;
     }
@@ -417,7 +415,7 @@ private:
         auto end = expression(0);
         if (!end)
             return begin;
-        const SourceSpan span {begin->span.begin, end->span.end};
+        const SourceSpan span {begin->span().begin, end->span().end};
         return std::make_unique<RangeNode>(std::move(begin), std::move(end), span);
     }
 
@@ -494,7 +492,7 @@ private:
         if (!elseExpression)
             return thenExpression;
         return std::make_unique<ConditionalNode>(std::move(condition), std::move(thenExpression),
-            std::move(elseExpression), SourceSpan {ifToken.span.begin, elseExpression->span.end});
+            std::move(elseExpression), SourceSpan {ifToken.span.begin, elseExpression->span().end});
     }
 
     Lexer m_lexer;
@@ -516,25 +514,25 @@ std::size_t formulaNodeCount(const FormulaNode *node)
         return 0;
     std::size_t count = 1;
     if (const auto *unary = dynamic_cast<const UnaryNode *>(node)) {
-        count += formulaNodeCount(unary->operand.get());
+        count += formulaNodeCount(unary->operand());
     } else if (const auto *binary = dynamic_cast<const BinaryNode *>(node)) {
-        count += formulaNodeCount(binary->left.get()) + formulaNodeCount(binary->right.get());
+        count += formulaNodeCount(binary->left()) + formulaNodeCount(binary->right());
     } else if (const auto *call = dynamic_cast<const CallNode *>(node)) {
-        for (const auto &argument : call->arguments)
-            count += formulaNodeCount(argument.get());
+        for (std::size_t index = 0; index < call->argumentCount(); ++index)
+            count += formulaNodeCount(call->argument(index));
     } else if (const auto *conditional = dynamic_cast<const ConditionalNode *>(node)) {
-        count += formulaNodeCount(conditional->condition.get())
-            + formulaNodeCount(conditional->thenExpression.get())
-            + formulaNodeCount(conditional->elseExpression.get());
+        count += formulaNodeCount(conditional->condition())
+            + formulaNodeCount(conditional->thenExpression())
+            + formulaNodeCount(conditional->elseExpression());
     } else if (const auto *subscript = dynamic_cast<const SubscriptNode *>(node)) {
-        count += formulaNodeCount(subscript->target.get());
-        for (const auto &index : subscript->indices)
-            count += formulaNodeCount(index.get());
+        count += formulaNodeCount(subscript->target());
+        for (std::size_t position = 0; position < subscript->indexCount(); ++position)
+            count += formulaNodeCount(subscript->index(position));
     } else if (const auto *range = dynamic_cast<const RangeNode *>(node)) {
-        count += formulaNodeCount(range->begin.get()) + formulaNodeCount(range->end.get());
+        count += formulaNodeCount(range->begin()) + formulaNodeCount(range->end());
     } else if (const auto *literal = dynamic_cast<const ArrayLiteralNode *>(node)) {
-        for (const auto &value : literal->values)
-            count += formulaNodeCount(value.get());
+        for (std::size_t position = 0; position < literal->valueCount(); ++position)
+            count += formulaNodeCount(literal->value(position));
     }
     return count;
 }

@@ -96,12 +96,12 @@ void TestArrayFiles::realArrayImports()
     QCOMPARE(array->dimensions(), std::vector<std::string> {"dim1"});
     QCOMPARE(array->equation(), std::string("1, 2, 3"));
     const FormulaAnalysis literal = analyzeFormula(array->equation());
-    QVERIFY(literal.issues.empty());
-    QVERIFY(dynamic_cast<const ArrayLiteralNode *>(literal.ast.get()));
+    QVERIFY(literal.issues().empty());
+    QVERIFY(dynamic_cast<const ArrayLiteralNode *>(literal.root()));
     EvaluationContext context;
     context.readDimension = [&apply](const std::string &name) { return apply.findDimension(name); };
     context.scope.dimensions = {"dim1"};
-    const EvaluationResult evaluated = evaluateFormula(literal.ast.get(), context);
+    const EvaluationResult evaluated = evaluateFormula(literal.root(), context);
     const auto *values = evaluated.value ? std::get_if<ArrayValue>(&*evaluated.value) : nullptr;
     QVERIFY(values);
     QCOMPARE(values->values, (std::vector<double> {1, 2, 3}));

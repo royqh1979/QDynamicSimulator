@@ -114,9 +114,9 @@ private slots:
                     return;
                 ++corpusFormulaCount;
                 FormulaAnalysis analysis = analyzeFormula(equation);
-                if (analysis.ast)
-                    QVERIFY(formulaNodeCount(analysis.ast.get()) > 0);
-                for (const FormulaIssue &issue : analysis.issues) {
+                if (analysis.root())
+                    QVERIFY(formulaNodeCount(analysis.root()) > 0);
+                for (const FormulaIssue &issue : analysis.issues()) {
                     QVERIFY(issue.span.begin <= issue.span.end);
                     QVERIFY(issue.span.end <= equation.size());
                 }

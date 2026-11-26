@@ -75,35 +75,35 @@ void TestArrays::dimensionDefinitions()
 void TestArrays::arraySyntax()
 {
     const FormulaAnalysis analysis = analyzeFormula("A[Dim, *, 1:3, @2]");
-    QVERIFY2(analysis.issues.empty(), "Array subscript syntax must parse");
-    const auto *subscript = dynamic_cast<const SubscriptNode *>(analysis.ast.get());
+    QVERIFY2(analysis.issues().empty(), "Array subscript syntax must parse");
+    const auto *subscript = dynamic_cast<const SubscriptNode *>(analysis.root());
     QVERIFY(subscript);
-    QCOMPARE(subscript->indices.size(), std::size_t(4));
-    QVERIFY(dynamic_cast<const ReferenceNode *>(subscript->indices[0].get()));
-    QVERIFY(dynamic_cast<const WildcardNode *>(subscript->indices[1].get()));
-    const auto *range = dynamic_cast<const RangeNode *>(subscript->indices[2].get());
+    QCOMPARE(subscript->indexCount(), std::size_t(4));
+    QVERIFY(dynamic_cast<const ReferenceNode *>(subscript->index(0)));
+    QVERIFY(dynamic_cast<const WildcardNode *>(subscript->index(1)));
+    const auto *range = dynamic_cast<const RangeNode *>(subscript->index(2));
     QVERIFY(range);
-    QVERIFY(dynamic_cast<const NumberNode *>(range->begin.get()));
-    QVERIFY(dynamic_cast<const NumberNode *>(range->end.get()));
-    const auto *position = dynamic_cast<const DimensionPositionNode *>(subscript->indices[3].get());
+    QVERIFY(dynamic_cast<const NumberNode *>(range->begin()));
+    QVERIFY(dynamic_cast<const NumberNode *>(range->end()));
+    const auto *position = dynamic_cast<const DimensionPositionNode *>(subscript->index(3));
     QVERIFY(position);
-    QCOMPARE(position->position, std::size_t(2));
-    QCOMPARE(formulaNodeCount(analysis.ast.get()), std::size_t(8));
+    QCOMPARE(position->position(), std::size_t(2));
+    QCOMPARE(formulaNodeCount(analysis.root()), std::size_t(8));
 
     const FormulaAnalysis literal = analyzeFormula("1, 2 + 3, 4");
-    QVERIFY2(literal.issues.empty(), "Array literal syntax must parse");
-    const auto *literalNode = dynamic_cast<const ArrayLiteralNode *>(literal.ast.get());
+    QVERIFY2(literal.issues().empty(), "Array literal syntax must parse");
+    const auto *literalNode = dynamic_cast<const ArrayLiteralNode *>(literal.root());
     QVERIFY(literalNode);
-    QCOMPARE(literalNode->values.size(), std::size_t(3));
-    QCOMPARE(literalNode->span, (SourceSpan {0, 11}));
-    QCOMPARE(formulaNodeCount(literal.ast.get()), std::size_t(6));
+    QCOMPARE(literalNode->valueCount(), std::size_t(3));
+    QCOMPARE(literalNode->span(), (SourceSpan {0, 11}));
+    QCOMPARE(formulaNodeCount(literal.root()), std::size_t(6));
 
     const FormulaAnalysis qualified = analyzeFormula("Location.Boston");
-    QCOMPARE(dynamic_cast<const ReferenceNode *>(qualified.ast.get())->nameKey, std::string("location.boston"));
-    QVERIFY(!analyzeFormula("A[@0]").issues.empty());
-    QVERIFY(!analyzeFormula("A[@1.5]").issues.empty());
-    QVERIFY(!analyzeFormula("A[1:]").issues.empty());
-    QVERIFY(!analyzeFormula("*").issues.empty());
+    QCOMPARE(dynamic_cast<const ReferenceNode *>(qualified.root())->nameKey(), std::string("location.boston"));
+    QVERIFY(!analyzeFormula("A[@0]").issues().empty());
+    QVERIFY(!analyzeFormula("A[@1.5]").issues().empty());
+    QVERIFY(!analyzeFormula("A[1:]").issues().empty());
+    QVERIFY(!analyzeFormula("*").issues().empty());
 }
 
 void TestArrays::arrayAnalysis()

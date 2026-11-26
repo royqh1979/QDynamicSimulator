@@ -2,7 +2,7 @@
 
 创建时间：2026-11-26 11:30:29 +0800
 
-状态：Document 封装阶段已完成 Release/Debug 全量验证，等待提交审核；下一阶段是不可变纯语法 AST
+状态：不可变纯语法 AST 阶段已实现并通过 profile 与 Release/Debug 全量回归，等待审核
 
 ## 1. 背景与已经确定的约束
 
@@ -134,6 +134,8 @@
 - 2026-11-26 13:22:05 +0800：记录 find() 返回指针的悬空生命周期风险，以及指针、unique_ptr 引用、稳定句柄/ID、受控访问回调等待比较方案；当前 Document 重构完成后再讨论。
 - 2026-11-26 13:45:08 +0800：记录 Document 封装实现、失败原子性测试和 Core profile；Debug 全量通过，Release 的剪贴板场景因系统资源占用待重跑。
 - 2026-11-26 14:05:17 +0800：系统剪贴板恢复后，Release 受阻场景及完整 CTest 均通过；Document 封装阶段完成 Release/Debug 全部门禁。
+- 2026-11-26 14:09:58 +0800：完成不可变纯语法 AST 实施设计，明确完整节点不变量、部分错误 AST、只读子节点访问、nameKey 求值和 SELF 名称化；进入实现。
+- 2026-11-26 15:10:53 +0800：完成不可变 AST、FormulaAnalysis 和按名称求值迁移；新增上下文复用回归，profile-formula 及 Release/Debug 全量回归通过，等待审核。
 
 ## 9. Core 封装审计（2026-11-26）
 
@@ -278,3 +280,49 @@ Document 继续负责：
 - `profile-core.exe` 本机记录：create 0.40636 μs/op、connect 43.6458 μs/op、lookup 0.003981 μs/op、name_lookup 0.089897 μs/op、move 57.5518 μs/op、validate 0.31431 μs/op、remove 53.1704 μs/op。仅作同场景记录，不据此声称优化。
 
 系统剪贴板恢复后，pngExportAndClipboard 单独重跑通过，Release 完整 CTest 也达到 12/12；本阶段 Release/Debug 门禁均已通过。
+
+## 11. 不可变纯语法 AST 实施设计（2026-11-26）
+
+### 11.1 范围
+
+本阶段处理 FormulaNode 全部派生节点、FormulaAnalysis，以及因删除 ReferenceNode.entityId 而必须迁移的分析/求值名称查询。保留当前语法、数组语义和既有宏展开行为；统一宏运行期调用属于后续独立阶段，不在本次混入。
+
+### 11.2 AST 不可变接口
+
+- FormulaNode 使用私有 kind/span，只提供 const getter。
+- 各派生节点的名称、字面量、运算符和位置均为私有状态。
+- 单一子节点通过返回 `const FormulaNode *` 的 getter 访问。
+- CallNode、SubscriptNode、ArrayLiteralNode 不公开 `vector<unique_ptr<FormulaNode>>`。只提供元素数量及按位置返回 `const FormulaNode *` 的访问，避免 const unique_ptr::get() 仍泄漏可变裸指针。
+- 节点构造完成后没有字段写入、可变子节点或可变容器访问。公式变化时创建并替换整棵 AST。
+- FormulaAnalysis 私有持有 AST 和 issues，只提供 root()、issues() 等只读访问；作为值可以整体移动/替换，但不提供修改现有节点的通道。
+
+节点 const 指针只在所属 FormulaAnalysis 存活且未被整体替换时有效。本阶段不改变这一所有权关系，也不使用 shared_ptr 延长节点寿命。
+
+### 11.3 错误与构造不变量
+
+当前 Parser 只在必需子节点均非空时构造 Unary/Binary/Conditional/Range 等节点，也不会把空参数或空下标放入集合。因此所有已创建节点都必须结构完整，不引入可空子节点状态。
+
+语法失败时允许返回带 issues 的部分 AST；空公式允许 root()==nullptr 且无 issues。部分 AST 自身仍满足节点级不变量，调用方不能把它误认为语义完整公式。ArrayLiteral 只在至少已有首项时构造。
+
+### 11.4 按需 Resolve 与求值
+
+- 删除 ReferenceNode.entityId 及 Formula.h 对 Model.h 的依赖。
+- 依赖分析通过 Document 的 nameKey 索引直接生成 EntityId 引用，不回写 AST。
+- VariableReader 改为接收 nameKey，并由调用方使用当前 Document/值索引查询。
+- EvaluationScope 的 self 改为当前元素的 nameKey，SELF 与普通变量共用同一读取入口，避免为了 SELF 保留按 ID 的平行读取通道。
+- 内置函数继续使用现有静态哈希注册表；宏仍按 Document 定义查询。任何 EntityId、函数或宏目标都不写入 AST。
+- 本阶段保留现有 std 容器迁移范围，不单独进行全量 Qt 容器替换；后续 Analysis 主存储设计优先评估 Qt 容器。
+
+### 11.5 验证与 profile
+
+- 覆盖所有节点 getter、组合节点计数、空公式、语法错误和部分 AST 的结构不变性。
+- 同一 AST 在不同名称/值上下文中求值，不携带旧实体绑定；变量、SELF、数组和宏既有回归保持。
+- 验证 Document 改名后的重新分析和按名称求值，不需要修改 AST。
+- 运行 profile-formula 的 lex/parse、Document 分析、标量/数组/宏求值，记录名称查询纳入求值后的同场景结果。
+- Release 后 Debug 全量回归；完成后停止等待审核。
+
+### 11.6 本阶段验证记录
+
+- 新增同一 AST 在不同名称值上下文中的求值回归，并验证节点数和 SourceSpan 不变；静态断言保证集合访问只返回 const FormulaNode 指针。
+- 公式、求值、数组、宏专项测试通过；Release 和 Debug 完整 CTest 均为 12/12。
+- `profile-formula.exe 1000` 本机结果：lex/parse 2.7208 μs/公式，Document 分析 5.393 μs/公式，标量求值 0.4345 μs/公式，数组分析 1.1064 μs/逐元素公式，数组求值 9.5887 μs/公式，数组初始化列表求值 1.2965 μs/公式，宏分析 11.0405 μs/公式，宏求值 0.6334 μs/公式。结果包含按 nameKey 查询，不据此单独声称优化。

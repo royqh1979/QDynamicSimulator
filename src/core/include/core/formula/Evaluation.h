@@ -23,13 +23,13 @@ struct ArrayValue {
 };
 
 using Value = std::variant<double, ArrayValue>;
-using VariableReader = std::function<std::optional<Value>(EntityId)>;
+using VariableReader = std::function<std::optional<Value>(const std::string &nameKey)>;
 using DimensionReader = std::function<const Dimension *(const std::string &)>;
 
 struct EvaluationScope {
     std::vector<std::string> dimensions;
     std::vector<std::size_t> indices;
-    EntityId self = 0;
+    std::string self;
 };
 
 struct EvaluationContext {

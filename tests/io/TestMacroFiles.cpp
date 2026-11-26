@@ -32,9 +32,9 @@ void verifyMacro(const Document &document)
     QCOMPARE(macro.equation, std::string("x * factor"));
     const ModelAnalysis analysis = analyzeDocument(document);
     const auto found = std::find_if(analysis.elements.begin(), analysis.elements.end(), [](const ElementAnalysis &entry) {
-        return entry.formula.ast != nullptr;
+        return entry.formula.root() != nullptr;
     });
-    const EvaluationResult result = evaluateFormula(found->formula.ast.get(), {});
+    const EvaluationResult result = evaluateFormula(found->formula.root(), {});
     const auto *scalar = result.value ? std::get_if<double>(&*result.value) : nullptr;
     QVERIFY(scalar);
     QCOMPARE(*scalar, 10.0);

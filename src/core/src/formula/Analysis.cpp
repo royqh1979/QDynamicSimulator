@@ -34,75 +34,75 @@ std::unique_ptr<FormulaNode> expandFormula(const Document &document, ModelAnalys
     if (!node)
         return nullptr;
     if (const auto *reference = dynamic_cast<const ReferenceNode *>(node)) {
-        const auto found = substitutions.find(reference->nameKey);
+        const auto found = substitutions.find(reference->nameKey());
         if (found != substitutions.end())
             return expandFormula(document, result, owner, found->second, {}, macroStack);
-        return std::make_unique<ReferenceNode>(reference->nameKey, reference->span);
+        return std::make_unique<ReferenceNode>(reference->nameKey(), reference->span());
     }
     if (const auto *number = dynamic_cast<const NumberNode *>(node))
-        return std::make_unique<NumberNode>(number->value, number->span);
+        return std::make_unique<NumberNode>(number->value(), number->span());
     if (const auto *unary = dynamic_cast<const UnaryNode *>(node)) {
-        return std::make_unique<UnaryNode>(unary->op,
-            expandFormula(document, result, owner, unary->operand.get(), substitutions, macroStack), unary->span);
+        return std::make_unique<UnaryNode>(unary->op(),
+            expandFormula(document, result, owner, unary->operand(), substitutions, macroStack), unary->span());
     }
     if (const auto *binary = dynamic_cast<const BinaryNode *>(node)) {
-        return std::make_unique<BinaryNode>(binary->op,
-            expandFormula(document, result, owner, binary->left.get(), substitutions, macroStack),
-            expandFormula(document, result, owner, binary->right.get(), substitutions, macroStack), binary->span);
+        return std::make_unique<BinaryNode>(binary->op(),
+            expandFormula(document, result, owner, binary->left(), substitutions, macroStack),
+            expandFormula(document, result, owner, binary->right(), substitutions, macroStack), binary->span());
     }
     if (const auto *conditional = dynamic_cast<const ConditionalNode *>(node)) {
         return std::make_unique<ConditionalNode>(
-            expandFormula(document, result, owner, conditional->condition.get(), substitutions, macroStack),
-            expandFormula(document, result, owner, conditional->thenExpression.get(), substitutions, macroStack),
-            expandFormula(document, result, owner, conditional->elseExpression.get(), substitutions, macroStack),
-            conditional->span);
+            expandFormula(document, result, owner, conditional->condition(), substitutions, macroStack),
+            expandFormula(document, result, owner, conditional->thenExpression(), substitutions, macroStack),
+            expandFormula(document, result, owner, conditional->elseExpression(), substitutions, macroStack),
+            conditional->span());
     }
     if (const auto *subscript = dynamic_cast<const SubscriptNode *>(node)) {
         std::vector<std::unique_ptr<FormulaNode>> indices;
-        for (const auto &index : subscript->indices)
-            indices.push_back(expandFormula(document, result, owner, index.get(), substitutions, macroStack));
+        for (std::size_t position = 0; position < subscript->indexCount(); ++position)
+            indices.push_back(expandFormula(document, result, owner, subscript->index(position), substitutions, macroStack));
         return std::make_unique<SubscriptNode>(
-            expandFormula(document, result, owner, subscript->target.get(), substitutions, macroStack),
-            std::move(indices), subscript->span);
+            expandFormula(document, result, owner, subscript->target(), substitutions, macroStack),
+            std::move(indices), subscript->span());
     }
     if (const auto *wildcard = dynamic_cast<const WildcardNode *>(node))
-        return std::make_unique<WildcardNode>(wildcard->span);
+        return std::make_unique<WildcardNode>(wildcard->span());
     if (const auto *range = dynamic_cast<const RangeNode *>(node)) {
         return std::make_unique<RangeNode>(
-            expandFormula(document, result, owner, range->begin.get(), substitutions, macroStack),
-            expandFormula(document, result, owner, range->end.get(), substitutions, macroStack), range->span);
+            expandFormula(document, result, owner, range->begin(), substitutions, macroStack),
+            expandFormula(document, result, owner, range->end(), substitutions, macroStack), range->span());
     }
     if (const auto *position = dynamic_cast<const DimensionPositionNode *>(node))
-        return std::make_unique<DimensionPositionNode>(position->position, position->span);
+        return std::make_unique<DimensionPositionNode>(position->position(), position->span());
     if (const auto *literal = dynamic_cast<const ArrayLiteralNode *>(node)) {
         std::vector<std::unique_ptr<FormulaNode>> values;
-        for (const auto &value : literal->values)
-            values.push_back(expandFormula(document, result, owner, value.get(), substitutions, macroStack));
-        return std::make_unique<ArrayLiteralNode>(std::move(values), literal->span);
+        for (std::size_t position = 0; position < literal->valueCount(); ++position)
+            values.push_back(expandFormula(document, result, owner, literal->value(position), substitutions, macroStack));
+        return std::make_unique<ArrayLiteralNode>(std::move(values), literal->span());
     }
     const auto *call = dynamic_cast<const CallNode *>(node);
     if (!call)
         return nullptr;
     std::vector<std::unique_ptr<FormulaNode>> arguments;
-    for (const auto &argument : call->arguments)
-        arguments.push_back(expandFormula(document, result, owner, argument.get(), substitutions, macroStack));
-    if (findFunctionSignature(call->nameKey))
-        return std::make_unique<CallNode>(call->nameKey, std::move(arguments), call->span);
-    const MacroDefinition *macro = document.findMacro(call->nameKey, arguments.size());
+    for (std::size_t position = 0; position < call->argumentCount(); ++position)
+        arguments.push_back(expandFormula(document, result, owner, call->argument(position), substitutions, macroStack));
+    if (findFunctionSignature(call->nameKey()))
+        return std::make_unique<CallNode>(call->nameKey(), std::move(arguments), call->span());
+    const MacroDefinition *macro = document.findMacro(call->nameKey(), arguments.size());
     if (!macro)
-        return std::make_unique<CallNode>(call->nameKey, std::move(arguments), call->span);
+        return std::make_unique<CallNode>(call->nameKey(), std::move(arguments), call->span());
     if (std::find(macroStack.begin(), macroStack.end(), macro->nameKey) != macroStack.end()) {
         addIssue(result, owner.id, IssueSeverity::Error, "Recursive expression macro: " + macro->nameKey,
-            "recursive-macro", call->span);
-        return std::make_unique<CallNode>(call->nameKey, std::move(arguments), call->span);
+            "recursive-macro", call->span());
+        return std::make_unique<CallNode>(call->nameKey(), std::move(arguments), call->span());
     }
     const auto analysis = std::find_if(result.macros.begin(), result.macros.end(), [macro](const MacroAnalysis &entry) {
         return entry.definition == macro;
     });
-    if (analysis == result.macros.end() || !analysis->formula.ast) {
+    if (analysis == result.macros.end() || !analysis->formula.root()) {
         addIssue(result, owner.id, IssueSeverity::Error, "Invalid expression macro: " + macro->nameKey,
-            "invalid-macro", call->span);
-        return std::make_unique<CallNode>(call->nameKey, std::move(arguments), call->span);
+            "invalid-macro", call->span());
+        return std::make_unique<CallNode>(call->nameKey(), std::move(arguments), call->span());
     }
     Substitutions macroSubstitutions;
     std::vector<std::unique_ptr<FormulaNode>> expandedDefaults;
@@ -111,18 +111,18 @@ std::unique_ptr<FormulaNode> expandFormula(const Document &document, ModelAnalys
         const FormulaNode *value = index < arguments.size() ? arguments[index].get() : nullptr;
         if (index >= arguments.size()) {
             expandedDefaults.push_back(expandFormula(document, result, owner,
-                analysis->defaults[index].ast.get(), macroSubstitutions, macroStack));
+                analysis->defaults[index].root(), macroSubstitutions, macroStack));
             value = expandedDefaults.back().get();
         }
         if (!value) {
             macroStack.pop_back();
             addIssue(result, owner.id, IssueSeverity::Error, "Invalid expression macro: " + macro->nameKey,
-                "invalid-macro", call->span);
-            return std::make_unique<CallNode>(call->nameKey, std::move(arguments), call->span);
+                "invalid-macro", call->span());
+            return std::make_unique<CallNode>(call->nameKey(), std::move(arguments), call->span());
         }
         macroSubstitutions[macro->parameters[index].nameKey] = value;
     }
-    auto expanded = expandFormula(document, result, owner, analysis->formula.ast.get(), macroSubstitutions, macroStack);
+    auto expanded = expandFormula(document, result, owner, analysis->formula.root(), macroSubstitutions, macroStack);
     macroStack.pop_back();
     return expanded;
 }
@@ -136,82 +136,81 @@ bool isDimensionElement(const Document &document, const std::string &nameKey)
     return dimension && dimension->findElement(nameKey.substr(separator + 1));
 }
 
-void resolveNode(const Document &document, ModelAnalysis &result, ElementAnalysis &owner, FormulaNode *node)
+void resolveNode(const Document &document, ModelAnalysis &result, ElementAnalysis &owner, const FormulaNode *node)
 {
     if (!node)
         return;
-    if (auto *reference = dynamic_cast<ReferenceNode *>(node)) {
-        if (const FunctionSignature *signature = findFunctionSignature(reference->nameKey);
+    if (const auto *reference = dynamic_cast<const ReferenceNode *>(node)) {
+        if (const FunctionSignature *signature = findFunctionSignature(reference->nameKey());
             signature && signature->minArguments == 0 && signature->maxArguments == 0)
             return;
-        if (document.findDimension(reference->nameKey) || isDimensionElement(document, reference->nameKey))
+        if (document.findDimension(reference->nameKey()) || isDimensionElement(document, reference->nameKey()))
             return;
-        if (const ModelElement *model = document.model().findByName(reference->nameKey)) {
-            reference->entityId = model->id();
+        if (const ModelElement *model = document.model().findByName(reference->nameKey())) {
             addReference(result, owner, model->id());
         } else {
-            addIssue(result, owner.id, IssueSeverity::Error, "Undefined variable: " + reference->nameKey,
-                "undefined-variable", reference->span);
+            addIssue(result, owner.id, IssueSeverity::Error, "Undefined variable: " + reference->nameKey(),
+                "undefined-variable", reference->span());
         }
         return;
     }
-    if (auto *unary = dynamic_cast<UnaryNode *>(node)) {
-        resolveNode(document, result, owner, unary->operand.get());
+    if (const auto *unary = dynamic_cast<const UnaryNode *>(node)) {
+        resolveNode(document, result, owner, unary->operand());
         return;
     }
-    if (auto *binary = dynamic_cast<BinaryNode *>(node)) {
-        resolveNode(document, result, owner, binary->left.get());
-        resolveNode(document, result, owner, binary->right.get());
+    if (const auto *binary = dynamic_cast<const BinaryNode *>(node)) {
+        resolveNode(document, result, owner, binary->left());
+        resolveNode(document, result, owner, binary->right());
         return;
     }
-    if (auto *call = dynamic_cast<CallNode *>(node)) {
-        const FunctionSignature *signature = findFunctionSignature(call->nameKey);
+    if (const auto *call = dynamic_cast<const CallNode *>(node)) {
+        const FunctionSignature *signature = findFunctionSignature(call->nameKey());
         if (signature) {
-            if (call->arguments.size() < signature->minArguments || call->arguments.size() > signature->maxArguments) {
+            if (call->argumentCount() < signature->minArguments || call->argumentCount() > signature->maxArguments) {
                 addIssue(result, owner.id, IssueSeverity::Error,
-                    "Invalid argument count for function: " + call->nameKey, "invalid-arity", call->span);
+                    "Invalid argument count for function: " + call->nameKey(), "invalid-arity", call->span());
             }
-        } else if (document.findMacro(call->nameKey, call->arguments.size())) {
-        } else if (const ModelElement *model = document.model().findByName(call->nameKey)) {
+        } else if (document.findMacro(call->nameKey(), call->argumentCount())) {
+        } else if (const ModelElement *model = document.model().findByName(call->nameKey())) {
             addReference(result, owner, model->id());
         } else {
-            addIssue(result, owner.id, IssueSeverity::Error, "Unknown function: " + call->nameKey,
-                "unknown-function", call->span);
+            addIssue(result, owner.id, IssueSeverity::Error, "Unknown function: " + call->nameKey(),
+                "unknown-function", call->span());
         }
-        for (const auto &argument : call->arguments)
-            resolveNode(document, result, owner, argument.get());
+        for (std::size_t position = 0; position < call->argumentCount(); ++position)
+            resolveNode(document, result, owner, call->argument(position));
         return;
     }
-    if (auto *conditional = dynamic_cast<ConditionalNode *>(node)) {
-        resolveNode(document, result, owner, conditional->condition.get());
-        resolveNode(document, result, owner, conditional->thenExpression.get());
-        resolveNode(document, result, owner, conditional->elseExpression.get());
+    if (const auto *conditional = dynamic_cast<const ConditionalNode *>(node)) {
+        resolveNode(document, result, owner, conditional->condition());
+        resolveNode(document, result, owner, conditional->thenExpression());
+        resolveNode(document, result, owner, conditional->elseExpression());
         return;
     }
-    if (auto *subscript = dynamic_cast<SubscriptNode *>(node)) {
-        resolveNode(document, result, owner, subscript->target.get());
-        const auto *reference = dynamic_cast<const ReferenceNode *>(subscript->target.get());
-        const ModelElement *target = reference ? document.model().findByName(reference->nameKey) : nullptr;
-        for (std::size_t position = 0; position < subscript->indices.size(); ++position) {
-            const auto &index = subscript->indices[position];
-            const auto *name = dynamic_cast<const ReferenceNode *>(index.get());
+    if (const auto *subscript = dynamic_cast<const SubscriptNode *>(node)) {
+        resolveNode(document, result, owner, subscript->target());
+        const auto *reference = dynamic_cast<const ReferenceNode *>(subscript->target());
+        const ModelElement *target = reference ? document.model().findByName(reference->nameKey()) : nullptr;
+        for (std::size_t position = 0; position < subscript->indexCount(); ++position) {
+            const FormulaNode *index = subscript->index(position);
+            const auto *name = dynamic_cast<const ReferenceNode *>(index);
             if (name && target && position < target->dimensions().size()) {
                 const Dimension *dimension = document.findDimension(target->dimensions()[position]);
-                if (dimension && (name->nameKey == dimension->nameKey || dimension->findElement(name->nameKey)))
+                if (dimension && (name->nameKey() == dimension->nameKey || dimension->findElement(name->nameKey())))
                     continue;
             }
-            resolveNode(document, result, owner, index.get());
+            resolveNode(document, result, owner, index);
         }
         return;
     }
-    if (auto *range = dynamic_cast<RangeNode *>(node)) {
-        resolveNode(document, result, owner, range->begin.get());
-        resolveNode(document, result, owner, range->end.get());
+    if (const auto *range = dynamic_cast<const RangeNode *>(node)) {
+        resolveNode(document, result, owner, range->begin());
+        resolveNode(document, result, owner, range->end());
         return;
     }
-    if (auto *literal = dynamic_cast<ArrayLiteralNode *>(node)) {
-        for (const auto &value : literal->values)
-            resolveNode(document, result, owner, value.get());
+    if (const auto *literal = dynamic_cast<const ArrayLiteralNode *>(node)) {
+        for (std::size_t position = 0; position < literal->valueCount(); ++position)
+            resolveNode(document, result, owner, literal->value(position));
     }
 }
 
@@ -254,11 +253,11 @@ ModelAnalysis analyzeDocument(const Document &document)
         MacroAnalysis macro;
         macro.definition = &definition;
         macro.formula = analyzeFormula(definition.equation);
-        for (const FormulaIssue &issue : macro.formula.issues)
+        for (const FormulaIssue &issue : macro.formula.issues())
             addIssue(result, 0, IssueSeverity::Error, issue.message, "parse", issue.span);
         for (const MacroParameter &parameter : definition.parameters) {
             macro.defaults.push_back(analyzeFormula(parameter.defaultEquation));
-            for (const FormulaIssue &issue : macro.defaults.back().issues)
+            for (const FormulaIssue &issue : macro.defaults.back().issues())
                 addIssue(result, 0, IssueSeverity::Error, issue.message, "parse", issue.span);
         }
         result.macros.push_back(std::move(macro));
@@ -279,20 +278,19 @@ ModelAnalysis analyzeDocument(const Document &document)
         }
         ElementAnalysis owner;
         owner.id = element.id();
-        const auto analyzeOwned = [&](FormulaAnalysis &formula) {
-            for (const FormulaIssue &issue : formula.issues)
+        const auto analyzeOwned = [&](FormulaAnalysis formula) {
+            for (const FormulaIssue &issue : formula.issues())
                 addIssue(result, element.id(), IssueSeverity::Error, issue.message, "parse", issue.span);
             std::vector<std::string> macroStack;
-            formula.ast = expandFormula(document, result, owner, formula.ast.get(), {}, macroStack);
-            resolveNode(document, result, owner, formula.ast.get());
+            auto ast = expandFormula(document, result, owner, formula.root(), {}, macroStack);
+            resolveNode(document, result, owner, ast.get());
+            return FormulaAnalysis(std::move(ast), formula.issues());
         };
-        owner.formula = analyzeFormula(element.equation());
-        analyzeOwned(owner.formula);
+        owner.formula = analyzeOwned(analyzeFormula(element.equation()));
         for (const ArrayElementEquation &entry : element.elementEquations()) {
             ArrayElementAnalysis item;
             item.indices = entry.indices;
-            item.formula = analyzeFormula(entry.equation);
-            analyzeOwned(item.formula);
+            item.formula = analyzeOwned(analyzeFormula(entry.equation));
             owner.elementFormulas.push_back(std::move(item));
         }
         if (!element.elementEquations().empty()) {

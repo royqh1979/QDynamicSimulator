@@ -35,7 +35,7 @@ bool hasIssue(const ModelAnalysis &analysis, const std::string &code)
 
 void expectScalar(const ModelAnalysis &analysis, EntityId id, const EvaluationContext &context, double expected)
 {
-    const EvaluationResult result = evaluateFormula(element(analysis, id).formula.ast.get(), context);
+    const EvaluationResult result = evaluateFormula(element(analysis, id).formula.root(), context);
     QVERIFY2(result.value.has_value(), result.error.c_str());
     const auto *scalar = std::get_if<double>(&*result.value);
     QVERIFY(scalar);
@@ -125,8 +125,8 @@ void TestMacros::expansionAndEvaluation()
     QCOMPARE(element(analysis, output).references, std::unordered_set<EntityId> {offset});
     QCOMPARE(analysis.macros.size(), std::size_t(4));
     EvaluationContext context;
-    context.readVariable = [offset](EntityId id) -> std::optional<Value> {
-        return id == offset ? std::optional<Value>(10.0) : std::nullopt;
+    context.readVariable = [](const std::string &name) -> std::optional<Value> {
+        return name == "offset" ? std::optional<Value>(10.0) : std::nullopt;
     };
     expectScalar(analysis, output, context, 65.0);
 }
@@ -145,7 +145,7 @@ void TestMacros::recursionAndErrors()
     QVERIFY(hasIssue(analysis, "recursive-macro"));
     QVERIFY(!hasIssue(analysis, "unknown-function"));
     EvaluationContext context;
-    QVERIFY(!evaluateFormula(element(analysis, output).formula.ast.get(), context).value);
+    QVERIFY(!evaluateFormula(element(analysis, output).formula.root(), context).value);
 
     document.setEquation(output, "MissingMacro(1)");
     QVERIFY(hasIssue(analyzeDocument(document), "unknown-function"));

@@ -57,44 +57,41 @@ struct SourceSpan {
     std::size_t end = 0;
 };
 
-enum class UnaryOperator { Positive, Negative, Not, Transpose };
-enum class BinaryOperator {
-    Power, Multiply, Divide, Modulo, Add, Subtract,
-    Less, LessEqual, Greater, GreaterEqual, Equal, NotEqual, And, Or
-};
-
-struct FormulaNode {
-    SourceSpan span;
+class FormulaNode {
+public:
+    FormulaNodeKind kind() const;
+    const SourceSpan &span() const;
     virtual ~FormulaNode() = default;
 };
 
-struct NumberNode : FormulaNode { double value; };
-struct ReferenceNode : FormulaNode {
-    std::string nameKey;
+class NumberNode final : public FormulaNode {
+public:
+    double value() const;
 };
-struct UnaryNode : FormulaNode {
-    UnaryOperator op;
-    std::unique_ptr<FormulaNode> operand;
+class ReferenceNode final : public FormulaNode {
+public:
+    const std::string &nameKey() const;
 };
-struct BinaryNode : FormulaNode {
-    BinaryOperator op;
-    std::unique_ptr<FormulaNode> left;
-    std::unique_ptr<FormulaNode> right;
+class UnaryNode final : public FormulaNode {
+public:
+    UnaryOperator op() const;
+    const FormulaNode *operand() const;
 };
-struct CallNode : FormulaNode {
-    std::string nameKey;
-    std::vector<std::unique_ptr<FormulaNode>> arguments;
+class BinaryNode final : public FormulaNode {
+public:
+    BinaryOperator op() const;
+    const FormulaNode *left() const;
+    const FormulaNode *right() const;
 };
-struct ConditionalNode : FormulaNode {
-    std::unique_ptr<FormulaNode> condition;
-    std::unique_ptr<FormulaNode> thenExpression;
-    std::unique_ptr<FormulaNode> elseExpression;
-};
-struct SubscriptNode : FormulaNode {
-    std::unique_ptr<FormulaNode> target;
-    std::vector<std::unique_ptr<FormulaNode>> indices;
+class CallNode final : public FormulaNode {
+public:
+    const std::string &nameKey() const;
+    std::size_t argumentCount() const;
+    const FormulaNode *argument(std::size_t position) const;
 };
 ```
+
+Conditional、Subscript、Range 等节点采用相同的私有状态和 const 子节点访问。集合节点只提供数量及按位置的 const 元素访问，不公开 `unique_ptr` 容器。FormulaAnalysis 私有持有 AST 和 issues，构建完成后只读；公式变化时替换整份结果。
 
 上述代码块只表达 AST 的逻辑结构，不表示公开字段接口。正式类型必须通过私有状态和只读访问接口保证创建后不可变；可变构造仅属于 Parser 内部，外部不能取得可修改的子节点指针。FormulaAnalysis 和独立保留的 ModelAnalysis 也是完成后不可变的派生结果，构建期可变与完成后只读相互分离。FormulaIssue、ModelIssue、ArrayValue 和 EvaluationResult 同样按逻辑结果语义提供不可变边界；输入 DTO、EvaluationContext 和内部 Builder 不被迫采用同一接口。
 
@@ -298,7 +295,7 @@ using DimensionReader = std::function<const Dimension *(const std::string &)>;
 struct EvaluationScope {
     std::vector<std::string> dimensions; // 当前方程输出维度
     std::vector<std::size_t> indices;    // 为空表示整体求值，否则为当前元素零基下标
-    EntityId self = 0;
+    std::string self; // 当前方程元素的 nameKey，供 SELF 与普通变量共用读取入口
 };
 
 struct EvaluationContext {

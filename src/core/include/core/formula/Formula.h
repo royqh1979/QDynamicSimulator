@@ -1,7 +1,5 @@
 #pragma once
 
-#include <core/Model.h>
-
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -33,48 +31,73 @@ enum class FormulaNodeKind {
     ArrayLiteral
 };
 
-struct FormulaNode {
-    explicit FormulaNode(FormulaNodeKind nodeKind, SourceSpan nodeSpan)
-        : kind(nodeKind)
-        , span(nodeSpan)
-    {
-    }
+class FormulaNode
+{
+public:
+    FormulaNodeKind kind() const { return m_kind; }
+    const SourceSpan &span() const { return m_span; }
     virtual ~FormulaNode() = default;
 
-    FormulaNodeKind kind;
-    SourceSpan span;
-};
-
-struct NumberNode final : FormulaNode {
-    NumberNode(double number, SourceSpan nodeSpan)
-        : FormulaNode(FormulaNodeKind::Number, nodeSpan)
-        , value(number)
+protected:
+    FormulaNode(FormulaNodeKind kind, SourceSpan span)
+        : m_kind(kind)
+        , m_span(span)
     {
     }
-    double value;
+
+private:
+    FormulaNodeKind m_kind;
+    SourceSpan m_span;
 };
 
-struct ReferenceNode final : FormulaNode {
-    ReferenceNode(std::string key, SourceSpan nodeSpan)
-        : FormulaNode(FormulaNodeKind::Reference, nodeSpan)
-        , nameKey(std::move(key))
+class NumberNode final : public FormulaNode
+{
+public:
+    NumberNode(double number, SourceSpan span)
+        : FormulaNode(FormulaNodeKind::Number, span)
+        , m_value(number)
     {
     }
-    std::string nameKey;
-    EntityId entityId = 0;
+
+    double value() const { return m_value; }
+
+private:
+    double m_value;
+};
+
+class ReferenceNode final : public FormulaNode
+{
+public:
+    ReferenceNode(std::string nameKey, SourceSpan span)
+        : FormulaNode(FormulaNodeKind::Reference, span)
+        , m_nameKey(std::move(nameKey))
+    {
+    }
+
+    const std::string &nameKey() const { return m_nameKey; }
+
+private:
+    std::string m_nameKey;
 };
 
 enum class UnaryOperator { Positive, Negative, Not, Transpose };
 
-struct UnaryNode final : FormulaNode {
-    UnaryNode(UnaryOperator operation, std::unique_ptr<FormulaNode> child, SourceSpan nodeSpan)
-        : FormulaNode(FormulaNodeKind::Unary, nodeSpan)
-        , op(operation)
-        , operand(std::move(child))
+class UnaryNode final : public FormulaNode
+{
+public:
+    UnaryNode(UnaryOperator operation, std::unique_ptr<FormulaNode> operand, SourceSpan span)
+        : FormulaNode(FormulaNodeKind::Unary, span)
+        , m_op(operation)
+        , m_operand(std::move(operand))
     {
     }
-    UnaryOperator op;
-    std::unique_ptr<FormulaNode> operand;
+
+    UnaryOperator op() const { return m_op; }
+    const FormulaNode *operand() const { return m_operand.get(); }
+
+private:
+    UnaryOperator m_op;
+    std::unique_ptr<FormulaNode> m_operand;
 };
 
 enum class BinaryOperator {
@@ -94,89 +117,143 @@ enum class BinaryOperator {
     Or
 };
 
-struct BinaryNode final : FormulaNode {
-    BinaryNode(BinaryOperator operation, std::unique_ptr<FormulaNode> lhs, std::unique_ptr<FormulaNode> rhs, SourceSpan nodeSpan)
-        : FormulaNode(FormulaNodeKind::Binary, nodeSpan)
-        , op(operation)
-        , left(std::move(lhs))
-        , right(std::move(rhs))
+class BinaryNode final : public FormulaNode
+{
+public:
+    BinaryNode(BinaryOperator operation, std::unique_ptr<FormulaNode> left, std::unique_ptr<FormulaNode> right, SourceSpan span)
+        : FormulaNode(FormulaNodeKind::Binary, span)
+        , m_op(operation)
+        , m_left(std::move(left))
+        , m_right(std::move(right))
     {
     }
-    BinaryOperator op;
-    std::unique_ptr<FormulaNode> left;
-    std::unique_ptr<FormulaNode> right;
+
+    BinaryOperator op() const { return m_op; }
+    const FormulaNode *left() const { return m_left.get(); }
+    const FormulaNode *right() const { return m_right.get(); }
+
+private:
+    BinaryOperator m_op;
+    std::unique_ptr<FormulaNode> m_left;
+    std::unique_ptr<FormulaNode> m_right;
 };
 
-struct CallNode final : FormulaNode {
-    CallNode(std::string key, std::vector<std::unique_ptr<FormulaNode>> args, SourceSpan nodeSpan)
-        : FormulaNode(FormulaNodeKind::Call, nodeSpan)
-        , nameKey(std::move(key))
-        , arguments(std::move(args))
+class CallNode final : public FormulaNode
+{
+public:
+    CallNode(std::string nameKey, std::vector<std::unique_ptr<FormulaNode>> arguments, SourceSpan span)
+        : FormulaNode(FormulaNodeKind::Call, span)
+        , m_nameKey(std::move(nameKey))
+        , m_arguments(std::move(arguments))
     {
     }
-    std::string nameKey;
-    std::vector<std::unique_ptr<FormulaNode>> arguments;
+
+    const std::string &nameKey() const { return m_nameKey; }
+    std::size_t argumentCount() const { return m_arguments.size(); }
+    const FormulaNode *argument(std::size_t position) const { return m_arguments[position].get(); }
+
+private:
+    std::string m_nameKey;
+    std::vector<std::unique_ptr<FormulaNode>> m_arguments;
 };
 
-struct ConditionalNode final : FormulaNode {
-    ConditionalNode(std::unique_ptr<FormulaNode> ifCondition, std::unique_ptr<FormulaNode> thenValue,
-        std::unique_ptr<FormulaNode> elseValue, SourceSpan nodeSpan)
-        : FormulaNode(FormulaNodeKind::Conditional, nodeSpan)
-        , condition(std::move(ifCondition))
-        , thenExpression(std::move(thenValue))
-        , elseExpression(std::move(elseValue))
+class ConditionalNode final : public FormulaNode
+{
+public:
+    ConditionalNode(std::unique_ptr<FormulaNode> condition, std::unique_ptr<FormulaNode> thenExpression,
+        std::unique_ptr<FormulaNode> elseExpression, SourceSpan span)
+        : FormulaNode(FormulaNodeKind::Conditional, span)
+        , m_condition(std::move(condition))
+        , m_thenExpression(std::move(thenExpression))
+        , m_elseExpression(std::move(elseExpression))
     {
     }
-    std::unique_ptr<FormulaNode> condition;
-    std::unique_ptr<FormulaNode> thenExpression;
-    std::unique_ptr<FormulaNode> elseExpression;
+
+    const FormulaNode *condition() const { return m_condition.get(); }
+    const FormulaNode *thenExpression() const { return m_thenExpression.get(); }
+    const FormulaNode *elseExpression() const { return m_elseExpression.get(); }
+
+private:
+    std::unique_ptr<FormulaNode> m_condition;
+    std::unique_ptr<FormulaNode> m_thenExpression;
+    std::unique_ptr<FormulaNode> m_elseExpression;
 };
 
-struct SubscriptNode final : FormulaNode {
-    SubscriptNode(std::unique_ptr<FormulaNode> base, std::vector<std::unique_ptr<FormulaNode>> subscripts, SourceSpan nodeSpan)
-        : FormulaNode(FormulaNodeKind::Subscript, nodeSpan)
-        , target(std::move(base))
-        , indices(std::move(subscripts))
+class SubscriptNode final : public FormulaNode
+{
+public:
+    SubscriptNode(std::unique_ptr<FormulaNode> target, std::vector<std::unique_ptr<FormulaNode>> indices, SourceSpan span)
+        : FormulaNode(FormulaNodeKind::Subscript, span)
+        , m_target(std::move(target))
+        , m_indices(std::move(indices))
     {
     }
-    std::unique_ptr<FormulaNode> target;
-    std::vector<std::unique_ptr<FormulaNode>> indices;
+
+    const FormulaNode *target() const { return m_target.get(); }
+    std::size_t indexCount() const { return m_indices.size(); }
+    const FormulaNode *index(std::size_t position) const { return m_indices[position].get(); }
+
+private:
+    std::unique_ptr<FormulaNode> m_target;
+    std::vector<std::unique_ptr<FormulaNode>> m_indices;
 };
 
-struct WildcardNode final : FormulaNode {
-    explicit WildcardNode(SourceSpan nodeSpan)
-        : FormulaNode(FormulaNodeKind::Wildcard, nodeSpan)
+class WildcardNode final : public FormulaNode
+{
+public:
+    explicit WildcardNode(SourceSpan span)
+        : FormulaNode(FormulaNodeKind::Wildcard, span)
     {
     }
 };
 
-struct RangeNode final : FormulaNode {
-    RangeNode(std::unique_ptr<FormulaNode> first, std::unique_ptr<FormulaNode> last, SourceSpan nodeSpan)
-        : FormulaNode(FormulaNodeKind::Range, nodeSpan)
-        , begin(std::move(first))
-        , end(std::move(last))
+class RangeNode final : public FormulaNode
+{
+public:
+    RangeNode(std::unique_ptr<FormulaNode> begin, std::unique_ptr<FormulaNode> end, SourceSpan span)
+        : FormulaNode(FormulaNodeKind::Range, span)
+        , m_begin(std::move(begin))
+        , m_end(std::move(end))
     {
     }
-    std::unique_ptr<FormulaNode> begin;
-    std::unique_ptr<FormulaNode> end;
+
+    const FormulaNode *begin() const { return m_begin.get(); }
+    const FormulaNode *end() const { return m_end.get(); }
+
+private:
+    std::unique_ptr<FormulaNode> m_begin;
+    std::unique_ptr<FormulaNode> m_end;
 };
 
-struct DimensionPositionNode final : FormulaNode {
-    DimensionPositionNode(std::size_t dimensionPosition, SourceSpan nodeSpan)
-        : FormulaNode(FormulaNodeKind::DimensionPosition, nodeSpan)
-        , position(dimensionPosition)
+class DimensionPositionNode final : public FormulaNode
+{
+public:
+    DimensionPositionNode(std::size_t position, SourceSpan span)
+        : FormulaNode(FormulaNodeKind::DimensionPosition, span)
+        , m_position(position)
     {
     }
-    std::size_t position;
+
+    std::size_t position() const { return m_position; }
+
+private:
+    std::size_t m_position;
 };
 
-struct ArrayLiteralNode final : FormulaNode {
-    ArrayLiteralNode(std::vector<std::unique_ptr<FormulaNode>> items, SourceSpan nodeSpan)
-        : FormulaNode(FormulaNodeKind::ArrayLiteral, nodeSpan)
-        , values(std::move(items))
+class ArrayLiteralNode final : public FormulaNode
+{
+public:
+    ArrayLiteralNode(std::vector<std::unique_ptr<FormulaNode>> values, SourceSpan span)
+        : FormulaNode(FormulaNodeKind::ArrayLiteral, span)
+        , m_values(std::move(values))
     {
     }
-    std::vector<std::unique_ptr<FormulaNode>> values;
+
+    std::size_t valueCount() const { return m_values.size(); }
+    const FormulaNode *value(std::size_t position) const { return m_values[position].get(); }
+
+private:
+    std::vector<std::unique_ptr<FormulaNode>> m_values;
 };
 
 struct FormulaIssue {
@@ -186,9 +263,22 @@ struct FormulaIssue {
     bool operator==(const FormulaIssue &other) const { return span == other.span && message == other.message; }
 };
 
-struct FormulaAnalysis {
-    std::unique_ptr<FormulaNode> ast;
-    std::vector<FormulaIssue> issues;
+class FormulaAnalysis
+{
+public:
+    FormulaAnalysis() = default;
+    FormulaAnalysis(std::unique_ptr<FormulaNode> ast, std::vector<FormulaIssue> issues)
+        : m_ast(std::move(ast))
+        , m_issues(std::move(issues))
+    {
+    }
+
+    const FormulaNode *root() const { return m_ast.get(); }
+    const std::vector<FormulaIssue> &issues() const { return m_issues; }
+
+private:
+    std::unique_ptr<FormulaNode> m_ast;
+    std::vector<FormulaIssue> m_issues;
 };
 
 FormulaAnalysis analyzeFormula(std::string_view equation);
