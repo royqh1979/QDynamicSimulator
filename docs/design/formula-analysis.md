@@ -8,20 +8,46 @@
 
 一条 `ModelElement.equation` 对应一棵 AST，不把整个模型拼成一棵表达式树。Stock 的初值、Flow 的速率、Auxiliary 的计算式和 Constant 的常量表达式共用语法，语义由元素类型决定。空方程允许表示外生输入，不生成 AST，也不报错。
 
-## 2. 分析流程
+## 2. 整体分析流程
+
+分析输入是完整的 Document，而不是逐行公式文本。Document 在编辑/读取阶段已经建立元素、维度、宏定义以及 EntityId/nameKey 索引；这些定义在文件中的先后位置不影响语义分析。`analyzeDocument()` 按以下管线执行：
 
 ```text
-UTF-8 equation
-→ Lexer（Token + SourceSpan）
-→ Pratt Parser（每个公式一棵 AST）
-→ SymbolResolver（nameKey → EntityId、内置函数注册表）
-→ DependencyGraph（依赖 → 被依赖）
-→ ModelAnalysis（AST 集合、依赖图、诊断）
+完整 Document
+│
+├─ 阶段 1：完整定义与结构准备
+│  ├─ 遍历全部 Stock、Flow、Auxiliary、Constant、Data 定义
+│  ├─ 读取各元素端点、数组维度、原始总体/逐元素 equation
+│  ├─ 遍历全部 MacroDefinition，解析宏体和默认参数，生成 MacroAnalysis AST
+│  ├─ 提供模型变量、Dimension、DimensionElement、MacroDefinition 的统一查找
+│  └─ 收集 Connector、Stock/Flow 的结构关系，不在此阶段分析模型公式
+│
+├─ 阶段 2：公式 AST 与符号分析
+│  ├─ 每个模型总体 equation / 逐元素 equation 独立 Lexer + Pratt Parser
+│  ├─ 遍历阶段 1 宏体/默认参数 AST，按需解析局部参数与全局符号
+│  ├─ 模型公式和宏体中的宏调用始终保留 CallNode，不做文本或 AST 展开
+│  ├─ SymbolResolver：使用现有索引区分局部参数、变量、函数、维度和宏
+│  ├─ 绑定只在当次遍历中使用，直接生成诊断、引用集合及公式/宏调用关系
+│  └─ 生成 ElementAnalysis 并补全 MacroAnalysis，单公式错误不阻断其它公式
+│
+├─ 阶段 3：全模型派生分析
+│  ├─ 在不展开 AST 的前提下计算宏依赖闭包，合并公式引用与结构使用
+│  ├─ 检查未使用变量、数组元素完整性和标量代数环
+│  ├─ 数组合法递推及元素级调度按既定边界单独处理
+│  └─ 汇总 parse / symbol / arity / structural 等诊断
+│
+└─ ModelAnalysis
+   ├─ MacroAnalysis：每个宏唯一的宏体、默认参数 AST 和直接依赖
+   ├─ ElementAnalysis：总体/逐元素 AST 与引用集合
+   ├─ DependencyGraph、StructuralUse、issues
+   └─ 供 Validation、统一运行期宏求值和后续执行器共享只读使用
 ```
 
-采用手写 Lexer 和 Pratt/ precedence-climbing Parser，不引入第三方 parser 依赖。Pratt 便于准确实现右结合乘方、一元运算符、函数调用和 IF THEN ELSE，同时保留每个节点的源码范围。
+阶段 1 必须先读取完整 Document 中全部模型元素和宏定义，再开始阶段 2 的模型公式分析；不得把遍历到某个 Flow 时的结构收集和公式分析混在同一循环中。这样，模型公式可以引用文件后面定义的变量或宏，宏也可以引用其他宏，不需要前置声明。最终 Document 中不存在的变量或宏仍分别报告未定义变量或未知函数。
 
-每个 ModelElement 独立解析；单公式失败只产生诊断，不阻断其他元素。AST 的节点类型、源码范围和子节点结构在语法分析完成后不可变；符号解析只填写 `ReferenceNode.entityId`，`ModelAnalysis` 返回后供后续检查共享只读访问。
+所有公式共用手写 Lexer 和 Pratt/precedence-climbing Parser，不引入第三方 parser 依赖。Pratt 实现右结合乘方、一元运算符、函数调用和 IF THEN ELSE，并保留每个节点的 UTF-8 SourceSpan。宏采用自定义函数语义，而不是 C 预处理器宏语义：分析期不替换文本、不复制实参到宏体、不级联展开；非递归、直接递归和间接递归都通过同一运行期调用机制执行。
+
+AST 在语法分析完成后完全不可变，只保存语法结构、规范化名称、字面量和 SourceSpan。Resolve 是独立的按需过程，不在 AST 中写入 EntityId、内置函数目标、宏定义、签名或其它语义绑定，也不生成另一份 Resolved AST。`validateDocument()` 只是返回 ModelAnalysis.issues 的薄接口，不另建检查流程。
 
 ## 3. AST 与结果所有权
 
@@ -45,7 +71,6 @@ struct FormulaNode {
 struct NumberNode : FormulaNode { double value; };
 struct ReferenceNode : FormulaNode {
     std::string nameKey;
-    EntityId entityId = 0; // 未解析时为 0，不保存对象指针
 };
 struct UnaryNode : FormulaNode {
     UnaryOperator op;
@@ -71,7 +96,9 @@ struct SubscriptNode : FormulaNode {
 };
 ```
 
-`FormulaAnalysis` 保存 `unique_ptr<FormulaNode>`。`ModelAnalysis` 唯一拥有各元素 AST、引用集合和诊断；DependencyGraph 只保存 EntityId，因此 AST 或 Document 对象地址变化不会使图失效。普通编辑阶段不提前引入缓存；调用方每次基于当前 Document 重新分析，待 profile 证明需要后再设计修订号缓存。
+`FormulaAnalysis` 保存 `unique_ptr<FormulaNode>`。`ModelAnalysis` 唯一拥有各元素公式 AST、每个宏的宏体/默认参数 AST、引用集合和诊断；同一宏体不得复制到调用方 AST。AST 不保存 Resolve 结果，`Formula.h` 也不为了实体绑定依赖 `Model.h`。DependencyGraph 作为独立分析结果可以保存 EntityId，因此 AST 或 Document 对象地址变化不会使图失效；EntityId 出现在依赖图中不属于 AST 语义绑定。
+
+普通编辑阶段不提前引入绑定表、执行计划或其它解析缓存；当前调用方可以每次基于当前 Document 全量重新分析，这只是实现选择，不代表调用方在语义上依赖宏体副本。待 profile 证明重复名称解析确实是瓶颈后，才可设计 AST 之外、按定义修订号失效的执行缓存。
 
 ## 4. 标量语法
 
@@ -109,9 +136,19 @@ struct SubscriptNode : FormulaNode {
 - `if_then_else(condition, then, else)` 作为可选函数形式由注册表处理。
 - Lookup、命名图形函数、命名模型和数组平坦索引均先形成 CallNode，再由 Resolver 区分，不在 Parser 中硬编码为变量引用。
 
-## 5. 符号解析与内置函数注册表
+## 5. 按需符号解析与内置函数注册表
 
-`SymbolResolver` 只通过 Document 的统一 nameKey 索引解析变量，不重复实现名称查找。函数注册表包含：
+Resolve 是校验、依赖分析和求值需要名称语义时执行的遍历操作，不是必须保存的最终结果。Parser 不执行 Resolve；Resolver 使用当前作用域和现有索引完成查询，绑定只保存在当次调用的局部变量中，默认在遍历结束后丢弃，不回写 AST，也不建立平行名称索引或外部绑定表。
+
+解析数据来源只有：
+
+- 宏的局部参数及运行期调用帧；
+- Document 已有的 `nameKey → ModelElement/EntityId` 索引；
+- Document 已有的维度、维度元素索引；
+- 内置函数签名注册表；
+- 宏的 `nameKey + 签名 → MacroDefinition` 索引。宏是可调用定义，但不为了复用索引而伪装成 ModelElement。
+
+内置函数注册表包含：
 
 ```cpp
 struct FunctionSignature {
@@ -123,18 +160,22 @@ struct FunctionSignature {
 const FunctionSignature *findFunctionSignature(const std::string &nameKey);
 ```
 
-注册表覆盖 XMILE 3.5 全部内置函数的名称和参数个数，包括数学、统计、延迟、测试输入、时间及其它函数。分析阶段可识别全部签名，求值阶段复用同一注册表绑定实现，避免函数列表散落。
+注册表覆盖 XMILE 3.5 全部内置函数的名称和参数个数，包括数学、统计、延迟、测试输入、时间及其它函数。分析阶段可识别全部签名，求值阶段复用同一注册表分派实现，避免函数列表散落。
 
 解析规则：
 
-1. nameKey 命中内置函数时检查参数个数并生成诊断。
-2. 命中模型变量时保留 ReferenceNode/CallNode 语义；图形函数和命名模型的执行语义后续处理。
-3. 未知名称分别报告未定义变量或未知函数，不把函数名误报为变量。
-4. 厂商命名空间、宏、命名模型和数组平坦索引先保留语法结构，给出明确的未支持诊断，不静默猜测。
+1. 变量引用在宏体内先查当前宏的局部参数，再查全局模型变量；局部参数不分配 EntityId，也不生成模型变量依赖。
+2. 调用名称通过内置函数注册表和宏索引查询，按 nameKey、实参个数及默认参数规则即时选择目标；CallNode 始终只保存名称和实参，不保存调用目标。
+3. 依赖分析把当次查询结果直接转换为 EntityId 引用、宏调用边或诊断；这些独立分析结果不是 AST 的字段。
+4. 求值使用相同的名称规则和索引：局部参数读取当前调用帧，全局变量按 nameKey 读取，内置函数和宏按名称及实参个数分派。
+5. 未知名称分别报告未定义变量或未知函数，不把函数名误报为变量。
+6. 图形函数、命名模型、厂商命名空间和数组平坦索引保留语法结构，按实际支持情况处理或给出明确诊断，不静默猜测。
 
 ## 6. 依赖图与结构关系
 
 DependencyGraph 的边统一为 **dependency → dependent**，表示必须先求值的公式依赖。只从 AST 的变量引用和函数参数生成，不包括文字、内置函数名或注释。
+
+宏不是 ModelElement，不作为 DependencyGraph 的伪 EntityId 节点。分析器另以具体宏签名节点记录“宏体/默认表达式的全局变量引用”和“直接宏调用”，再计算传递依赖闭包；递归宏形成的签名环按不动点或强连通分量处理，不作为错误。调用方的公式依赖包括全部实参引用、实际使用的默认表达式全局引用，以及被调宏及其可达宏的全局变量引用。这样无需展开 AST，也不会漏掉嵌套或递归宏引入的模型变量依赖。
 
 以下关系分开保存，不能混成一种依赖：
 
@@ -151,7 +192,8 @@ DependencyGraph 的边统一为 **dependency → dependent**，表示必须先�
 
 - 非法字符、非法数字、未闭合引号/括号/注释、缺少操作数或参数。
 - 未定义变量、未知函数、错误参数个数。
-- 不支持的数组、宏、命名模型或厂商命名空间。
+- 不支持的命名模型、厂商命名空间及其它尚未实现的语义。
+- 宏签名冲突、未知宏、错误参数个数和运行期递归深度超限；合法直接或间接递归不产生分析期错误。
 - 代数依赖环、未使用变量。
 - 单位一致性检查后续复用同一诊断通道。
 
@@ -164,7 +206,7 @@ DependencyGraph 的边统一为 **dependency → dependent**，表示必须先�
 `Evaluation.h/.cpp` 提供不依赖 Document/Qt 的同步标量求值：
 
 ```cpp
-using VariableReader = std::function<std::optional<double>(EntityId)>;
+using VariableReader = std::function<std::optional<double>(const std::string &nameKey)>;
 
 struct EvaluationContext {
     double time = 0.0;
@@ -183,7 +225,7 @@ struct EvaluationResult {
 EvaluationResult evaluateFormula(const FormulaNode *node, const EvaluationContext &context);
 ```
 
-变量通过已解析的 `ReferenceNode.entityId` 和 `readVariable` 读取；ID 未解析、读取器缺失或变量无值均返回带源码位置的错误，不以零代替。Result 不持有 AST 或 Context 指针，调用方继续拥有输入对象。
+变量通过 `ReferenceNode.nameKey` 和 `readVariable` 读取，读取器内部直接使用当前 Document 的既有名称索引；AST 不保存实体 ID。读取器缺失、名称未定义或变量无值均返回带源码位置的错误，不以零代替。Result 不持有 AST 或 Context 指针，调用方继续拥有输入对象。
 
 本阶段支持：
 
@@ -248,7 +290,7 @@ struct ArrayValue {
     std::vector<double> values;          // 行主序
 };
 using Value = std::variant<double, ArrayValue>;
-using VariableReader = std::function<std::optional<Value>(EntityId)>;
+using VariableReader = std::function<std::optional<Value>(const std::string &nameKey)>;
 using DimensionReader = std::function<const Dimension *(const std::string &)>;
 
 struct EvaluationScope {
@@ -266,7 +308,7 @@ struct EvaluationContext {
 using EvaluationResult = std::optional<Value> + error/errorSpan;
 ```
 
-ArrayValue 的维度长度等于 shape 长度，元素数等于各维长度乘积，Document/Evaluator 在边界检查这些不变量。调用方拥有 Variable/Dimension 对象，Result 只持有值，不保存指针。标量读取器和现有调用迁移到 Value 后仍走原运算实现。
+ArrayValue 的维度长度等于 shape 长度，元素数等于各维长度乘积，Document/Evaluator 在边界检查这些不变量。调用方拥有变量和 Dimension 对象，Result 只持有值，不保存指针。`readVariable` 与标量阶段一样接收 nameKey，并通过现有索引定位当前值；下标和数组运算不依赖 AST 中的语义绑定。
 
 ### 10.2 下标、作用域与切片
 
@@ -286,52 +328,91 @@ ArrayValue 的维度长度等于 shape 长度，元素数等于各维长度乘�
 
 兼容 Vensim 在 eqn 中使用的扁平逗号初始化列表，新增 `ArrayLiteralNode` 保存有序标量表达式。列表只在公式根节点解释，逗号在函数参数和下标中仍保持原语法。求值必须有 scope.dimensions，按输出 shape 校验元素总数，数据按行主序生成 ArrayValue；指定 scope.indices 时返回当前元素标量。列表项允许表达式但不得返回数组，元素数不足或过多均报错，不做隐式截断/补零。
 
-随机、延迟、历史状态、图形函数、队列/Conveyor、宏和命名模型仍未实现。元素级依赖调度沿用上一阶段的明确边界，不因数组值可求值就声称完整仿真排序已完成。
+随机、延迟、历史状态、图形函数、队列/Conveyor 和命名模型仍未实现。宏按第 11 节通过统一运行期调用支持标量和数组 Value，不使用另一套数组宏展开规则。元素级依赖调度沿用上一阶段的明确边界，不因数组值可求值就声称完整仿真排序已完成。
 
-## 11. 非递归表达式宏
+## 11. 表达式宏
 
-Document 以值对象保存 MacroDefinition；宏和参数都有 displayName/nameKey，参数可保存默认表达式。宏不是 ModelElement，不分配 EntityId 或画布 Item。按 nameKey + 实参个数查找，支持 XMILE 的参数个数重载和尾部默认参数；同一签名不可重复，默认参数之后不得再出现必填参数。宏名与模型变量、维度相互排斥，参数在宏体内为局部名称。
+### 11.1 语义与唯一表示
 
-分析时先解析宏及默认表达式，再把调用展开为新的 AST，不做字符串替换：
+宏采用**自定义函数语义**，不是 C 预处理器式的文本替换。它支持参数、默认参数、局部作用域、嵌套调用、直接递归和间接递归，返回表达式求值得到的 Value。非递归与递归宏不得具有两套调用语义。
 
-1. 按调用实参个数选择宏，将实参 AST 绑定到对应参数 nameKey。
-2. 缺失实参使用该参数的默认 AST；默认表达式可引用此前已绑定参数。
-3. 深拷贝宏体，仅替换局部 Reference，调用方变量名和其它宏名不被覆盖。
-4. 嵌套调用重复展开，之后统一执行符号解析、依赖图和求值。
+Document 以值对象保存 MacroDefinition；宏和参数都有 displayName/nameKey，参数可保存默认表达式。宏不是 ModelElement，不分配 EntityId 或画布 Item。按 nameKey + 实参个数及默认参数规则选择具体定义，支持 XMILE 的参数个数重载；同一签名不可重复，默认参数之后不得再出现必填参数。宏名与模型变量、维度相互排斥，参数在宏体内为局部名称并遮蔽同名全局变量。
 
-展开后的 ModelAnalysis 唯一拥有调用方 AST，宏定义与默认表达式 AST 由对应 MacroAnalysis 持有。参数实参在当前纯公式语义下按 AST 替换；随机、延迟等状态函数仍未实现，因此不引入“多次展开导致多次状态读取”的兼容行为。宏体内全局变量引用自然进入调用方依赖图，不建立伪 EntityId。
+每个 MacroDefinition 在 ModelAnalysis 中只有一个 MacroAnalysis，唯一保存该定义的宏体和默认参数 AST。模型公式及宏体中的每次宏调用只保存 CallNode 和实参 AST；**任何阶段都不得把宏体或默认参数复制到调用方，也不做文本替换、AST 替换或级联展开。** 这既是非递归调用的表示，也是递归调用的表示。
 
-当前只支持非递归表达式宏。直接或间接递归返回 `recursive-macro` 诊断并保留未展开调用，不在编译期无限展开；递归宏、含 Stock/局部变量的宏、命名模型和厂商命名空间后续单独实现。QDS/XMILE 使用 macro、parm、eqn 保存同一定义，real SDXorg 文件若只有调用而外部宏定义缺失，仍明确报告未知函数而不伪造定义。
+### 11.2 分析过程
+
+宏接入第 2 节的统一管线，不另建宏展开流程：
+
+1. 阶段 1 先收集全部宏定义，分别解析宏体和默认表达式，建立 nameKey/签名索引。定义顺序无关，互相引用不需要前置声明。
+2. 阶段 2 遍历宏体，按需查询局部参数、全局变量、内置函数和其它宏调用；查询结果直接形成 MacroAnalysis 的引用集合、调用关系和诊断，不回写宏体 AST。
+3. 模型公式中的宏调用即时校验目标签名，CallNode 本身不变，也不保存目标。参数绑定发生在运行期，不把实参 AST 填入宏体。
+4. 阶段 3 按第 6 节计算宏的传递变量依赖。直接递归、间接递归和重载调用都按具体签名建边；递归环是合法调用关系，不再产生 `recursive-macro` 诊断。
+5. 未找到定义仍报告未知函数；签名重复、参数个数不匹配和非法默认参数仍报告普通分析诊断。单个宏或公式出错不阻断其它定义的分析。
+
+### 11.3 统一运行期调用
+
+求值器通过 MacroReader 按 nameKey + 实参个数取得当前 MacroAnalysis 中的宏体和默认参数 AST。`makeMacroReader(analysis)` 只捕获 Analysis 指针；求值期间 Document 和 ModelAnalysis 都必须存活且不得修改，Result 不持有二者的指针。
+
+每次调用建立独立宏调用帧，形参绑定采用按值语义：
+
+1. 全部实参先在调用方作用域求值，每个实参只求值一次，再以 Value 绑定到被调宏的局部形参。即使形参在宏体中出现多次，也不重复读取变量或执行实参表达式。
+2. 缺失实参使用对应默认表达式。默认表达式在进入当前宏调用帧后求值，可以引用该宏已经绑定的前参；每次调用只对实际使用的默认表达式求值一次。
+3. 被调宏的默认表达式和宏体不能动态读取调用方的局部参数，只能访问自己的局部参数、全局变量和共享求值上下文。
+4. 宏体中的局部参数按 nameKey 从当前调用帧读取；未命中局部参数时，全局变量通过 VariableReader 按 nameKey 查询现有实体索引。嵌套和递归调用共享时间、数组、维度及其它 EvaluationContext 状态，但各自拥有独立局部参数帧。
+5. 宏体求值结果就是 CallNode 的值。标量和数组使用相同协议，不引入宏专用数组表示。
+
+所有宏调用共用深度计数器，直接递归、间接递归和普通嵌套调用均计入。最大宏调用深度为 64，超限返回带调用位置的求值错误，不能以进程栈溢出代替诊断。条件的短路与递归终止遵循普通表达式语义，不为递归宏增加特殊求值路径。
+
+### 11.4 宏修改与失效边界
+
+宏定义是宏体的唯一事实来源，调用方没有宏体副本。因此修改宏体或默认表达式后，只需重新生成该定义的 MacroAnalysis，并更新受影响的依赖闭包、诊断和将来可能存在的求值缓存；调用方 AST 保持原样，不做级联失效检查或级联重新展开。所有后续调用通过 MacroReader 使用重分析后的同一份宏体。
+
+如果修改的是宏名、参数个数或默认参数布局，则需要重新解析相关 CallNode 的目标签名并更新参数个数诊断，但仍不修改调用方 AST 的表达式结构。变量重命名等普通编辑按统一符号解析规则处理，不为宏另建名称迁移通道。
+
+当前每次编辑后全量重建 ModelAnalysis 仍是允许的简单实现，但它不是级联展开，也不要求调用方保存宏体。未来只有 profile 证明全量分析或运行期调用是瓶颈时，才引入增量分析、编译或缓存；这些优化必须保留宏定义的唯一权威表示，并按定义修订关系失效，禁止以保存内联宏体副本的方式优化。
+
+### 11.5 持久化与边界
+
+QDS/XMILE 使用 macro、parm、eqn 保存同一定义，不持久化展开结果或调用帧。真实 SDXorg 文件若只有调用而外部宏定义缺失，仍明确报告未知函数而不伪造定义。含 Stock/局部变量的宏、外部 include、命名模型和厂商命名空间后续单独实现。
 
 ## 12. 测试与性能
 
 ### 单元测试
 
 - 字面量、中文/空格/转义名称、注释、无参函数、参数个数和未知符号。
+- AST 只保存语法结构、nameKey、字面量和 SourceSpan；校验、依赖分析和求值前后节点结构及源码位置不变，同一 AST 可在不同索引上下文中重新 Resolve，不携带旧实体或调用目标。
 - 每个优先级的 AST 形状，重点覆盖 `a^b^c`、`-x^2`、MOD、比较/等式、AND/OR。
 - IF THEN ELSE、嵌套调用、空方程、非法输入及 SourceSpan。
 - 引用收集、结构使用、公式引用使用、依赖环、Stock/Flow 不误判。
-- 已解析变量读取、实数与 0/1 逻辑值、负数 MOD、时间常量、数学函数、条件短路、Inf/NaN、变量缺失和未支持语义。
+- 按 nameKey 读取变量、实数与 0/1 逻辑值、负数 MOD、时间常量、数学函数、条件短路、Inf/NaN、变量缺失和未支持语义。
 - numbered/named 维度、名称冲突、下标范围与重复检查、Wildcard/Range/@ AST、维度元素解析、逐元素依赖、Capture/Restore 及 QDS/XMILE 往返。
 - 下标越界、命名元素、切片、转置、维度重排广播、逐元素作用域、数组条件、归约/RANK、切片内数学运算及不兼容维度错误。
 - 数组初始化列表 AST、表达式列表项、行主序整体/逐元素求值、真实 Vensim 初始化模型及元素数/维度错误。
-- 宏签名冲突、参数个数重载、默认参数引用前参、局部遮蔽、嵌套展开、全局依赖、递归诊断及 QDS/XMILE 往返求值。
+- 宏签名冲突、参数个数重载、默认参数引用前参、局部遮蔽、全局依赖及 QDS/XMILE 往返。
+- 模型公式和宏体中的调用始终保留 CallNode，宏体/默认参数 AST 不复制；直接、间接嵌套调用及宏依赖闭包不需要展开即可得到正确结果。
+- 实参在形参被多次引用时只求值一次，默认参数按调用求值且不能读取调用方局部参数；标量和数组实参均遵守相同规则。
+- 有终止条件的直接递归、间接递归、同名不同签名调用、深度 64 边界和超限错误；合法递归不产生 `recursive-macro`。
+- 修改宏体或默认表达式后所有调用使用新定义，调用方 AST 结构无需变化且仍只含原 CallNode；修改签名后只重做相关调用解析，不发生级联展开。全量重建时允许 AST 对象地址变化。
 - 现有 SIR、中文名称、重名检查及整个 Validation UI 回归。
 - 修改解析器时开启 `QDS_ENABLE_XMILE_CORPUS_TESTS`，验证全部 SDXorg XMILE 文件；不支持结构明确分类，不静默跳过。
 
 ### 可重复 profile
 
-建立 `profile-formula`：固定生成标量公式，分别测量 lex/parse、完整模型符号与依赖分析、就绪 AST 求值，报告数量、总耗时和单公式耗时。至少覆盖 1000 个不同复杂度公式，并验证 AST 节点数、引用数、图边数、求值结果数和校验和，避免编译器优化掉工作。
+建立 `profile-formula`：固定生成标量公式，分别测量 lex/parse、完整模型符号与依赖分析、纯语法 AST 求值，报告数量、总耗时和单公式耗时。求值数据包含使用现有索引进行名称解析的开销，不以预先写入 AST 的绑定规避测量。至少覆盖 1000 个不同复杂度公式，并验证 AST 节点数、引用数、图边数、求值结果数和校验和，避免编译器优化掉工作。
+
+宏 profile 与普通公式共用可重复工具，分别测量不同调用深度、参数个数、默认参数、标量/数组实参、直接递归和间接递归的分析及运行期调用耗时，同时校验返回值、实参读取次数和 AST 节点数。必须确认节点数不随调用链级联增长。若以后实现增量分析，再单独测量宏修改后的失效与重分析成本；不得用展开后的求值速度掩盖维护成本。
 
 首个基线不预设未经验证的性能指标；后续优化必须比较同环境结果，不提前引入缓存、字符串池或派生索引。
 
 ## 13. 分阶段实施
 
 1. **标量 AST**：Lexer、Pratt Parser、SourceSpan、基础节点和错误恢复，附完整测试和 profile。
-2. **符号与依赖分析**：函数注册表、nameKey 解析、EquationDependency/StructuralUse、替换现有 validateDocument。
+2. **符号与依赖分析**：函数注册表、基于现有索引的按需 nameKey 解析、EquationDependency/StructuralUse、替换现有 validateDocument；解析绑定不写入 AST。
 3. **求值准备**：复用 AST 和函数注册表实现标量求值、TIME/常量/基本运算及确定性测试。
 4. **数组模型与分析**：Dimension、Apply-to-All/逐元素方程、Subscript、通配、区间、@ AST、符号依赖和 QDS/XMILE 持久化。
 5. **数组与高级求值**：带维度信息的 ArrayValue、下标/切片、转置、Apply-to-All 广播、数组函数及元素级执行排序。
-6. **宏与兼容方言**：命名模型、厂商命名空间和 Vensim 差异，逐项引用权威资料，不凭经验补语法。
+6. **统一宏调用**：移除非递归 AST 展开，保留所有 CallNode，完成局部调用帧、默认参数、依赖闭包、递归深度限制及宏修改失效边界。
+7. **兼容方言与外部定义**：命名模型、外部 include、厂商命名空间和 Vensim 差异，逐项引用权威资料，不凭经验补语法。
 
 每个阶段独立完成功能实现、单元测试、profile、Release 后 Debug 全量回归和审核，不把后续求值或数组工作提前混入首阶段。
