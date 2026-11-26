@@ -4,12 +4,14 @@
 
 状态：界面目标设计，尚未开始 UI 实现。
 
-当前 Core 已提供 SimulationSettings、SimulationPlan、同步 SimulationRunner 和不可变 SimulationRun。本设计覆盖设置、运行控制、进度、诊断、变量选择、折线图和数据表，不把数组、多 Run 实验或蒙特卡洛界面提前混入首批实现。
+当前 Core 已提供 SimulationSettings、SimulationPlan、同步 SimulationRunner 和不可变 SimulationRun。本设计覆盖建模到运行的完整工作流、命名结果、Workbench Variable、折线图和数据表。命名多 Run 与叠加比较属于基本结果管理；数组、参数扫描、批量实验和蒙特卡洛仍不提前混入首批实现。
+
+参考资料为用户提供的 Vensim Rabbit 建模/分析教程，原文摘录用本地 gitignore 目录 `docs/references/vensim/` 保存。Vensim 的单击建模方式仅作流程参考，不覆盖本项目已经确定的拖放元素和左键拖拽连线交互。
 
 目标流程：
 
 ```text
-设置模型参数 → 编译并运行 → 选择变量 → 查看折线/数据 → 导出结果
+创建模型 → 编辑结构/方程 → 模型与单位检查 → 命名并运行 → 选择 Workbench Variable → 折线/表格/多 Run 分析
 ```
 
 界面只调用 Core 公开接口，不在 Widget、Action 或图表中实现公式解析、拓扑排序或积分算法。
@@ -24,6 +26,10 @@
 | --- | --- | --- |
 | Run | Ctrl+R | 编译当前 Document 并开始一次新 Run |
 | Cancel | Esc，仅运行时捕获 | 请求当前 Worker 取消，不影响编辑器其他 Esc 操作 |
+| Graph | — | 在结果区显示 Workbench Variable 的全部已加载 Run 折线 |
+| Table | — | 在结果区显示同一变量的逐时刻数据表 |
+| Causes Strip | — | 后续显示 Workbench Variable 及其直接原因 |
+| Runs Compare | — | 后续比较前两个已加载 Run 的 Constant/Lookup 差异 |
 | Simulation settings | — | 打开设置对话框 |
 | Export results | — | 导出当前选中变量的 CSV；实现时单独审核文件错误语义 |
 
@@ -31,6 +37,27 @@
 - Run 在已有运行进行中禁用，Cancel 只在没有运行时禁用。
 - 运行期间仍可编辑下一次运行的设置；修改不写入 activeRequest，当前 Worker 继续使用其固定设置，已有结果被标记为旧模型结果。
 - 状态栏显示 Ready、Compiling、Running、Completed、Cancelled、Failed，以及当前时间/总进度。
+
+**Run Name**
+
+- 工具栏在 Run 前提供可编辑 `Run name` 输入框，默认使用当前模型中未占用的 Run1、Run2 等名称；支持中文，修剪首尾空白，空名称不允许运行。
+- 输入框获得焦点时 Enter 与 Run/Ctrl+R 等价；不应要求双击才能编辑。
+- 新名称创建新命名结果。相同名称已存在时，运行前明确询问是否覆盖；取消询问则不启动 Worker，旧结果不变。
+- 即使允许覆盖，也只有新 Run 成功完成后才替换同名旧结果；失败或取消不删除已有数据。
+- Run Name 是结果身份的一部分，但不是 EntityId，也不进入模型公式命名空间。新建/打开文档时清空结果名称占用。
+
+**Workbench Variable**
+
+- 当前分析变量称为 Workbench Variable，与画布多选集合和图表可见变量集合分开保存。
+- 单击画布中的数值 ModelElement 会同时选中它并设为 Workbench Variable；Connector、Cloud、Comment 不能成为 Workbench Variable。多选不改变“唯一当前分析变量”的规则。
+- 工具栏/结果区的 Variable Selection 控件提供同一变量列表和搜索；控件与画布选择双向同步。
+- 标题栏或紧邻标题的固定区域显示当前 Workbench Variable，修改画布选择、变量改名或文档替换后立即刷新。
+- Graph/Table 默认分析 Workbench Variable；若尚未设置则使用首个 Stock，再否则使用首个可输出变量。没有可用结果时提示先运行，不隐式启动新 Run。
+- Workbench Variable 只决定当前分析对象；Graph 默认叠加所有已加载 Run，变量列表仍可向图中加入其他变量。
+
+**模型检查入口**
+
+新增文字 Model 菜单或等价现有菜单位置：Check Model（Ctrl+T）执行结构、公式和可运行性检查；Units Check（Ctrl+U）在单位语义实现后启用。检查结果定位到变量和公式，不能只显示统一失败框。缺少单位检查实现前必须明确标为未提供，不能总报告 Units OK。
 
 ### 2.2 设置对话框
 
@@ -52,14 +79,31 @@ OK 时一次性构造不可变 SimulationSettings 并由 DocumentController 提�
 
 ```text
 Run results
+├─ Datasets：命名 Run、加载状态、最新运行优先
 ├─ 左：变量搜索、可见性列表、全选/清空、使用画布选择
 └─ 右：Charts / Data / Diagnostics 三个标签页
 ```
 
-- 没有 Run 时 Dock 可保持隐藏；首次成功或失败运行后显示对应页面。
+- Datasets 同时是 Control Panel 的数据集页面；每个命名 Run 具有独立加载状态。最新运行排在前面，Graph/Table/Causes Strip 默认作用于全部已加载 Run。
+- 已加载 Run、Workbench Variable 和图中其他可见变量是三组不同状态，不得共用一个布尔选择字段。
+- 没有 Run 时 Dock 可保持隐藏；首次成功或失败运行后显示对应页面。即使小模型瞬间完成，也显示 Completed、样本数、Run Name 和结果 Dock，不让用户靠“是否弹出覆盖提示”判断是否运行。
 - Diagnostics 复用现有模型检查面板或共享诊断视图，不复制诊断存储。
 - 变量列表显示名称、单位、可见勾选状态和 Run 状态，不把名称作为身份。
-- 默认选择全部 Stock；Auxiliary/Flow/Constant 可搜索并追加。变量过多时使用列表虚拟化和延迟搜索，不一次生成图表点对象。
+- 默认显示 Workbench Variable；未设置时选择首个 Stock。Auxiliary/Flow/Constant 可搜索并追加。变量过多时使用列表虚拟化和延迟搜索，不一次生成图表点对象。
+- Del/Close 只在结果视图具有焦点时关闭当前输出，不删除数据集，也不删除画布元素。Windows > Close All Output 只关闭输出视图，不清空 Datasets；清空结果需要独立明确操作。
+
+### 2.4 结构、方程与完整性提示
+
+建模到模拟的界面必须显示“结构完成但尚不能运行”的状态，而不是等运行失败后才知道公式缺失。
+
+- 元素创建继续使用现有拖放面板和左键拖拽 Flow/Arrow。Vensim 的单击起点/终点教程只说明流程，不改变本项目鼠标约定。
+- Equation Editor 动作聚焦现有 PropertyPanel 的公式输入，不新增另一套公式存储。变量列表/补全可以插入名称；换行和空白只影响公式源文本，名称内部不能插入换行。
+- 缺少公式、公式不完整、缺少必要输入或存在诊断的元素在画布上有明确警告轮廓/标记；完成后立即清除。颜色不是唯一通道，还需图标或文本以支持可访问性。
+- Stock 编辑显示 Initial value 公式、单位和流入/流出关系；Flow 由端点方向自动决定加减。不得把 Stock 初值伪装成可自由编辑的 INTEG 表达式，也不要求用户手工维护净流入字符串。
+- Flow/Auxiliary/Constant 编辑各自公式和单位；Flow 的方向与符号由 FlowEndpoints 决定，改变方向必须经过现有重连命令。
+- Check Model（Ctrl+T）汇总结构、语法、引用、初始化/运行期环和可运行性；错误可定位到元素及公式 SourceSpan。
+- Units 输入保留既有单位历史供选择。Units Check（Ctrl+U）需要真正的量纲分析；实现前不提供虚假通过结果。单位错误应指出相关变量、期望/实际单位和运算位置。
+- 新建模型可以直接使用默认 SimulationSettings，Time Bounds 设置入口在向导/菜单中清晰可发现；是否强制弹窗由后续可用性测试决定，不强制中断熟悉用户。
 
 ## 3. 运行期架构与生命周期
 
@@ -72,6 +116,7 @@ SimulationRunRequest（不可变、共享所有权）
 ├─ std::shared_ptr<const Document> model   本次运行的独立语义副本
 ├─ SimulationPlan plan                     由该副本编译
 ├─ settings
+├─ runName：QString                        本次运行的不可变名称
 └─ QVector<RunVariableInfo>                EntityId、当时 displayName、unit
 ```
 
@@ -88,11 +133,15 @@ SimulationRunRequest（不可变、共享所有权）
 ```text
 SimulationController : QObject
 ├─ shared_ptr<const SimulationRunRequest> activeRequest
-├─ shared_ptr<const SimulationRun> currentRun
+├─ NamedRun 集合                            RunId、runName、shared_ptr<const SimulationRun>
+├─ 已加载 RunId 顺序                        最新优先；加载状态独立于结果所有权
+├─ Workbench Variable 与可见变量状态
 ├─ Worker/QThread 的受控生命周期
 ├─ 原子取消标志
 └─ Idle / Compiling / Running / Completed / Cancelled / Failed
 ```
+
+NamedRun 发布后不可变；覆盖同名结果也创建新 RunId 和新结果对象，不修改旧 SimulationRun。Worker 和信号只持有 RunId/共享 const 指针，不持有界面对象地址。
 
 - Worker 在独立线程中使用共享 const Request 执行同步 Runner；Core 不依赖 Qt 线程或 Widgets。
 - 进度通过带 QObject context 的 queued signal 返回 UI；限制更新频率，不逐公式发送信号。
@@ -108,7 +157,8 @@ SimulationController : QObject
 
 - 当前 Run 是独立历史事实，不进入 Document undo/redo。
 - 运行后的普通模型编辑不修改旧 Run；界面标记 `Results are from an older model`，并提供 Run 按钮刷新。
-- 只有新 Run 成功建立后才替换当前结果；失败 Run 可以显示自身诊断，旧 Run 是否保留在界面中由多 Run 设计决定，首批至少不能静默删除旧结果。
+- 新名称生成新的 NamedRun，并置于已加载列表首部；相同名称经确认后也只在新 Run 成功时替换旧记录。失败 Run 可以显示自身诊断，任何失败/取消都不得静默删除旧结果。
+- NamedRun 的 RunId 在会话内单调递增；runName 用于显示与覆盖判断，RunId 用于信号、加载列表和界面索引，避免改名或同名覆盖时引用错位。
 - 诊断定位只在当前 Document 仍存在相同 EntityId 且用户确认定位当前模型时跳转；历史元素已删除时只显示历史名称，不创建替代对象。
 
 ## 4. 折线图与数据表
@@ -119,11 +169,11 @@ SimulationController : QObject
 
 首批交互：
 
-- 多个选中变量按时间叠加；
+- Workbench Variable 及其他选中变量按时间叠加，并默认叠加全部已加载 Run；图例同时显示 Run Name 和变量名，内部用 RunId+EntityId 区分；
 - 图例点击显示/隐藏；
 - 缩放、拖动和恢复全范围；
 - 光标最近样本提示，显示时间、变量名和值；
-- 坐标轴使用实际时间范围与数值范围，不假定等间隔显示文本标签；
+- 坐标轴使用实际时间范围与数值范围，不假定等间隔显示文本标签；常量结果应显示为准确的水平线，例如 Population=1000，不能因自动坐标范围显得波动；
 - 空选择显示提示，不生成空图片覆盖剪贴板；
 - PNG 导出使用离屏渲染，不截取屏幕。
 
@@ -133,13 +183,21 @@ Qt Charts、QCustomPlot 或自绘方案只能在同一原型场景 profile 后�
 
 `SimulationTableModel : QAbstractTableModel` 按需为视图提供数据：
 
-- 第一列是时间，其余为选中变量；
-- 行对应 Run::times，列通过 EntityId 查询不可变序列；
+- Data 页提供 Run 选择器，默认最新已加载 Run；第一列是时间，其余为选中变量。切换 Run 不修改其不可变结果；
+- 行对应当前 RunId 的 Run::times，列通过 EntityId 查询不可变序列；不强行对齐不同 Run 的时间网格；
 - 不复制完整结果矩阵；
 - 提供统一有效数字显示，底层 double 不因格式化而改变；
 - 支持复制选中区域和后续 CSV 导出；导出失败明确报告，不写部分文件冒充成功。
+- 表格必须能滚动到末时刻以核对恒定值或长期趋势；不能只显示首屏就宣称验证完成。
 
 失败或取消的 Run 只展示已完成样本前缀，并在标题中明确状态，不把最后一个点伪装成 stopTime。
+
+### 4.3 原因与 Run 比较（后续分析工具）
+
+- Causes Strip 使用 Workbench Variable 在对应 SimulationPlan/AnalysisReport 中的直接公式依赖，显示该变量及 births/deaths 等直接原因；不能仅凭画面上的 Connector 猜测公式依赖。
+- 每个已加载 Run 可显示相应条带；历史结果使用各自不可变模型副本的依赖关系。
+- Runs Compare 默认比较加载列表的前两个 Run，报告 Constant 的初值/运行值差异，并列出 Run Name、旧值、新值和差值。Lookup 比较在 Lookup 模型实现后加入。
+- 这些工具只是分析视图，不修改模型、命名结果或加载状态。
 
 ## 5. 错误与边界交互
 
@@ -159,6 +217,11 @@ Qt Charts、QCustomPlot 或自绘方案只能在同一原型场景 profile 后�
 - 菜单/工具栏 QAction 共享、快捷键、启用/禁用和状态栏；
 - 设置合法提交、非法保留、Cancel 及 undo/redo；
 - 成功、编译失败、运行失败和取消；
+- Run Name 默认值、中文名称、Enter 运行、空名称、同名覆盖确认/取消、失败不覆盖旧结果；
+- 画布与 Variable Selection 双向同步 Workbench Variable，标题栏刷新，多选不与 Workbench 状态混淆；
+- Graph/Table 对 Workbench Variable 和全部已加载 Run 的展示，恒定值水平线及表格末时刻；
+- Datasets 最新优先、加载状态、RunId 稳定性、Close/Close All Output 不删除结果；
+- 缺少公式的画布提示、Model Check 定位、Stock 初值/Flow 方向和单位检查未实现时的明确状态；
 - 变量选择、图表/表格/诊断切换及结果导出；
 - 编辑后结果过期、新建/打开清理、历史名称保持；
 - 重复 Run、运行中再次 Run、关闭窗口和替换 Document 的 Worker 取消/等待；
@@ -180,10 +243,10 @@ Qt Charts、QCustomPlot 或自绘方案只能在同一原型场景 profile 后�
 ## 7. 分阶段实施
 
 1. **运行会话基础**：不可变 Document 副本、SimulationController、Worker 生命周期、取消和文档替换保护。
-2. **设置与运行入口**：SimulationSettingsDialog、文档级撤销、Run/Cancel、状态栏和诊断定位。
-3. **结果 Dock**：变量选择、Run 状态、数据表及历史结果过期提示。
-4. **折线图原型**：统一 TimeSeriesChartWidget 接口，比较候选实现的性能后选择依赖并完成基本交互。
-5. **结果导出与完善**：CSV/PNG、键盘可访问性、翻译、大结果 profile。
-6. **后续独立设计**：多 Run 对比、数组结果、实验与敏感性分析界面。
+2. **设置与运行入口**：SimulationSettingsDialog、文档级撤销、Run Name/Enter、Run/Cancel、状态栏和诊断定位。
+3. **结果 Dock**：Workbench Variable、命名 Datasets、加载状态、数据表及历史结果过期提示。
+4. **折线图原型**：统一 TimeSeriesChartWidget 接口，比较候选实现的性能后选择依赖并完成 Workbench/多 Run 叠加交互。
+5. **结果导出与完善**：CSV/PNG、Close All Output、键盘可访问性、翻译、大结果 profile。
+6. **后续独立设计**：Causes Strip、Runs Compare（含 Lookup）、数组结果、参数实验与敏感性分析界面。
 
 每阶段单独提交设计所对应的实现和测试；本文件只记录功能设计，不进入 history。
