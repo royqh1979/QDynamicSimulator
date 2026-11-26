@@ -238,21 +238,21 @@ bool Document::defineDimensionData(Dimension dimension)
     return true;
 }
 
-bool Document::prepareMacro(MacroDefinition &macro) const
+bool Document::prepareMacro(MacroDefinitionData &macro) const
 {
     macro.displayName = trimDisplayName(macro.displayName);
-    macro.nameKey = normalizeIdentifier(macro.displayName);
-    if (macro.nameKey.isEmpty() || macro.equation.isEmpty() || m_nameIndex.count(macro.nameKey)
-        || m_dimensionIndex.count(macro.nameKey))
+    const QString nameKey = normalizeIdentifier(macro.displayName);
+    if (nameKey.isEmpty() || macro.equation.isEmpty() || m_nameIndex.count(nameKey)
+        || m_dimensionIndex.count(nameKey))
         return false;
     QSet<QString> parameters;
     bool hasDefault = false;
-    for (MacroParameter &parameter : macro.parameters) {
+    for (MacroParameterData &parameter : macro.parameters) {
         parameter.displayName = trimDisplayName(parameter.displayName);
-        parameter.nameKey = normalizeIdentifier(parameter.displayName);
-        if (parameter.nameKey.isEmpty() || parameters.contains(parameter.nameKey))
+        const QString parameterKey = normalizeIdentifier(parameter.displayName);
+        if (parameterKey.isEmpty() || parameters.contains(parameterKey))
             return false;
-        parameters.insert(parameter.nameKey);
+        parameters.insert(parameterKey);
         if (parameter.defaultEquation.isEmpty()) {
             if (hasDefault)
                 return false;
@@ -263,47 +263,64 @@ bool Document::prepareMacro(MacroDefinition &macro) const
     return true;
 }
 
-bool Document::hasMacroName(const QString &nameKey) const
+std::unique_ptr<MacroDefinition> Document::makeMacro(const MacroDefinitionData &macro)
 {
-    const auto found = m_macros.lowerBound({normalizeIdentifier(nameKey), 0, 1});
-    return found != m_macros.end() && found.key().nameKey == normalizeIdentifier(nameKey);
+    std::vector<MacroParameter> parameters;
+    for (const MacroParameterData &entry : macro.parameters) {
+        parameters.emplace_back(entry.displayName, normalizeIdentifier(entry.displayName),
+            analyzeFormula(entry.defaultEquation));
+    }
+    return std::make_unique<MacroDefinition>(macro.displayName, normalizeIdentifier(macro.displayName),
+        std::move(parameters), analyzeFormula(macro.equation));
 }
 
-bool Document::defineMacro(MacroDefinition macro)
+bool Document::hasMacroName(const QString &nameKey) const
+{
+    const QString key = normalizeIdentifier(nameKey);
+    const auto found = m_macros.lower_bound({key, 0, 1});
+    return found != m_macros.end() && found->first.nameKey == key;
+}
+
+bool Document::defineMacro(MacroDefinitionData macro)
 {
     if (!prepareMacro(macro))
         return false;
-    const int required = macro.requiredArguments();
-    auto existing = m_macros.lowerBound({macro.nameKey, 0, 1});
-    while (existing != m_macros.end() && existing.key().nameKey == macro.nameKey) {
-        const MacroDefinition &candidate = existing.value();
-        if (required <= candidate.parameters.size() && candidate.requiredArguments() <= macro.parameters.size())
+    int newRequired = macro.parameters.size();
+    while (newRequired > 0 && !macro.parameters[newRequired - 1].defaultEquation.isEmpty())
+        --newRequired;
+    const QString nameKey = normalizeIdentifier(macro.displayName);
+    auto existing = m_macros.lower_bound({nameKey, 0, 1});
+    while (existing != m_macros.end() && existing->first.nameKey == nameKey) {
+        const MacroDefinition &candidate = *existing->second;
+        if (newRequired <= candidate.parameters().size() && candidate.requiredArguments() <= macro.parameters.size())
             return false;
         ++existing;
     }
-    m_macros.insert(macro.signature(), std::move(macro));
+    m_macros.emplace(MacroSignature {nameKey, int(macro.parameters.size()), 1},
+        makeMacro(macro));
     return true;
 }
 
-bool Document::setMacro(MacroDefinition macro)
+bool Document::setMacro(MacroDefinitionData macro)
 {
     if (!prepareMacro(macro))
         return false;
-    const auto found = m_macros.find(macro.signature());
+    const MacroSignature signature {normalizeIdentifier(macro.displayName), int(macro.parameters.size()), 1};
+    const auto found = m_macros.find(signature);
     if (found == m_macros.end())
         return false;
-    found.value() = std::move(macro);
+    found->second = makeMacro(macro);
     return true;
 }
 
 const MacroDefinition *Document::findMacro(const QString &name, int argumentCount, int outputCount) const
 {
     const QString key = normalizeIdentifier(name);
-    auto found = m_macros.lowerBound({key, 0, outputCount});
-    while (found != m_macros.end() && found.key().nameKey == key) {
-        const MacroDefinition &macro = found.value();
+    auto found = m_macros.lower_bound({key, 0, outputCount});
+    while (found != m_macros.end() && found->first.nameKey == key) {
+        const MacroDefinition &macro = *found->second;
         if (macro.signature().outputCount == outputCount && argumentCount >= macro.requiredArguments()
-            && argumentCount <= macro.parameters.size())
+            && argumentCount <= macro.parameters().size())
             return &macro;
         ++found;
     }
@@ -442,7 +459,7 @@ std::optional<ElementData> Document::capture(EntityId id) const
         data.displayName = model->displayName();
         data.equation = model->equation();
         data.dimensions = model->dimensions();
-        data.elementEquations = model->elementEquations();
+        data.elementEquations = model->elementEquationData();
         data.unit = model->unit();
         data.comment = model->comment();
     }
@@ -623,7 +640,7 @@ bool Document::setElementEquation(EntityId id, const QVector<std::size_t> &indic
     auto *model = dynamic_cast<ModelElement *>(findMutable(id));
     if (!model)
         return false;
-    QVector<ArrayElementEquation> updated = model->elementEquations();
+    QVector<ArrayElementEquation> updated = model->elementEquationData();
     const auto found = std::find_if(updated.begin(), updated.end(), [&indices](const ArrayElementEquation &entry) {
         return entry.indices == indices;
     });
@@ -853,7 +870,7 @@ void Document::updateReferences(EntityId, const QString &oldName, const QString 
     for (auto &entry : m_elements) {
         if (auto *model = dynamic_cast<ModelElement *>(entry.second.get())) {
             QString equation = replaceReference(model->equation(), oldName, newName);
-            QVector<ArrayElementEquation> elementEquations = model->elementEquations();
+            QVector<ArrayElementEquation> elementEquations = model->elementEquationData();
             for (ArrayElementEquation &element : elementEquations)
                 element.equation = replaceReference(element.equation, oldName, newName);
             model->setFormulaData(std::move(equation), model->dimensions(), std::move(elementEquations));

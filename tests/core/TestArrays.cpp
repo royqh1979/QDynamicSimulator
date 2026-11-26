@@ -11,19 +11,11 @@ using namespace qds::core;
 
 namespace {
 
-bool hasIssue(const ModelAnalysis &analysis, const QString &code)
+bool hasIssue(const AnalysisReport &analysis, const QString &code)
 {
-    return std::any_of(analysis.issues.begin(), analysis.issues.end(), [&code](const ModelIssue &issue) {
+    return std::any_of(analysis.issues().begin(), analysis.issues().end(), [&code](const ModelIssue &issue) {
         return issue.code == code;
     });
-}
-
-const ElementAnalysis &element(const ModelAnalysis &analysis, EntityId id)
-{
-    const auto found = std::find_if(analysis.elements.begin(), analysis.elements.end(), [id](const ElementAnalysis &entry) {
-        return entry.id == id;
-    });
-    return *found;
 }
 
 class TestArrays : public QObject
@@ -62,7 +54,7 @@ void TestArrays::dimensionDefinitions()
     QVERIFY(document.setElementEquation(array, {0, 0}, "1"));
     QVERIFY(document.setElementEquation(array, {0, 0}, "2"));
     QCOMPARE(model->elementEquations().size(), std::size_t(1));
-    QCOMPARE(model->elementEquations()[0].equation, QString("2"));
+    QCOMPARE(model->elementEquations()[0].equation(), QString("2"));
     QVERIFY(!document.setElementEquation(array, {0}, "3"));
     QVERIFY(!document.setElementEquation(array, {2, 0}, "3"));
     QVERIFY(!document.setElementEquation(array, {0, 3}, "3"));
@@ -74,7 +66,7 @@ void TestArrays::dimensionDefinitions()
 
 void TestArrays::arraySyntax()
 {
-    const FormulaAnalysis analysis = analyzeFormula("A[Dim, *, 1:3, @2]");
+    const Formula analysis = analyzeFormula("A[Dim, *, 1:3, @2]");
     QVERIFY2(analysis.issues().empty(), "Array subscript syntax must parse");
     const auto *subscript = dynamic_cast<const SubscriptNode *>(analysis.root());
     QVERIFY(subscript);
@@ -90,7 +82,7 @@ void TestArrays::arraySyntax()
     QCOMPARE(position->position(), std::size_t(2));
     QCOMPARE(formulaNodeCount(analysis.root()), std::size_t(8));
 
-    const FormulaAnalysis literal = analyzeFormula("1, 2 + 3, 4");
+    const Formula literal = analyzeFormula("1, 2 + 3, 4");
     QVERIFY2(literal.issues().empty(), "Array literal syntax must parse");
     const auto *literalNode = dynamic_cast<const ArrayLiteralNode *>(literal.root());
     QVERIFY(literalNode);
@@ -98,7 +90,7 @@ void TestArrays::arraySyntax()
     QCOMPARE(literalNode->span(), (SourceSpan {0, 11}));
     QCOMPARE(formulaNodeCount(literal.root()), std::size_t(6));
 
-    const FormulaAnalysis qualified = analyzeFormula("Location.Boston");
+    const Formula qualified = analyzeFormula("Location.Boston");
     QCOMPARE(dynamic_cast<const ReferenceNode *>(qualified.root())->nameKey(), QString("location.boston"));
     QVERIFY(!analyzeFormula("A[@0]").issues().empty());
     QVERIFY(!analyzeFormula("A[@1.5]").issues().empty());
@@ -126,22 +118,21 @@ void TestArrays::arrayAnalysis()
     document.setEquation(sales, "Revenue[Location, 1] + SUM(Costs[1:3]) + Location.Boston");
     document.setEquation(recursive, "Recursive[Location]");
 
-    ModelAnalysis analysis = analyzeDocument(document);
-    const ElementAnalysis &salesAnalysis = element(analysis, sales);
-    QCOMPARE(salesAnalysis.references, (std::unordered_set<EntityId> {revenue, costs}));
+    AnalysisReport analysis = analyzeDocument(document);
+    QCOMPARE(analysis.references(sales), (QSet<EntityId> {revenue, costs}));
     QVERIFY(!hasIssue(analysis, "undefined-variable"));
     QVERIFY(!hasIssue(analysis, "parse"));
     QVERIFY(!hasIssue(analysis, "algebraic-cycle"));
-    QCOMPARE(analysis.dependencies.edges.at(revenue), QVector<EntityId> {sales});
-    QCOMPARE(analysis.dependencies.edges.at(costs), QVector<EntityId> {sales});
+    QCOMPARE(analysis.dependencies().edges().value(revenue), QVector<EntityId> {sales});
+    QCOMPARE(analysis.dependencies().edges().value(costs), QVector<EntityId> {sales});
 
     document.setEquation(recursive, "");
     document.setElementEquation(recursive, {0}, "Revenue[Boston, 2]");
     analysis = analyzeDocument(document);
-    const ElementAnalysis &recursiveAnalysis = element(analysis, recursive);
-    QCOMPARE(recursiveAnalysis.elementFormulas.size(), std::size_t(1));
-    QCOMPARE(recursiveAnalysis.elementFormulas[0].indices, QVector<std::size_t> {0});
-    QCOMPARE(recursiveAnalysis.references, std::unordered_set<EntityId> {revenue});
+    const auto *recursiveModel = static_cast<const ModelElement *>(document.find(recursive));
+    QCOMPARE(recursiveModel->elementEquations().size(), std::size_t(1));
+    QCOMPARE(recursiveModel->elementEquations()[0].indices(), QVector<std::size_t> {0});
+    QCOMPARE(analysis.references(recursive), QSet<EntityId> {revenue});
     QVERIFY(hasIssue(analysis, "incomplete-array-elements"));
 }
 
@@ -162,12 +153,16 @@ void TestArrays::captureAndRestore()
     QVERIFY(restored.restore(captured));
     const auto *model = static_cast<const ModelElement *>(restored.find(captured.id));
     QCOMPARE(model->dimensions(), captured.dimensions);
-    QCOMPARE(model->elementEquations(), captured.elementEquations);
+    QCOMPARE(model->elementEquations().size(), captured.elementEquations.size());
+    for (int index = 0; index < model->elementEquations().size(); ++index) {
+        QCOMPARE(model->elementEquations()[index].indices(), captured.elementEquations[index].indices);
+        QCOMPARE(model->elementEquations()[index].equation(), captured.elementEquations[index].equation);
+    }
 
     QVERIFY(document.rename(input, "Rate"));
     model = static_cast<const ModelElement *>(document.find(array));
-    QCOMPARE(model->elementEquations()[0].equation, QString("Rate"));
-    QCOMPARE(model->elementEquations()[1].equation, QString("Rate * 2"));
+    QCOMPARE(model->elementEquations()[0].equation(), QString("Rate"));
+    QCOMPARE(model->elementEquations()[1].equation(), QString("Rate * 2"));
 }
 
 } // namespace

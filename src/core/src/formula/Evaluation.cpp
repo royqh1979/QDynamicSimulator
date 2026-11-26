@@ -683,12 +683,10 @@ private:
 
     EvaluationResult invokeMacro(const CallNode &node, const MacroEvaluation &macro)
     {
-        if (!macro.definition || !macro.body || !macro.defaults)
+        if (!macro.definition)
             return failure(&node, "Invalid macro definition");
         if (m_macroFrames.size() >= 64)
             return failure(&node, "Macro recursion depth limit exceeded");
-        if (macro.defaults->size() < static_cast<std::size_t>(macro.definition->parameters.size()))
-            return failure(&node, "Invalid macro default arguments");
 
         QVector<Value> arguments;
         arguments.reserve(node.argumentCount());
@@ -701,17 +699,17 @@ private:
 
         m_macroFrames.push_back({});
         MacroFrameGuard guard(m_macroFrames);
-        for (int index = 0; index < macro.definition->parameters.size(); ++index) {
+        for (int index = 0; index < macro.definition->parameters().size(); ++index) {
             Value value = index < arguments.size() ? std::move(arguments[index]) : Value();
             if (index >= arguments.size()) {
-                EvaluationResult evaluated = evaluate(macro.defaults->at(index).root());
+                EvaluationResult evaluated = evaluate(macro.definition->parameters()[index].defaultFormula().root());
                 if (!evaluated.value)
                     return evaluated;
                 value = std::move(*evaluated.value);
             }
-            m_macroFrames.back().insert(macro.definition->parameters[index].nameKey, std::move(value));
+            m_macroFrames.back().insert(macro.definition->parameters()[index].nameKey(), std::move(value));
         }
-        return evaluate(macro.body);
+        return evaluate(macro.definition->formula().root());
     }
 
     EvaluationResult call(const CallNode &node)

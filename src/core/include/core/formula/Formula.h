@@ -264,25 +264,28 @@ struct FormulaIssue {
     bool operator==(const FormulaIssue &other) const { return span == other.span && message == other.message; }
 };
 
-class FormulaAnalysis
+class Formula
 {
 public:
-    FormulaAnalysis() = default;
-    FormulaAnalysis(std::unique_ptr<FormulaNode> ast, QVector<FormulaIssue> issues)
-        : m_ast(std::move(ast))
+    Formula() = default;
+    Formula(QString source, std::unique_ptr<FormulaNode> ast, QVector<FormulaIssue> issues)
+        : m_source(std::move(source))
+        , m_ast(std::move(ast))
         , m_issues(std::move(issues))
     {
     }
 
+    const QString &source() const { return m_source; }
     const FormulaNode *root() const { return m_ast.get(); }
     const QVector<FormulaIssue> &issues() const { return m_issues; }
 
 private:
+    QString m_source;
     std::unique_ptr<FormulaNode> m_ast;
     QVector<FormulaIssue> m_issues;
 };
 
-FormulaAnalysis analyzeFormula(QString equation);
+Formula analyzeFormula(QString equation);
 std::size_t formulaNodeCount(const FormulaNode *node);
 
 } // namespace qds::core

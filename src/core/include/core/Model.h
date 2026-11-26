@@ -2,11 +2,13 @@
 
 #include <core/Element.h>
 #include <core/ElementRange.h>
+#include <core/formula/Formula.h>
 
 #include <cstddef>
 #include <QString>
 #include <utility>
 #include <QVector>
+#include <vector>
 
 namespace qds::core {
 
@@ -18,14 +20,33 @@ struct ArrayElementEquation {
     bool operator!=(const ArrayElementEquation &other) const { return !(*this == other); }
 };
 
+class ArrayElementFormula
+{
+public:
+    ArrayElementFormula(QVector<std::size_t> indices, Formula formula)
+        : m_indices(std::move(indices))
+        , m_formula(std::move(formula))
+    {
+    }
+
+    const QVector<std::size_t> &indices() const { return m_indices; }
+    const Formula &formula() const { return m_formula; }
+    const QString &equation() const { return m_formula.source(); }
+
+private:
+    QVector<std::size_t> m_indices;
+    Formula m_formula;
+};
+
 class ModelElement : public DocumentElement
 {
 public:
     const QString &displayName() const { return m_displayName; }
     const QString &nameKey() const { return m_nameKey; }
-    const QString &equation() const { return m_equation; }
+    const QString &equation() const { return m_formula.source(); }
+    const Formula &formula() const { return m_formula; }
     const QVector<QString> &dimensions() const { return m_dimensions; }
-    const QVector<ArrayElementEquation> &elementEquations() const { return m_elementEquations; }
+    const std::vector<ArrayElementFormula> &elementEquations() const { return m_elementFormulas; }
     const QString &unit() const { return m_unit; }
     const QString &comment() const { return m_comment; }
 
@@ -46,33 +67,45 @@ private:
     void setFormulaData(QString equation, QVector<QString> dimensions,
         QVector<ArrayElementEquation> elementEquations)
     {
-        m_equation = std::move(equation);
+        m_formula = analyzeFormula(std::move(equation));
         m_dimensions = std::move(dimensions);
-        m_elementEquations = std::move(elementEquations);
+        m_elementFormulas.clear();
+        for (const ArrayElementEquation &entry : elementEquations)
+            m_elementFormulas.push_back(ArrayElementFormula(entry.indices, analyzeFormula(entry.equation)));
     }
     void setEquation(QString equation)
     {
-        m_equation = std::move(equation);
-        m_elementEquations.clear();
+        m_formula = analyzeFormula(std::move(equation));
+        m_elementFormulas.clear();
     }
     void setDimensions(QVector<QString> dimensions)
     {
         m_dimensions = std::move(dimensions);
-        m_elementEquations.clear();
+        m_elementFormulas.clear();
     }
     void setElementEquations(QVector<ArrayElementEquation> equations)
     {
-        m_equation.clear();
-        m_elementEquations = std::move(equations);
+        m_formula = Formula {};
+        m_elementFormulas.clear();
+        for (const ArrayElementEquation &entry : equations)
+            m_elementFormulas.push_back(ArrayElementFormula(entry.indices, analyzeFormula(entry.equation)));
     }
     void setUnit(QString unit) { m_unit = std::move(unit); }
     void setComment(QString comment) { m_comment = std::move(comment); }
 
+    QVector<ArrayElementEquation> elementEquationData() const
+    {
+        QVector<ArrayElementEquation> result;
+        for (const ArrayElementFormula &entry : m_elementFormulas)
+            result.push_back({entry.indices(), entry.equation()});
+        return result;
+    }
+
     QString m_displayName;
     QString m_nameKey;
-    QString m_equation;
+    Formula m_formula;
     QVector<QString> m_dimensions;
-    QVector<ArrayElementEquation> m_elementEquations;
+    std::vector<ArrayElementFormula> m_elementFormulas;
     QString m_unit;
     QString m_comment;
 };

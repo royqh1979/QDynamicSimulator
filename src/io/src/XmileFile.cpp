@@ -150,15 +150,15 @@ void writeXmileMacros(QXmlStreamWriter &writer, const core::Document &document)
 {
     for (const core::MacroDefinition &macro : document.macros()) {
         writer.writeStartElement(QStringLiteral("macro"));
-        writer.writeAttribute(QStringLiteral("name"), (macro.displayName));
-        for (const core::MacroParameter &parameter : macro.parameters) {
+        writer.writeAttribute(QStringLiteral("name"), macro.displayName());
+        for (const core::MacroParameter &parameter : macro.parameters()) {
             writer.writeStartElement(QStringLiteral("parm"));
-            if (!parameter.defaultEquation.isEmpty())
-                writer.writeAttribute(QStringLiteral("default"), (parameter.defaultEquation));
-            writer.writeCharacters((parameter.displayName));
+            if (!parameter.defaultEquation().isEmpty())
+                writer.writeAttribute(QStringLiteral("default"), parameter.defaultEquation());
+            writer.writeCharacters(parameter.displayName());
             writer.writeEndElement();
         }
-        writer.writeTextElement(QStringLiteral("eqn"), (macro.equation));
+        writer.writeTextElement(QStringLiteral("eqn"), macro.equation());
         writer.writeEndElement();
     }
 }
@@ -174,16 +174,16 @@ void writeXmileArrayDefinition(QXmlStreamWriter &writer, const core::Document &d
         writer.writeEndElement();
     }
     writer.writeEndElement();
-    for (const core::ArrayElementEquation &entry : element.elementEquations()) {
+    for (const core::ArrayElementFormula &entry : element.elementEquations()) {
         writer.writeStartElement(QStringLiteral("element"));
         QStringList indices;
-        for (std::size_t position = 0; position < entry.indices.size(); ++position) {
+        for (std::size_t position = 0; position < entry.indices().size(); ++position) {
             const core::Dimension *dimension = document.findDimension(element.dimensions()[position]);
-            const core::DimensionElement &index = dimension->elements[entry.indices[position]];
-            indices.append(index.nameKey.isEmpty() ? QString::number(entry.indices[position] + 1) : quotedIdentifier(index.displayName));
+            const core::DimensionElement &index = dimension->elements[entry.indices()[position]];
+            indices.append(index.nameKey.isEmpty() ? QString::number(entry.indices()[position] + 1) : quotedIdentifier(index.displayName));
         }
         writer.writeAttribute(QStringLiteral("subscript"), indices.join(','));
-        writer.writeTextElement(QStringLiteral("eqn"), (entry.equation));
+        writer.writeTextElement(QStringLiteral("eqn"), entry.equation());
         writer.writeEndElement();
     }
 }
@@ -239,7 +239,7 @@ QByteArray writeXml(const core::Document &document)
         writer.writeStartElement(variableTag(variable.kind()));
         writer.writeAttribute(QStringLiteral("name"), name);
         writeXmileArrayDefinition(writer, document, variable);
-        if (variable.elementEquations().isEmpty())
+        if (variable.elementEquations().empty())
             writer.writeTextElement(
                 QStringLiteral("eqn"),
                 variable.equation().isEmpty() ? QStringLiteral("0") : (variable.equation()));
@@ -354,7 +354,7 @@ struct PendingFlowLayout {
 
 bool parseXmileMacro(QXmlStreamReader &reader, core::Document &document, QString *errorMessage)
 {
-    core::MacroDefinition macro;
+    core::MacroDefinitionData macro;
     macro.displayName = reader.attributes().value(QStringLiteral("name")).toString();
     while (reader.readNext() != QXmlStreamReader::Invalid) {
         if (reader.isEndElement() && reader.name() == QStringLiteral("macro")) {
@@ -366,7 +366,7 @@ bool parseXmileMacro(QXmlStreamReader &reader, core::Document &document, QString
         if (!reader.isStartElement())
             continue;
         if (reader.name() == QStringLiteral("parm")) {
-            core::MacroParameter parameter;
+            core::MacroParameterData parameter;
             parameter.displayName = reader.attributes().value(QStringLiteral("name")).toString();
             parameter.defaultEquation = reader.attributes().value(QStringLiteral("default")).toString();
             const QString text = reader.readElementText().trimmed();

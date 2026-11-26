@@ -30,8 +30,6 @@ using DimensionReader = std::function<const Dimension *(const QString &)>;
 
 struct MacroEvaluation {
     const MacroDefinition *definition = nullptr;
-    const FormulaNode *body = nullptr;
-    const std::vector<FormulaAnalysis> *defaults = nullptr;
 };
 using MacroReader = std::function<std::optional<MacroEvaluation>(const QString &, int, int)>;
 
