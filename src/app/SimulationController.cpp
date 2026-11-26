@@ -244,6 +244,7 @@ void SimulationController::setStatus(SimulationSessionStatus status)
         return;
     m_status = status;
     emit statusChanged(m_status);
+    emit busyChanged(isBusy());
 }
 
 void SimulationController::workerFinished(std::shared_ptr<const SimulationRun> run, quint64 generation)
@@ -290,6 +291,7 @@ void SimulationController::workerThreadFinished(quint64 generation)
     m_thread.clear();
     m_activeRequest.reset();
     m_cancelRequested.reset();
+    emit busyChanged(isBusy());
 }
 
 #include "SimulationController.moc"

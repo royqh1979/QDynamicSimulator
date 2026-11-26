@@ -24,6 +24,8 @@ add_library(qds-editor STATIC
     Routing.h
     SimulationController.cpp
     SimulationController.h
+    SimulationSettingsDialog.cpp
+    SimulationSettingsDialog.h
     Translation.cpp
     Translation.h
     resources/icons.qrc

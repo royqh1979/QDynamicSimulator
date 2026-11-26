@@ -451,8 +451,12 @@ QByteArray writeNativeXml(const core::Document &document, const Workspace &works
             writeNativeRoute(writer, document.diagram().route(element.id()));
         }
         writeNativeArrayDefinition(writer, document, element);
-        if (element.elementEquations().empty())
-            writer.writeTextElement(QStringLiteral("eqn"), (element.equation()));
+        if (element.elementEquations().empty()) {
+            if (element.kind() == core::ElementKind::Stock)
+                writer.writeTextElement(QStringLiteral("initial"), static_cast<const core::Stock &>(element).initialEquation());
+            else
+                writer.writeTextElement(QStringLiteral("eqn"), (element.equation()));
+        }
         if (!element.unit().isEmpty())
             writer.writeTextElement(QStringLiteral("units"), (element.unit()));
         if (!element.comment().isEmpty())
@@ -678,6 +682,8 @@ bool parseNativeElement(QXmlStreamReader &reader, NativeRecord &record)
         const QString child = reader.name().toString();
         if (child == QStringLiteral("eqn"))
             record.data.equation = reader.readElementText();
+        else if (child == QStringLiteral("initial"))
+            record.data.initialEquation = reader.readElementText();
         else if (child == QStringLiteral("dimensions")) {
             if (!parseNativeVariableDimensions(reader, record.data.dimensions))
                 return false;

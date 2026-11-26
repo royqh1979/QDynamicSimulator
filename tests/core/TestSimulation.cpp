@@ -42,7 +42,7 @@ Document exponentialDocument(double dt)
     const EntityId cloud = document.createCloud();
     const EntityId flow = document.createFlow(cloud, stock);
     document.rename(stock, "Stock");
-    document.setEquation(stock, "1");
+    document.setInitialEquation(stock, "1");
     document.setEquation(flow, "Stock");
     document.setSimulationSettings({0.0, 1.0, dt, dt});
     return document;
@@ -76,7 +76,7 @@ void TestSimulation::initializationAndEvaluationOrder()
     document.rename(auxiliary, "Twice");
     document.rename(offset, "Offset");
     document.rename(base, "Base");
-    document.setEquation(stock, "Offset + Base");
+    document.setInitialEquation(stock, "Offset + Base");
     document.setEquation(auxiliary, "Stock * 2");
     document.setEquation(offset, "3");
     document.setEquation(base, "2");
@@ -100,8 +100,8 @@ void TestSimulation::stockFlowsAndConservation()
     const EntityId flow = document.createFlow(source, target);
     document.rename(source, "Source");
     document.rename(target, "Target");
-    document.setEquation(source, "10");
-    document.setEquation(target, "0");
+    document.setInitialEquation(source, "10");
+    document.setInitialEquation(target, "0");
     document.setEquation(flow, "2");
     document.setSimulationSettings({0.0, 2.0, 1.0, 1.0});
 
@@ -143,7 +143,7 @@ void TestSimulation::logisticAndOscillatorBenchmarks()
     const EntityId logisticCloud = logistic.createCloud();
     const EntityId logisticFlow = logistic.createFlow(logisticCloud, logisticStock);
     logistic.rename(logisticStock, "Stock");
-    logistic.setEquation(logisticStock, "1");
+    logistic.setInitialEquation(logisticStock, "1");
     logistic.setEquation(logisticFlow, "Stock * (1 - Stock / 10)");
     logistic.setSimulationSettings({0.0, 1.0, 0.01, 0.01});
     const SimulationRun logisticRun = runModel(logistic);
@@ -159,8 +159,8 @@ void TestSimulation::logisticAndOscillatorBenchmarks()
     const EntityId velocityFlow = oscillator.createFlow(cloud, velocity);
     oscillator.rename(position, "Position");
     oscillator.rename(velocity, "Velocity");
-    oscillator.setEquation(position, "1");
-    oscillator.setEquation(velocity, "0");
+    oscillator.setInitialEquation(position, "1");
+    oscillator.setInitialEquation(velocity, "0");
     oscillator.setEquation(positionFlow, "Velocity");
     oscillator.setEquation(velocityFlow, "-Position - 0.2 * Velocity");
     oscillator.setSimulationSettings({0.0, 1.0, 0.01, 0.01});
@@ -181,7 +181,7 @@ void TestSimulation::saveIntervalsAndTimeBounds()
     const EntityId stock = document.createVariable(ElementKind::Stock);
     const EntityId cloud = document.createCloud();
     const EntityId flow = document.createFlow(cloud, stock);
-    document.setEquation(stock, "0");
+    document.setInitialEquation(stock, "0");
     document.setEquation(flow, "1");
     QVERIFY(document.setSimulationSettings({0.0, 1.0, 0.3, 0.6}));
     SimulationRun run = runModel(document);
@@ -208,7 +208,7 @@ void TestSimulation::macrosAndResultAccess()
     const EntityId cloud = document.createCloud();
     const EntityId flow = document.createFlow(cloud, stock);
     document.rename(stock, "Stock");
-    document.setEquation(stock, "1");
+    document.setInitialEquation(stock, "1");
     document.setEquation(flow, "Scale(Stock)");
     document.setSimulationSettings({0.0, 1.0, 1.0, 1.0});
     const SimulationRun run = runModel(document);
@@ -242,7 +242,7 @@ void TestSimulation::rungeKutta4()
     const EntityId timeStock = timeDocument.createVariable(ElementKind::Stock);
     const EntityId cloud = timeDocument.createCloud();
     const EntityId timeFlow = timeDocument.createFlow(cloud, timeStock);
-    timeDocument.setEquation(timeStock, "0");
+    timeDocument.setInitialEquation(timeStock, "0");
     timeDocument.setEquation(timeFlow, "TIME");
     QVERIFY(timeDocument.setSimulationSettings({0.0, 1.0, 1.0, 1.0, IntegrationMethod::RungeKutta4}));
     const SimulationRun timeRun = runModel(timeDocument);
@@ -256,7 +256,7 @@ void TestSimulation::rungeKutta4StageFailure()
     const EntityId stock = document.createVariable(ElementKind::Stock);
     const EntityId cloud = document.createCloud();
     const EntityId flow = document.createFlow(cloud, stock);
-    document.setEquation(stock, "1");
+    document.setInitialEquation(stock, "1");
     document.setEquation(flow, "1 / (TIME - 0.5)");
     QVERIFY(document.setSimulationSettings({0.0, 1.0, 1.0, 1.0, IntegrationMethod::RungeKutta4}));
     const SimulationRun run = runModel(document);
@@ -276,7 +276,7 @@ void TestSimulation::compilationDiagnostics()
 
     Document unsupported;
     const EntityId integral = unsupported.createVariable(ElementKind::Stock);
-    unsupported.setEquation(integral, "INTEG(1, 0)");
+    unsupported.setInitialEquation(integral, "INTEG(1, 0)");
     QVERIFY(hasIssue(compileSimulation(unsupported), "unsupported-simulation-function"));
 
     Document data;
@@ -297,8 +297,8 @@ void TestSimulation::compilationDiagnostics()
     const EntityId secondStock = initialCycle.createVariable(ElementKind::Stock);
     initialCycle.rename(firstStock, "First");
     initialCycle.rename(secondStock, "Second");
-    initialCycle.setEquation(firstStock, "Second");
-    initialCycle.setEquation(secondStock, "First");
+    initialCycle.setInitialEquation(firstStock, "Second");
+    initialCycle.setInitialEquation(secondStock, "First");
     QVERIFY(hasIssue(compileSimulation(initialCycle), "simultaneous-initial-equations"));
 
     Document runtimeCycle;
@@ -327,7 +327,7 @@ void TestSimulation::cancellationAndRuntimeFailure()
     const EntityId cloud = failure.createCloud();
     const EntityId flow = failure.createFlow(cloud, stock);
     failure.rename(stock, "Stock");
-    failure.setEquation(stock, "1");
+    failure.setInitialEquation(stock, "1");
     failure.setEquation(flow, "1 / (Stock - 1)");
     const SimulationRun failed = runModel(failure);
     QCOMPARE(failed.status(), SimulationRunStatus::Failed);

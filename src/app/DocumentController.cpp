@@ -34,6 +34,27 @@ private:
     bool m_firstRedo = true;
 };
 
+class SimulationSettingsCommand : public QUndoCommand
+{
+public:
+    using Apply = std::function<void(const SimulationSettings &)>;
+
+    SimulationSettingsCommand(const Apply &apply, const SimulationSettings &before, const SimulationSettings &after)
+        : m_apply(apply)
+        , m_before(before)
+        , m_after(after)
+    {
+    }
+
+    void undo() override { m_apply(m_before); }
+    void redo() override { m_apply(m_after); }
+
+private:
+    Apply m_apply;
+    SimulationSettings m_before;
+    SimulationSettings m_after;
+};
+
 ChangeRecord addedRecord(const Document &document, EntityId id)
 {
     ChangeRecord record;
@@ -95,7 +116,7 @@ bool affectsSimulation(const ChangeRecord &record)
     return before.kind != after.kind || before.displayName != after.displayName
         || before.equation != after.equation || before.dimensions != after.dimensions
         || before.elementEquations != after.elementEquations || before.unit != after.unit
-        || before.flowEndpoints != after.flowEndpoints;
+        || before.initialEquation != after.initialEquation || before.flowEndpoints != after.flowEndpoints;
 }
 
 } // namespace
@@ -256,6 +277,20 @@ void DocumentController::setEquation(EntityId id, const QString &equation)
     pushChanges(ChangeSet {{std::move(record)}}, true);
 }
 
+void DocumentController::setInitialEquation(EntityId id, const QString &equation)
+{
+    if (!m_document.find(id))
+        return;
+    ChangeRecord record;
+    record.id = id;
+    record.kind = m_document.find(id)->kind();
+    record.before = m_document.capture(id);
+    if (!m_document.setInitialEquation(id, equation))
+        return;
+    record.after = m_document.capture(id);
+    pushChanges(ChangeSet {{std::move(record)}}, true);
+}
+
 void DocumentController::setUnit(EntityId id, const QString &unit)
 {
     if (!m_document.find(id))
@@ -297,6 +332,24 @@ void DocumentController::setCommentContent(EntityId id, const QString &content)
         return;
     record.after = m_document.capture(id);
     pushChanges(ChangeSet {{std::move(record)}}, true);
+}
+
+bool DocumentController::setSimulationSettings(const SimulationSettings &settings)
+{
+    if (!settings.isValid())
+        return false;
+    const SimulationSettings before = m_document.simulationSettings();
+    if (before == settings)
+        return true;
+    m_undoStack.push(new SimulationSettingsCommand(
+        [this](const SimulationSettings &value) {
+            if (!m_document.setSimulationSettings(value))
+                return;
+            ++m_simulationRevision;
+            notify(ChangeNotification {});
+        },
+        before, settings));
+    return true;
 }
 
 void DocumentController::setFontStyle(EntityId id, const QFont &font)

@@ -10,6 +10,8 @@
 #include "PropertyPanel.h"
 #include "RecentFiles.h"
 #include "Routing.h"
+#include "SimulationController.h"
+#include "SimulationSettingsDialog.h"
 #include <io/DocumentFile.h>
 #include <io/XmileFile.h>
 
@@ -19,8 +21,10 @@
 #include <QDir>
 #include <QDockWidget>
 #include <QDropEvent>
+#include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileInfo>
+#include <QFocusEvent>
 #include <QFontComboBox>
 #include <QFrame>
 #include <QGraphicsProxyWidget>
@@ -115,6 +119,7 @@ private slots:
     void createUndoRedo();
     void renameAndEquationUndo();
     void inlineRenameUndoRedo();
+    void namesAllowSpaces();
     void commentContentEditing();
     void propertyPanelWidget();
     void fontStyleUndoRedo();
@@ -164,6 +169,9 @@ private slots:
     void fileDropOpen();
     void pngExportAndClipboard();
     void workspaceRestore();
+    void simulationControls();
+    void simulationSettingsAction();
+    void stockInitialValuePresentation();
     void recoveryRestoresWorkspace();
     void cursorPositionStatus();
     void windowLayoutPersistence();
@@ -191,7 +199,7 @@ void TestEditor::renameAndEquationUndo()
     DiagramScene scene(&controller);
     const EntityId id = controller.createVariable(ElementKind::Stock, QPointF());
     QVERIFY(controller.renameElement(id, QStringLiteral("Population")));
-    controller.setEquation(id, QStringLiteral("100"));
+    controller.setInitialEquation(id, QStringLiteral("100"));
     controller.setUnit(id, QStringLiteral("people"));
     controller.setComment(id, QStringLiteral("Population stock"));
     const auto *model = static_cast<const ModelElement *>(controller.document().find(id));
@@ -201,12 +209,12 @@ void TestEditor::renameAndEquationUndo()
     controller.undoStack()->undo();
     QCOMPARE(dynamic_cast<VariableItem *>(scene.item(id))->name(), QStringLiteral("Population"));
     controller.undoStack()->undo();
-    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(id))->equation(), QString());
+    QCOMPARE(dynamic_cast<const Stock *>(controller.document().find(id))->initialEquation(), QString());
     controller.undoStack()->undo();
     QCOMPARE(static_cast<const ModelElement *>(controller.document().find(id))->displayName(), QString("Stock1"));
     controller.undoStack()->redo();
     controller.undoStack()->redo();
-    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(id))->equation(), QString("100"));
+    QCOMPARE(dynamic_cast<const Stock *>(controller.document().find(id))->initialEquation(), QString("100"));
     QVERIFY(!controller.renameElement(id, QString()));
 }
 
@@ -273,6 +281,53 @@ void TestEditor::inlineRenameUndoRedo()
     QCOMPARE(static_cast<const ModelElement *>(controller.document().find(flow))->displayName(), QString("Infection"));
 }
 
+void TestEditor::namesAllowSpaces()
+{
+    MainWindow window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    auto *controller = window.findChild<DocumentController *>();
+    auto *scene = window.findChild<DiagramScene *>();
+    const EntityId stock = controller->createVariable(ElementKind::Stock, QPointF());
+    auto *view = window.findChild<DiagramView *>();
+    QVERIFY(view);
+    view->centerOn(scene->item(stock));
+    QTest::mouseDClick(view->viewport(), Qt::LeftButton, Qt::NoModifier,
+        view->mapFromScene(scene->item(stock)->center()));
+    auto *editor = inlineNameEditor(*scene);
+    QVERIFY(editor);
+    editor->setText("birth");
+    editor->setCursorPosition(5);
+    QVERIFY(editor->hasFocus());
+    QTest::keyClick(window.windowHandle(), ' ');
+    QCOMPARE(editor->text(), QStringLiteral("birth "));
+    for (const char character : {'r', 'a', 't', 'e'})
+        QTest::keyClick(window.windowHandle(), character);
+    QTest::keyClick(window.windowHandle(), Qt::Key_Return);
+    QCOMPARE(controller->document().findByName("birth rate")->id(), stock);
+
+    auto *name = window.findChild<QLineEdit *>("nameEdit");
+    QVERIFY(name);
+    name->setText("birth");
+    name->setCursorPosition(5);
+    name->setFocus();
+    QVERIFY(name->hasFocus());
+    QTest::keyClick(window.windowHandle(), ' ');
+    QCOMPARE(name->text(), QStringLiteral("birth "));
+
+    view->centerOn(scene->item(stock));
+    const QPoint pressed = view->mapFromScene(scene->item(stock)->center());
+    const int scrollX = view->horizontalScrollBar()->value();
+    const int scrollY = view->verticalScrollBar()->value();
+    QTest::mousePress(view->viewport(), Qt::LeftButton, Qt::NoModifier, pressed);
+    QTest::keyClick(window.windowHandle(), ' ');
+    QTest::mouseMove(view->viewport(), pressed + QPoint(30.0, 20.0));
+    QCOMPARE(view->horizontalScrollBar()->value(), scrollX);
+    QCOMPARE(view->verticalScrollBar()->value(), scrollY);
+    QTest::mouseRelease(view->viewport(), Qt::LeftButton, Qt::NoModifier, QPoint(-50, -50));
+    QTest::keyRelease(window.windowHandle(), ' ');
+}
+
 void TestEditor::commentContentEditing()
 {
     DocumentController controller;
@@ -322,9 +377,10 @@ void TestEditor::propertyPanelWidget()
     unit->setText(QStringLiteral("people"));
     comment->setText(QStringLiteral("Population stock"));
     QVERIFY(panel.commit());
-    const auto *model = static_cast<const ModelElement *>(controller.document().find(stock));
+    const auto *model = dynamic_cast<const Stock *>(controller.document().find(stock));
+    QVERIFY(model);
     QCOMPARE(model->displayName(), QString("Population"));
-    QCOMPARE(model->equation(), QString("100"));
+    QCOMPARE(model->initialEquation(), QString("100"));
     QCOMPARE(model->unit(), QString("people"));
     QCOMPARE(model->comment(), QString("Population stock"));
     QCOMPARE(controller.undoStack()->count(), 5);
@@ -333,13 +389,13 @@ void TestEditor::propertyPanelWidget()
     controller.undoStack()->undo();
     QCOMPARE(model->unit(), QString());
     controller.undoStack()->undo();
-    QCOMPARE(model->equation(), QString());
+    QCOMPARE(model->initialEquation(), QString());
     controller.undoStack()->undo();
     QCOMPARE(model->displayName(), QString("Stock1"));
     controller.undoStack()->redo();
     QCOMPARE(model->displayName(), QString("Population"));
     controller.undoStack()->redo();
-    QCOMPARE(model->equation(), QString("100"));
+    QCOMPARE(model->initialEquation(), QString("100"));
     controller.undoStack()->redo();
     QCOMPARE(model->unit(), QString("people"));
     controller.undoStack()->redo();
@@ -733,7 +789,7 @@ void TestEditor::viewOperations()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    controller.createVariable(ElementKind::Stock, QPointF(100.0, 100.0));
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(100.0, 100.0));
     DiagramView view(&scene);
     view.zoomIn();
     QVERIFY(view.transform().m11() > 1.0);
@@ -741,6 +797,45 @@ void TestEditor::viewOperations()
     QCOMPARE(view.transform().m11(), 1.0);
     view.fitAll();
     QVERIFY(view.transform().m11() > 0.0);
+
+    view.resize(640, 480);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    view.resetZoom();
+    view.centerOn(scene.item(stock)->center());
+    view.setFocus();
+    QTest::keyPress(&view, Qt::Key_Space);
+    QVERIFY(scene.spacePressed());
+    const QPoint pressed = view.viewport()->rect().center();
+    const int scrollX = view.horizontalScrollBar()->value();
+    const int scrollY = view.verticalScrollBar()->value();
+    QMouseEvent panPress(QEvent::MouseButtonPress, pressed, view.viewport()->mapToGlobal(pressed),
+                         Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &panPress);
+    QVERIFY(scene.spacePressed());
+    const QPoint moved = pressed + QPoint(40, 30);
+    QMouseEvent panMove(QEvent::MouseMove, moved, view.viewport()->mapToGlobal(moved),
+                        Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &panMove);
+    QVERIFY(view.horizontalScrollBar()->value() != scrollX);
+    QVERIFY(view.verticalScrollBar()->value() != scrollY);
+    QMouseEvent panRelease(QEvent::MouseButtonRelease, moved, view.viewport()->mapToGlobal(moved),
+                           Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &panRelease);
+    QTest::keyRelease(&view, Qt::Key_Space);
+    QVERIFY(!scene.spacePressed());
+
+    QTest::keyPress(&view, Qt::Key_Space);
+    QVERIFY(scene.spacePressed());
+    QFocusEvent focusOut(QEvent::FocusOut, Qt::ActiveWindowFocusReason);
+    QApplication::sendEvent(&view, &focusOut);
+    QVERIFY(!scene.spacePressed());
+    QTest::keyPress(&view, Qt::Key_Space);
+    QVERIFY(scene.spacePressed());
+    QFocusEvent focusIn(QEvent::FocusIn, Qt::ActiveWindowFocusReason);
+    QApplication::sendEvent(&view, &focusIn);
+    QVERIFY(!scene.spacePressed());
+    QTest::keyRelease(&view, Qt::Key_Space);
 }
 
 void TestEditor::routeModesAndGeometry()
@@ -1808,7 +1903,7 @@ void TestEditor::clipboardOperations()
     DiagramScene scene(&controller);
     const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
     const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(100.0, 0.0));
-    controller.setEquation(stock, QStringLiteral("100"));
+    controller.setInitialEquation(stock, QStringLiteral("100"));
     const EntityId connector = controller.createConnector(stock, auxiliary);
     QCOMPARE(controller.copyElements({stock}).elements.size(), std::size_t(1));
     const ClipboardData clipboard = controller.copyElements({stock, auxiliary, connector});
@@ -2156,10 +2251,10 @@ void TestEditor::actionIcons()
     }
     QVERIFY(window.findChild<PropertyPanel *>());
     const QList<QToolBar *> toolBars = window.findChildren<QToolBar *>();
-    QCOMPARE(toolBars.size(), 2);
+    QCOMPARE(toolBars.size(), 3);
     for (QToolBar *toolBar : toolBars) {
         for (QAction *action : toolBar->actions()) {
-            if (!action->isSeparator())
+            if (!action->isSeparator() && !action->text().isEmpty())
                 QVERIFY2(!action->icon().isNull(), qPrintable(action->text()));
         }
     }
@@ -2425,6 +2520,123 @@ void TestEditor::workspaceRestore()
     QVERIFY(restoredView->verticalScrollBar()->value() == view->verticalScrollBar()->value());
 }
 
+void TestEditor::simulationControls()
+{
+    MainWindow window;
+    auto *simulation = window.findChild<SimulationController *>();
+    auto *runName = window.findChild<QLineEdit *>("runNameEdit");
+    auto *runAction = window.findChild<QAction *>("runAction");
+    auto *cancelAction = window.findChild<QAction *>("cancelAction");
+    QVERIFY(simulation && runName && runAction && cancelAction);
+    QVERIFY(runAction->isEnabled());
+    QVERIFY(!cancelAction->isEnabled());
+
+    runName->setText("equilib");
+    QTest::keyClick(runName, Qt::Key_Return);
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QCOMPARE(simulation->lastRunName(), QStringLiteral("equilib"));
+    QCOMPARE(simulation->runs().size(), 1);
+    QVERIFY(runAction->isEnabled());
+    QVERIFY(!cancelAction->isEnabled());
+
+    runName->setText("growth");
+    runAction->trigger();
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QCOMPARE(simulation->runs().size(), 2);
+
+    QTimer::singleShot(0, &window, []() {
+        if (auto *message = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
+            message->button(QMessageBox::No)->click();
+    });
+    runAction->trigger();
+    QApplication::processEvents();
+    QCOMPARE(simulation->runs().size(), 2);
+
+    const RunId previousId = simulation->runs().front().id();
+    QTimer::singleShot(0, &window, []() {
+        if (auto *message = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
+            message->button(QMessageBox::Yes)->click();
+    });
+    runAction->trigger();
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QCOMPARE(simulation->runs().size(), 2);
+    QVERIFY(simulation->runs().front().id() != previousId);
+
+    auto *documents = window.findChild<DocumentController *>();
+    QVERIFY(documents);
+    QVERIFY(documents->setSimulationSettings({0.0, 100000.0, 1.0, 1.0}));
+    runName->setText("long");
+    runAction->trigger();
+    QVERIFY(cancelAction->isEnabled());
+    cancelAction->trigger();
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Cancelled);
+    QTRY_VERIFY(!simulation->isBusy());
+    QVERIFY(runAction->isEnabled());
+    QVERIFY(!cancelAction->isEnabled());
+
+    documents->createVariable(ElementKind::Stock, QPointF());
+    runName->setText("invalid");
+    runAction->trigger();
+    QCOMPARE(simulation->status(), SimulationSessionStatus::Failed);
+    auto *issues = window.findChild<QListWidget *>();
+    QVERIFY(issues && issues->count() > 0);
+}
+
+void TestEditor::simulationSettingsAction()
+{
+    MainWindow window;
+    auto *action = window.findChild<QAction *>("simulationSettingsAction");
+    auto *documents = window.findChild<DocumentController *>();
+    QVERIFY(action && documents);
+    QTimer::singleShot(0, &window, []() {
+        auto *dialog = qobject_cast<SimulationSettingsDialog *>(QApplication::activeModalWidget());
+        if (!dialog)
+            return;
+        dialog->findChild<QDoubleSpinBox *>("dt")->setValue(0.5);
+        dialog->findChild<QDoubleSpinBox *>("stopTime")->setValue(10.0);
+        dialog->accept();
+    });
+    action->trigger();
+    QCOMPARE(documents->document().simulationSettings().dt(), 0.5);
+    QCOMPARE(documents->document().simulationSettings().saveInterval(), 0.5);
+    QCOMPARE(documents->document().simulationSettings().stopTime(), 10.0);
+    documents->undoStack()->undo();
+    QCOMPARE(documents->document().simulationSettings(), SimulationSettings {});
+}
+
+void TestEditor::stockInitialValuePresentation()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId cloud = controller.createCloud(QPointF(200.0, 0.0));
+    const EntityId births = controller.createFlow(cloud, stock);
+    const EntityId deaths = controller.createFlow(stock, cloud);
+    controller.renameElement(stock, "Population");
+    controller.renameElement(births, "births");
+    controller.renameElement(deaths, "deaths");
+    controller.setInitialEquation(stock, "1000");
+    scene.item(stock)->setSelected(true);
+    PropertyPanel panel(&controller, &scene);
+    auto *label = panel.findChild<QLabel *>("equationLabel");
+    auto *equation = panel.findChild<EquationEditor *>("equationEdit");
+    auto *flows = panel.findChild<QLineEdit *>("flowsEdit");
+    QVERIFY(label && equation && flows);
+    QCOMPARE(label->text(), QStringLiteral("Initial value"));
+    QCOMPARE(equation->text(), QStringLiteral("1000"));
+    QVERIFY(flows->isVisibleTo(&panel));
+    QVERIFY(flows->text().contains("births"));
+    QVERIFY(flows->text().contains("deaths"));
+
+    scene.clearSelection();
+    scene.item(births)->setSelected(true);
+    QCOMPARE(label->text(), QStringLiteral("Equation"));
+    QVERIFY(!flows->isVisibleTo(&panel));
+}
+
 void TestEditor::recoveryRestoresWorkspace()
 {
     QStandardPaths::setTestModeEnabled(true);
@@ -2542,11 +2754,12 @@ void TestEditor::simplifiedChineseTranslation()
     QApplication::installTranslator(&translator);
     MainWindow window;
     const QList<QAction *> menus = window.menuBar()->actions();
-    QVERIFY(menus.size() >= 4);
+    QVERIFY(menus.size() >= 5);
     QCOMPARE(menus[0]->text(), QStringLiteral("\u6587\u4EF6(&F)"));
     QCOMPARE(menus[1]->text(), QStringLiteral("\u7F16\u8F91(&E)"));
-    QCOMPARE(menus[2]->text(), QStringLiteral("\u89C6\u56FE(&V)"));
-    QCOMPARE(menus[3]->text(), QStringLiteral("\u5E03\u7EBF(&R)"));
+    QCOMPARE(menus[2]->text(), QStringLiteral("\u6A21\u62DF(&S)"));
+    QCOMPARE(menus[3]->text(), QStringLiteral("\u89C6\u56FE(&V)"));
+    QCOMPARE(menus[4]->text(), QStringLiteral("\u5E03\u7EBF(&R)"));
     bool hasStock = false;
     for (QAction *action : window.findChildren<QAction *>())
         hasStock = hasStock || action->text() == QStringLiteral("\u5B58\u91CF");

@@ -36,7 +36,7 @@
 
 ```text
 core::Document
-├── core::Model                  模型变量的只读门面
+├── core::Model                  模型变量的只读门面；Stock 独立保存 initialEquation
 │   ├── Stock                    Vensim Level / XMILE stock
 │   ├── Flow                     Vensim Rate / XMILE flow
 │   ├── Auxiliary                XMILE aux
@@ -80,7 +80,7 @@ MainWindow / DiagramView
 | 文件 | 职责 |
 | --- | --- |
 | `Element.h` | EntityId、ElementKind 和不携带其他语义的 DocumentElement 基类 |
-| `Model.h/.cpp` | ModelElement、Variable、Flow、ModelRange 和 Model 只读门面 |
+| `Model.h/.cpp` | ModelElement、Stock、Variable、Flow、ModelRange 和 Model 只读门面；Stock 初值独立于 equation |
 | `Diagram.h/.cpp` | Vec2、Route、FontStyle、ViewElement 及其派生类、ViewRange、DiagramDefinition |
 | `Dimension.h/.cpp` | Dimension、DimensionElement 及维度元素查找 |
 | `Macro.h` | MacroDefinitionData、MacroDefinition、MacroParameter 和参数个数规则 |
@@ -348,7 +348,7 @@ FlowItem 的名称使用独立 `labelRect()` 计算，`boundingRect()` 必须同
 
 I/O 职责按格式拆分为独立类和源码文件：`DocumentFile` 负责 QDS/ZIP，`XmileFile` 只负责未压缩 XMILE 导入/导出，不共享格式兼容层。原生文件使用 `.qds` 后缀，ZIP 容器中只有一个 `document.xml`。XML 根元素为 `<qds-document version="1">`，内部以 `<model>`、`<diagram>` 和可选 `<workspace>` 分区；代码模型与视图分层不要求拆成多个文件。开发阶段不读取旧版 model.xmile/workspace.xml ZIP，也不为其设置兼容层。
 
-`model` 保存 Stock、Flow、Auxiliary、Constant、Data 及方程、单位、说明和 Flow 端点；`diagram` 保存 Cloud、Comment、Connector、位置和 Route。所有对象使用文件内 uid 引用，加载时重新分配 EntityId 并建立 uid→EntityId 映射。displayName 持久化，nameKey 加载时派生；Comment 保存 content，Cloud 不使用名称。
+`model` 保存 Stock、Flow、Auxiliary、Constant、Data 及方程、单位、说明和 Flow 端点；Stock 初值使用独立 `<initial>`，不写入普通 `<eqn>`；`diagram` 保存 Cloud、Comment、Connector、位置和 Route。所有对象使用文件内 uid 引用，加载时重新分配 EntityId 并建立 uid→EntityId 映射。displayName 持久化，nameKey 加载时派生；Comment 保存 content，Cloud 不使用名称。
 
 原生读取采用两阶段构建：先建立非路由对象，再按映射建立 Flow、Connector。原生往返必须完整保留 ElementKind、重复 Comment、Cloud、端点、路径模式、控制点和锁定状态。ZIP 中缺少 document.xml、XML 损坏或引用无效时加载失败并保留原 Document。XMILE 导入通道遇到 ZIP 直接报错，不尝试猜测旧格式。
 

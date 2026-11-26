@@ -146,7 +146,11 @@ bool DiagramScene::setSelectedEquation(const QString &equation)
     DiagramItem *item = dynamic_cast<DiagramItem *>(selectedItems().value(0));
     if (!item)
         return false;
-    m_controller->setEquation(item->id(), equation);
+    const DocumentElement *element = m_controller->document().find(item->id());
+    if (element && element->kind() == ElementKind::Stock)
+        m_controller->setInitialEquation(item->id(), equation);
+    else
+        m_controller->setEquation(item->id(), equation);
     return true;
 }
 
@@ -390,6 +394,20 @@ void DiagramScene::resetSelectedRoute()
 DiagramItem *DiagramScene::item(EntityId id) const
 {
     return m_items.value(id);
+}
+
+void DiagramScene::keyPressEvent(QKeyEvent *event)
+{
+    if (event->key() == Qt::Key_Space)
+        m_spacePressed = true;
+    QGraphicsScene::keyPressEvent(event);
+}
+
+void DiagramScene::keyReleaseEvent(QKeyEvent *event)
+{
+    if (event->key() == Qt::Key_Space)
+        m_spacePressed = false;
+    QGraphicsScene::keyReleaseEvent(event);
 }
 
 void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)

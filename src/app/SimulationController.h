@@ -88,6 +88,7 @@ public:
 
 signals:
     void statusChanged(SimulationSessionStatus status);
+    void busyChanged(bool busy);
     void runTerminated(std::shared_ptr<const qds::core::SimulationRun> run);
     void namedRunsChanged();
     void compilationFailed(const QVector<qds::core::ModelIssue> &issues);

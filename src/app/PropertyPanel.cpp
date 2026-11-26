@@ -19,6 +19,9 @@ PropertyPanel::PropertyPanel(DocumentController *controller, DiagramScene *scene
     , m_scene(scene)
     , m_nameEdit(new QLineEdit(this))
     , m_equationEdit(new EquationEditor(this))
+    , m_equationLabel(new QLabel(this))
+    , m_flowsLabel(new QLabel(this))
+    , m_flowsEdit(new QLineEdit(this))
     , m_unitEdit(new QLineEdit(this))
     , m_commentEdit(new QLineEdit(this))
     , m_commentLabel(new QLabel(this))
@@ -28,6 +31,10 @@ PropertyPanel::PropertyPanel(DocumentController *controller, DiagramScene *scene
     setObjectName(QStringLiteral("propertyPanel"));
     m_nameEdit->setObjectName(QStringLiteral("nameEdit"));
     m_equationEdit->setObjectName(QStringLiteral("equationEdit"));
+    m_equationLabel->setObjectName(QStringLiteral("equationLabel"));
+    m_flowsLabel->setObjectName(QStringLiteral("flowsLabel"));
+    m_flowsEdit->setObjectName(QStringLiteral("flowsEdit"));
+    m_flowsEdit->setReadOnly(true);
     m_unitEdit->setObjectName(QStringLiteral("unitEdit"));
     m_commentEdit->setObjectName(QStringLiteral("commentEdit"));
     m_commentLabel->setObjectName(QStringLiteral("commentLabel"));
@@ -37,7 +44,8 @@ PropertyPanel::PropertyPanel(DocumentController *controller, DiagramScene *scene
 
     QFormLayout *layout = new QFormLayout(this);
     layout->addRow(tr("Name"), m_nameEdit);
-    layout->addRow(tr("Equation"), m_equationEdit);
+    layout->addRow(m_equationLabel, m_equationEdit);
+    layout->addRow(m_flowsLabel, m_flowsEdit);
     layout->addRow(tr("Unit"), m_unitEdit);
     layout->addRow(m_commentLabel, m_commentEdit);
     layout->addRow(tr("Font"), m_fontCombo);
@@ -116,8 +124,30 @@ void PropertyPanel::refresh()
     m_unitEdit->setEnabled(variable != nullptr);
     m_commentEdit->setEnabled(variable != nullptr || comment != nullptr);
     m_commentLabel->setText(comment ? tr("Content") : tr("Comment"));
+    const auto *stockElement = dynamic_cast<const qds::core::Stock *>(variable);
+    const bool stock = stockElement != nullptr;
+    m_equationLabel->setText(stock ? tr("Initial value") : tr("Equation"));
+    m_flowsLabel->setVisible(stock);
+    m_flowsEdit->setVisible(stock);
+    if (stock) {
+        QStringList inflows;
+        QStringList outflows;
+        for (const qds::core::ModelElement &entry : m_controller->document().model().elements()) {
+            if (entry.kind() != qds::core::ElementKind::Flow)
+                continue;
+            const auto &flow = static_cast<const qds::core::Flow &>(entry);
+            if (flow.endpoints().to == variable->id())
+                inflows.push_back(flow.displayName());
+            if (flow.endpoints().from == variable->id())
+                outflows.push_back(flow.displayName());
+        }
+        m_flowsEdit->setText(tr("In: %1  Out: %2").arg(inflows.join(", "), outflows.join(", ")));
+    } else {
+        m_flowsEdit->clear();
+    }
     m_nameEdit->setText(variable ? (variable->displayName()) : QString());
-    m_equationEdit->setText(variable ? (variable->equation()) : QString());
+    m_equationEdit->setText(stock ? stockElement->initialEquation()
+        : variable ? (variable->equation()) : QString());
     QStringList completionWords;
     for (const qds::core::ModelElement &entry : m_controller->document().model().elements())
         completionWords.append((entry.displayName()));

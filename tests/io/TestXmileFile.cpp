@@ -134,7 +134,7 @@ void TestXmileFile::nativeRoundTrip()
     QVERIFY(document.setCommentContent(note, "\u66F4\u65B0\u540E\u7684\u6CE8\u91CA"));
     const EntityId flow = document.createFlow(stock, cloud);
     QVERIFY(document.rename(stock, "\u5E93\u5B58 & Population"));
-    document.setEquation(stock, "100");
+    document.setInitialEquation(stock, "100");
     document.setUnit(stock, "people");
     document.setComment(stock, "Population stock");
     document.setFontStyle(stock, {"Arial", 18});
@@ -220,7 +220,7 @@ void TestXmileFile::nativeRoundTrip()
     QCOMPARE(connectorCount, std::size_t(4));
     const auto *loadedStock = dynamic_cast<const ModelElement *>(loaded.findByName("\u5E93\u5B58 & Population"));
     QVERIFY(loadedStock);
-    QCOMPARE(loadedStock->equation(), QString("100"));
+    QCOMPARE(dynamic_cast<const Stock *>(loadedStock)->initialEquation(), QString("100"));
     QCOMPARE(loadedStock->unit(), QString("people"));
     QCOMPARE(loadedStock->comment(), QString("Population stock"));
     QCOMPARE(loaded.diagram().position(loadedStock->id()), Vec2({120.5, 80.25}));

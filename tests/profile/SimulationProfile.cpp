@@ -79,7 +79,7 @@ int main(int argc, char **argv)
     const EntityId cloud = exponential.createCloud();
     const EntityId flow = exponential.createFlow(cloud, stock);
     exponential.rename(stock, "Stock");
-    exponential.setEquation(stock, "1");
+    exponential.setInitialEquation(stock, "1");
     exponential.setEquation(flow, "Stock");
     const int steps = count;
     exponential.setSimulationSettings({0.0, steps * 0.01, 0.01, 0.01});

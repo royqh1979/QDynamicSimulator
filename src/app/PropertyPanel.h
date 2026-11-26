@@ -28,6 +28,9 @@ private:
     DiagramScene *m_scene;
     QLineEdit *m_nameEdit;
     EquationEditor *m_equationEdit;
+    QLabel *m_equationLabel;
+    QLabel *m_flowsLabel;
+    QLineEdit *m_flowsEdit;
     QLineEdit *m_unitEdit;
     QLineEdit *m_commentEdit;
     QLabel *m_commentLabel;

@@ -35,10 +35,10 @@
 
 ### 3.1 Stock 是唯一首批积分对象
 
-XMILE Stock 的 `<eqn>` 表示初始值，Stock 的 inflow/outflow 与 FlowEndpoints 表示状态变化来源。内部仿真语义为：
+XMILE Stock 的 `<eqn>` 表示初始值，Stock 的 inflow/outflow 与 FlowEndpoints 表示状态变化来源。内部 Stock 使用独立 `initialEquation`，不占用普通 equation；QDS 使用 `<initial>`，Vensim 的完整 INTEG 公式按端点派生。内部仿真语义为：
 
 ```text
-stock(start) = evaluate(stock.equation, initialContext)
+stock(start) = evaluate(stock.initialEquation, initialContext)
 stock'(t) = sum(inflow values) - sum(outflow values)
 ```
 

@@ -5,6 +5,7 @@
 #include "MainWindow.h"
 #include "PropertyPanel.h"
 #include "SimulationController.h"
+#include "SimulationSettingsDialog.h"
 #include <io/DocumentFile.h>
 #include <io/XmileFile.h>
 
@@ -12,8 +13,10 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QDockWidget>
+#include <QDoubleSpinBox>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QFocusEvent>
 #include <QFrame>
 #include <QGraphicsLineItem>
 #include <QGraphicsProxyWidget>
@@ -25,6 +28,7 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QScreen>
+#include <QScrollBar>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QThread>
@@ -184,6 +188,50 @@ int main(int argc, char **argv)
     const qint64 areaResizeNs = timer.nsecsElapsed();
     QMouseEvent areaRelease(QEvent::MouseButtonRelease, QPoint(200, 200), areaView.viewport()->mapToGlobal(QPoint(200, 200)), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(areaView.viewport(), &areaRelease);
+
+    QKeyEvent spacePress(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier);
+    QApplication::sendEvent(&areaView, &spacePress);
+    const QPoint spacePanStart(300, 200);
+    QMouseEvent spacePanPress(QEvent::MouseButtonPress, spacePanStart, areaView.viewport()->mapToGlobal(spacePanStart), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(areaView.viewport(), &spacePanPress);
+    timer.restart();
+    int spacePanCount = 0;
+    for (int index = 0; index < 1000; ++index) {
+        const QPoint point = index % 2 == 0 ? QPoint(100, 100) : QPoint(200, 200);
+        const int oldX = areaView.horizontalScrollBar()->value();
+        const int oldY = areaView.verticalScrollBar()->value();
+        QMouseEvent move(QEvent::MouseMove, point, areaView.viewport()->mapToGlobal(point), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(areaView.viewport(), &move);
+        if (areaView.horizontalScrollBar()->value() == oldX || areaView.verticalScrollBar()->value() == oldY)
+            return 54;
+        ++spacePanCount;
+    }
+    const qint64 spacePanNs = timer.nsecsElapsed();
+    QMouseEvent spacePanRelease(QEvent::MouseButtonRelease, QPoint(200, 200), areaView.viewport()->mapToGlobal(QPoint(200, 200)), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(areaView.viewport(), &spacePanRelease);
+    QKeyEvent spaceRelease(QEvent::KeyRelease, Qt::Key_Space, Qt::NoModifier);
+    QApplication::sendEvent(&areaView, &spaceRelease);
+
+    timer.restart();
+    int spaceFocusResetCount = 0;
+    for (int index = 0; index < 1000; ++index) {
+        QKeyEvent press(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier);
+        QApplication::sendEvent(&areaView, &press);
+        QFocusEvent focusOut(QEvent::FocusOut, Qt::ActiveWindowFocusReason);
+        QApplication::sendEvent(&areaView, &focusOut);
+        if (areaScene.spacePressed())
+            return 55;
+        QKeyEvent secondPress(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier);
+        QApplication::sendEvent(&areaView, &secondPress);
+        QFocusEvent focusIn(QEvent::FocusIn, Qt::ActiveWindowFocusReason);
+        QApplication::sendEvent(&areaView, &focusIn);
+        if (areaScene.spacePressed())
+            return 56;
+        QKeyEvent release(QEvent::KeyRelease, Qt::Key_Space, Qt::NoModifier);
+        QApplication::sendEvent(&areaView, &release);
+        ++spaceFocusResetCount;
+    }
+    const qint64 spaceFocusResetNs = timer.nsecsElapsed();
 
     MainWindow cursorWindow;
     auto *cursorView = cursorWindow.findChild<DiagramView *>();
@@ -881,7 +929,7 @@ int main(int argc, char **argv)
     const EntityId sessionStock = sessionModel.createVariable(ElementKind::Stock);
     const EntityId sessionCloud = sessionModel.createCloud();
     sessionModel.createFlow(sessionCloud, sessionStock);
-    sessionModel.setEquation(sessionStock, "0");
+    sessionModel.setInitialEquation(sessionStock, "0");
     sessionModel.setEquation(sessionModel.findByName("Flow1")->id(), "1");
     sessionModel.setSimulationSettings({0.0, 1.0, 1.0, 1.0});
     sessionDocument.replaceDocument(std::move(sessionModel));
@@ -908,6 +956,18 @@ int main(int argc, char **argv)
     const qint64 sessionNs = timer.nsecsElapsed();
     session.reset();
 
+    timer.restart();
+    int settingsDialogCount = 0;
+    for (int index = 0; index < count; ++index) {
+        SimulationSettingsDialog dialog(SimulationSettings {});
+        dialog.findChild<QDoubleSpinBox *>("dt")->setValue(0.5);
+        dialog.accept();
+        if (dialog.result() != QDialog::Accepted || dialog.settings().saveInterval() != 0.5)
+            return 53;
+        ++settingsDialogCount;
+    }
+    const qint64 settingsDialogNs = timer.nsecsElapsed();
+
     const qint64 commands = controller.undoStack()->count();
     QTextStream(stdout) << "operation,count,total_ms,per_operation_us\n"
                         << "editor_create," << count << "," << createNs / 1e6 << "," << createNs / 1000.0 / count << "\n"
@@ -921,6 +981,8 @@ int main(int argc, char **argv)
                         << "editor_search_100," << count * 100 << "," << searchNs / 1e6 << "," << searchNs / 1000.0 / (count * 100) << "\n"
                         << "rubber_preview,1000," << previewNs / 1e6 << "," << previewNs / 1000.0 / 1000 << "\n"
                         << "rubber_band_resize,1000," << areaResizeNs / 1e6 << "," << areaResizeNs / 1000.0 / 1000 << "\n"
+                        << "space_pan,1000," << spacePanNs / 1e6 << "," << spacePanNs / 1000.0 / 1000 << "\n"
+                        << "space_focus_reset,1000," << spaceFocusResetNs / 1e6 << "," << spaceFocusResetNs / 1000.0 / 1000 << "\n"
                         << "cursor_status_update,1000," << cursorStatusNs / 1e6 << "," << cursorStatusNs / 1000.0 / 1000 << "\n"
                         << "move_undo_repaint," << moveUndoCount << "," << moveUndoNs / 1e6 << "," << moveUndoNs / 1000.0 / moveUndoCount << "\n"
                         << "connection_context_menu,1000," << contextMenuNs / 1e6 << "," << contextMenuNs / 1000.0 / 1000 << "\n"
@@ -959,9 +1021,12 @@ int main(int argc, char **argv)
                         << "xmile_sir_import,100," << sirImportNs / 1e6 << "," << sirImportNs / 1000.0 / 100 << "\n"
                         << "sir_dependent_route_moves,1000," << sirDependentMoveNs / 1e6 << "," << sirDependentMoveNs / 1000.0 / 1000 << "\n"
                         << "simulation_session," << sessionCount << "," << sessionNs / 1e6 << "," << sessionNs / 1000.0 / sessionCount << "\n"
-                        << "simulation_session_samples," << sessionSamples << ",\n";
+                        << "simulation_session_samples," << sessionSamples << ",\n"
+                        << "simulation_settings_dialog," << settingsDialogCount << "," << settingsDialogNs / 1e6 << ","
+                        << settingsDialogNs / 1000.0 / settingsDialogCount << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
-        && inlineRenameCount == count && areaResizeCount == 1000 && cursorStatusCount == 1000
+        && inlineRenameCount == count && areaResizeCount == 1000 && spacePanCount == 1000
+        && spaceFocusResetCount == 1000 && cursorStatusCount == 1000
         && moveUndoCount == moveUndoIterations && matches > 0 && guideCount == 2000 && automaticGuideCount == 2000 && automaticGroupManual
         && connectorDragGuideCount == 2000 && connectorDragStateValid
         && endpointPreviewGuideCount == 2000 && endpointPreviewHandlesValid
@@ -978,7 +1043,7 @@ int main(int argc, char **argv)
         && loaded.diagram().fontStyle(loadedFontStock->id()) == (FontStyle {"Arial", 18})
         && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic
         && !dependentArrows.empty() && dependentEndpointChecksum != 0.0
-        && sessionCount == count && sessionSamples == count * 2
+        && sessionCount == count && sessionSamples == count * 2 && settingsDialogCount == count
         && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)
         QTextStream(stderr) << "validation failed: commands=" << commands << ", points=" << pointCount

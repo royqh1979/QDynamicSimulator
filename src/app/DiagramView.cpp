@@ -9,7 +9,6 @@
 #include <QFileInfo>
 #include <QGraphicsItem>
 #include <QMimeData>
-#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainterPath>
 #include <QScrollBar>
@@ -99,7 +98,9 @@ void DiagramView::wheelEvent(QWheelEvent *event)
 
 void DiagramView::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::MiddleButton || (event->button() == Qt::LeftButton && m_spacePressed)) {
+    const auto *diagram = qobject_cast<DiagramScene *>(scene());
+    if (event->button() == Qt::MiddleButton
+        || (event->button() == Qt::LeftButton && diagram && diagram->spacePressed())) {
         m_panning = true;
         m_lastPanPosition = event->pos();
         viewport()->setCursor(Qt::ClosedHandCursor);
@@ -107,7 +108,6 @@ void DiagramView::mousePressEvent(QMouseEvent *event)
         return;
     }
     if (event->button() == Qt::LeftButton) {
-        auto *diagram = qobject_cast<DiagramScene *>(scene());
         const QGraphicsItem *pressedItem = diagram ? diagram->itemAt(mapToScene(event->pos()), QTransform()) : nullptr;
         if (diagram && diagram->tool() == DiagramScene::Tool::Select
             && (!pressedItem || dynamic_cast<const RoutedItem *>(pressedItem))) {
@@ -157,24 +157,22 @@ void DiagramView::mouseReleaseEvent(QMouseEvent *event)
     QGraphicsView::mouseReleaseEvent(event);
 }
 
-void DiagramView::keyPressEvent(QKeyEvent *event)
+void DiagramView::focusInEvent(QFocusEvent *event)
 {
-    if (event->key() == Qt::Key_Space) {
-        m_spacePressed = true;
-        event->accept();
-        return;
+    if (event->reason() == Qt::ActiveWindowFocusReason) {
+        if (auto *diagram = qobject_cast<DiagramScene *>(scene()))
+            diagram->clearSpacePressed();
     }
-    QGraphicsView::keyPressEvent(event);
+    QGraphicsView::focusInEvent(event);
 }
 
-void DiagramView::keyReleaseEvent(QKeyEvent *event)
+void DiagramView::focusOutEvent(QFocusEvent *event)
 {
-    if (event->key() == Qt::Key_Space) {
-        m_spacePressed = false;
-        event->accept();
-        return;
+    if (event->reason() == Qt::ActiveWindowFocusReason) {
+        if (auto *diagram = qobject_cast<DiagramScene *>(scene()))
+            diagram->clearSpacePressed();
     }
-    QGraphicsView::keyReleaseEvent(event);
+    QGraphicsView::focusOutEvent(event);
 }
 
 void DiagramView::dragEnterEvent(QDragEnterEvent *event)

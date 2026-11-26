@@ -1,7 +1,11 @@
 #include "DocumentController.h"
 #include "SimulationController.h"
+#include "SimulationSettingsDialog.h"
 
+#include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QFont>
+#include <QLabel>
 #include <QSignalSpy>
 #include <QtTest>
 
@@ -19,7 +23,7 @@ void createModel(DocumentController &document, double stop = 2.0)
     const EntityId cloud = model.createCloud({100.0, 0.0});
     model.createFlow(cloud, stock);
     model.rename(stock, "Stock");
-    model.setEquation(stock, "0");
+    model.setInitialEquation(stock, "0");
     model.setEquation(model.findByName("Flow1")->id(), "1");
     model.setSimulationSettings({0.0, stop, 1.0, 1.0});
     document.replaceDocument(std::move(model));
@@ -44,6 +48,8 @@ class TestSimulationController : public QObject
     Q_OBJECT
 
 private slots:
+    void settingsDialog();
+    void settingsUndoRedo();
     void namedRunsAndOverwrite();
     void revisionsAndReset();
     void compilationFailure();
@@ -51,6 +57,60 @@ private slots:
     void resetDuringRun();
     void destructionDuringRun();
 };
+
+void TestSimulationController::settingsDialog()
+{
+    SimulationSettingsDialog dialog(SimulationSettings {});
+    auto *dt = dialog.findChild<QDoubleSpinBox *>("dt");
+    auto *save = dialog.findChild<QDoubleSpinBox *>("saveInterval");
+    auto *start = dialog.findChild<QDoubleSpinBox *>("startTime");
+    auto *stop = dialog.findChild<QDoubleSpinBox *>("stopTime");
+    auto *method = dialog.findChild<QComboBox *>("integrationMethod");
+    auto *unit = dialog.findChild<QComboBox *>("timeUnit");
+    QVERIFY(dt && save && start && stop && method && unit);
+    dt->setValue(0.5);
+    QCOMPARE(save->value(), 0.5);
+    start->setValue(2.0);
+    stop->setValue(4.0);
+    save->setValue(1.0);
+    method->setCurrentIndex(1);
+    unit->setCurrentText("Year");
+    dialog.accept();
+    QCOMPARE(dialog.result(), QDialog::Accepted);
+    QCOMPARE(dialog.settings(), SimulationSettings(2.0, 4.0, 0.5, 1.0, IntegrationMethod::RungeKutta4, "Year"));
+
+    SimulationSettingsDialog invalidDialog(dialog.settings());
+    auto *invalidSave = invalidDialog.findChild<QDoubleSpinBox *>("saveInterval");
+    invalidSave->setValue(0.75);
+    invalidDialog.accept();
+    QVERIFY(invalidDialog.result() != QDialog::Accepted);
+    auto *error = invalidDialog.findChild<QLabel *>("settingsError");
+    QVERIFY(error && !error->isHidden());
+    invalidSave->setValue(1.0);
+    invalidDialog.accept();
+    QCOMPARE(invalidDialog.result(), QDialog::Accepted);
+}
+
+void TestSimulationController::settingsUndoRedo()
+{
+    DocumentController document;
+    const SimulationSettings original = document.document().simulationSettings();
+    const SimulationSettings custom {2.0, 4.0, 0.5, 1.0, IntegrationMethod::RungeKutta4, "Year"};
+    QVERIFY(document.setSimulationSettings(custom));
+    QCOMPARE(document.document().simulationSettings(), custom);
+    QCOMPARE(document.simulationRevision(), quint64(1));
+    document.undoStack()->undo();
+    QCOMPARE(document.document().simulationSettings(), original);
+    QCOMPARE(document.simulationRevision(), quint64(2));
+    document.undoStack()->redo();
+    QCOMPARE(document.document().simulationSettings(), custom);
+    QCOMPARE(document.simulationRevision(), quint64(3));
+    const int commands = document.undoStack()->count();
+    QVERIFY(!document.setSimulationSettings({0.0, 1.0, 0.0, 0.0}));
+    QCOMPARE(document.document().simulationSettings(), custom);
+    QCOMPARE(document.simulationRevision(), quint64(3));
+    QCOMPARE(document.undoStack()->count(), commands);
+}
 
 void TestSimulationController::namedRunsAndOverwrite()
 {

@@ -175,12 +175,14 @@ SimulationCompileResult compileSimulation(const Document &document)
             addIssue(result, id, "Array simulation is not implemented", "unsupported-simulation-array");
             continue;
         }
-        if (!element.formula().root()) {
+        const Formula &definition = element.kind() == ElementKind::Stock
+            ? static_cast<const Stock &>(element).initialFormula() : element.formula();
+        if (!definition.root()) {
             addIssue(result, id, "Variable has no simulation equation: " + element.displayName(),
                 "missing-simulation-equation");
             continue;
         }
-        scanSupportedCalls(document, element.formula(), id, result);
+        scanSupportedCalls(document, definition, id, result);
         outputs.push_back(id);
         if (element.kind() == ElementKind::Stock)
             stocks.push_back(id);
@@ -277,7 +279,9 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
             const auto *element = dynamic_cast<const ModelElement *>(m_document.find(id));
             if (!element)
                 return ModelIssue {id, IssueSeverity::Error, "Simulation variable no longer exists", "missing-simulation-variable", {}};
-            const EvaluationResult evaluated = evaluateFormula(element->formula().root(), context);
+            const Formula &formula = element->kind() == ElementKind::Stock
+                ? static_cast<const Stock *>(element)->initialFormula() : element->formula();
+            const EvaluationResult evaluated = evaluateFormula(formula.root(), context);
             if (!evaluated.value)
                 return ModelIssue {id, IssueSeverity::Error, evaluated.error, "simulation-evaluation", evaluated.errorSpan};
             const auto *scalar = std::get_if<double>(&*evaluated.value);

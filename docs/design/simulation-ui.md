@@ -2,7 +2,7 @@
 
 ## 1. 范围与当前基础
 
-状态：运行会话基础已实现并通过验证，等待审核；设置、结果 Dock 和 Qt Charts 界面尚未开始。
+状态：运行会话、SimulationSettingsDialog、Run Name/Enter、Run/Cancel、设置撤销和诊断定位已实现并通过验证，等待审核；结果 Dock 与 Qt Charts 尚未开始。
 
 当前 Core 已提供 SimulationSettings、SimulationPlan、同步 SimulationRunner 和不可变 SimulationRun。本设计覆盖建模到运行的完整工作流、命名结果、Workbench Variable、折线图和数据表。命名多 Run 与叠加比较属于基本结果管理；数组、参数扫描、批量实验和蒙特卡洛仍不提前混入首批实现。
 

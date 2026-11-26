@@ -6,6 +6,8 @@
 #include "EntityPalette.h"
 #include "MiniMapView.h"
 #include "PropertyPanel.h"
+#include "SimulationController.h"
+#include "SimulationSettingsDialog.h"
 #include <io/DocumentFile.h>
 #include <io/XmileFile.h>
 #include <core/Validation.h>
@@ -16,6 +18,7 @@
 #include <QClipboard>
 #include <QCloseEvent>
 #include <QDir>
+#include <QDialog>
 #include <QDockWidget>
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -67,6 +70,7 @@ bool isDocumentFileDrop(const QMimeData *mime)
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_controller(new DocumentController(this))
+    , m_simulation(new SimulationController(m_controller))
     , m_scene(new DiagramScene(m_controller, this))
     , m_view(new DiagramView(m_scene, this))
 {
@@ -84,6 +88,34 @@ MainWindow::MainWindow(QWidget *parent)
         setDirty(!clean);
     });
     connect(m_controller, &DocumentController::documentChanged, this, &MainWindow::refreshValidation);
+    connect(m_simulation, &SimulationController::statusChanged, this,
+        [this](SimulationSessionStatus status) {
+            QString text;
+            switch (status) {
+            case SimulationSessionStatus::Idle: text = tr("Ready"); break;
+            case SimulationSessionStatus::Compiling: text = tr("Compiling"); break;
+            case SimulationSessionStatus::Running: text = tr("Running"); break;
+            case SimulationSessionStatus::Cancelling: text = tr("Cancelling"); break;
+            case SimulationSessionStatus::Completed: text = tr("Completed"); break;
+            case SimulationSessionStatus::Cancelled: text = tr("Cancelled"); break;
+            case SimulationSessionStatus::Failed: text = tr("Failed"); break;
+            }
+            statusBar()->showMessage(text, 5000);
+        });
+    connect(m_simulation, &SimulationController::busyChanged, this, [this](bool) {
+        updateSimulationControls();
+    });
+    connect(m_simulation, &SimulationController::runTerminated, this,
+        [this](const std::shared_ptr<const qds::core::SimulationRun> &run) {
+            if (run->status() == qds::core::SimulationRunStatus::Completed) {
+                statusBar()->showMessage(tr("Completed %1: %2 samples")
+                    .arg(m_simulation->lastRunName()).arg(run->times().size()), 10000);
+            }
+        });
+    connect(m_simulation, &SimulationController::compilationFailed, this, &MainWindow::showCompilationIssues);
+    connect(m_simulation, &SimulationController::errorOccurred, this, [this](const QString &message) {
+        statusBar()->showMessage(message, 10000);
+    });
     connect(m_scene, &DiagramScene::editingFinished, this, [this]() {
         setTool(DiagramScene::Tool::Select);
         m_selectAction->setChecked(true);
@@ -141,6 +173,7 @@ bool MainWindow::openFile(const QString &fileName)
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     if (maybeSave()) {
+        m_simulation->reset();
         saveWindowLayout();
         if (!m_dirty)
             QFile::remove(recoveryFileName());
@@ -341,6 +374,34 @@ void MainWindow::createActions()
     });
     editMenu->addAction(distributeVertical);
 
+    QMenu *simulationMenu = menuBar()->addMenu(tr("&Simulation"));
+    QToolBar *simulationToolBar = addToolBar(tr("Simulation"));
+    simulationToolBar->setObjectName(QStringLiteral("simulationToolBar"));
+    QLabel *runNameLabel = new QLabel(tr("Run name:"), simulationToolBar);
+    simulationToolBar->addWidget(runNameLabel);
+    m_runName = new QLineEdit(simulationToolBar);
+    m_runName->setObjectName(QStringLiteral("runNameEdit"));
+    m_runName->setText(QStringLiteral("Run1"));
+    m_runName->setMaximumWidth(180);
+    simulationToolBar->addWidget(m_runName);
+    m_runAction = new QAction(actionIcon("run"), tr("Run"), this);
+    m_runAction->setObjectName(QStringLiteral("runAction"));
+    m_runAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
+    m_cancelAction = new QAction(actionIcon("cancel"), tr("Cancel"), this);
+    m_cancelAction->setObjectName(QStringLiteral("cancelAction"));
+    m_cancelAction->setShortcut(QKeySequence(Qt::Key_Escape));
+    m_simulationSettingsAction = new QAction(actionIcon("simulation-settings"), tr("Simulation settings"), this);
+    m_simulationSettingsAction->setObjectName(QStringLiteral("simulationSettingsAction"));
+    for (QAction *action : {m_runAction, m_cancelAction, m_simulationSettingsAction}) {
+        simulationMenu->addAction(action);
+        simulationToolBar->addAction(action);
+    }
+    connect(m_runAction, &QAction::triggered, this, &MainWindow::runSimulation);
+    connect(m_runName, &QLineEdit::returnPressed, this, &MainWindow::runSimulation);
+    connect(m_cancelAction, &QAction::triggered, m_simulation, &SimulationController::cancel);
+    connect(m_simulationSettingsAction, &QAction::triggered, this, &MainWindow::openSimulationSettings);
+    updateSimulationControls();
+
     QMenu *viewMenu = menuBar()->addMenu(tr("&View"));
     auto addViewAction = [this, viewMenu](const QString &text, const QKeySequence &shortcut,
                                           void (DiagramView::*method)(), const char *iconName) {
@@ -499,6 +560,54 @@ void MainWindow::applyWorkspace(const qds::io::Workspace &workspace)
     } else if (!m_scene->items().isEmpty()) {
         m_view->centerOn(m_scene->itemsBoundingRect().center());
     }
+}
+
+void MainWindow::runSimulation()
+{
+    const QString name = m_runName->text().trimmed();
+    const bool overwrite = m_simulation->hasRunName(name);
+    if (overwrite) {
+        const auto choice = QMessageBox::question(this, tr("Overwrite run"),
+            tr("Run '%1' already exists. Overwrite its dataset?").arg(name));
+        if (choice != QMessageBox::Yes)
+            return;
+    }
+    m_simulation->start(name, overwrite);
+}
+
+void MainWindow::openSimulationSettings()
+{
+    SimulationSettingsDialog dialog(m_controller->document().simulationSettings(), this);
+    if (dialog.exec() == QDialog::Accepted)
+        m_controller->setSimulationSettings(dialog.settings());
+}
+
+void MainWindow::updateSimulationControls()
+{
+    const bool busy = m_simulation->isBusy();
+    if (m_runAction)
+        m_runAction->setEnabled(!busy);
+    if (m_cancelAction)
+        m_cancelAction->setEnabled(busy);
+}
+
+void MainWindow::showCompilationIssues(const QVector<qds::core::ModelIssue> &issues)
+{
+    if (!m_issueList)
+        return;
+    m_issueList->clear();
+    for (const qds::core::ModelIssue &issue : issues) {
+        const auto *element = dynamic_cast<const qds::core::ModelElement *>(m_controller->document().find(issue.entityId));
+        const QString name = element ? element->displayName() : tr("Model");
+        auto *item = new QListWidgetItem(tr("%1: %2").arg(name, issue.message), m_issueList);
+        item->setData(Qt::UserRole, issue.entityId);
+    }
+    if (!issues.isEmpty()) {
+        m_issueList->setCurrentRow(0);
+        if (QDockWidget *dock = qobject_cast<QDockWidget *>(m_issueList->parentWidget()))
+            dock->show();
+    }
+    statusBar()->showMessage(tr("Simulation compilation failed"), 10000);
 }
 
 void MainWindow::newFile()

@@ -226,6 +226,17 @@ CMake 使用 `qt5_create_translation` 更新 TS 并生成 QM，再通过 RCC 内
 
 ## 模拟运行会话
 
-`simulation_session` 覆盖不可变 XML 副本、编译、QThread Worker、结果交付和命名 Run 覆盖；每个 Run 有两个样本。1000 次会话共交付 2000 个样本，总耗时 305.484 ms，每会话 305.484 μs。该值包含调度和事件处理，不与 Core 的纯积分 self-time 混合。
+`simulation_session` 覆盖不可变 XML 副本、编译、QThread Worker、结果交付和命名 Run 覆盖；每个 Run 有两个样本。1000 次会话共交付 2000 个样本，总耗时 1892.76 ms，每会话 1892.76 μs。该值包含调度和事件处理，不与 Core 的纯积分 self-time 混合。
 
 取消、重置、析构和文档替换的线程生命周期由 `test-simulation-controller` 验证。一次本机 Editor profile 出现系统剪贴板占用警告，但进程退出码和全部校验通过；该警告不属于模拟会话指标。
+
+`simulation_settings_dialog` 独立构建设置对话框、将 DT 从 0.25 改为 0.5、检查 SAVEPER 联动并接受。1000 次总耗时 3171.97 ms，每次 3171.97 μs。该指标只覆盖设置 Widget，不包含 Worker 或积分。
+
+## 空格输入、平移与窗口焦点状态
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`space_pan` 使用真实 DiagramView 和显式 QKeyEvent/QMouseEvent，每轮执行带 LeftButton 状态的交替方向平移并校验两个滚动条均变化；`space_focus_reset` 每轮分别在 `ActiveWindowFocusReason` 的 FocusOut 和 FocusIn 前按下空格，并校验两种事件均清空 Scene 状态。默认 Scene 按键转发、内联及属性面板名称中的空格输入、拖动中不按空格平移和移出后释放由编辑器单元测试覆盖。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| space_pan | 1000 | 1.5013 | 1.5013 |
+| space_focus_reset | 1000 | 1.0027 | 1.0027 |

@@ -334,10 +334,11 @@ QByteArray writeXml(const core::Document &document, QString *errorMessage)
         writer.writeStartElement(variableTag(variable.kind()));
         writer.writeAttribute(QStringLiteral("name"), name);
         writeXmileArrayDefinition(writer, document, variable);
-        if (variable.elementEquations().empty())
-            writer.writeTextElement(
-                QStringLiteral("eqn"),
-                variable.equation().isEmpty() ? QStringLiteral("0") : (variable.equation()));
+        if (variable.elementEquations().empty()) {
+            const QString equation = variable.kind() == core::ElementKind::Stock
+                ? static_cast<const core::Stock &>(variable).initialEquation() : variable.equation();
+            writer.writeTextElement(QStringLiteral("eqn"), equation.isEmpty() ? QStringLiteral("0") : equation);
+        }
         if (!variable.unit().isEmpty())
             writer.writeTextElement(QStringLiteral("units"), (variable.unit()));
         if (!variable.comment().isEmpty())
@@ -600,8 +601,13 @@ bool parseVariable(
         if (!reader.isStartElement())
             continue;
         const QString child = reader.name().toString();
-        if (child == QStringLiteral("eqn"))
-            variable.equation = reader.readElementText().trimmed();
+        if (child == QStringLiteral("eqn")) {
+            const QString equation = reader.readElementText().trimmed();
+            if (variable.kind == core::ElementKind::Stock)
+                variable.initialEquation = equation;
+            else
+                variable.equation = equation;
+        }
         else if (child == QStringLiteral("dimensions")) {
             if (!parseXmileVariableDimensions(reader, variable.dimensions)) {
                 setError(errorMessage, translate("An array variable has invalid dimensions: %1").arg(name));

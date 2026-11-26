@@ -45,8 +45,12 @@ void TestDocument::createAndLookup()
     QVERIFY(document.rename(stock, "Population"));
     QCOMPARE(document.model().findByName("population")->id(), stock);
     QCOMPARE(document.model().findByName("POPULATION")->id(), stock);
-    QVERIFY(document.setEquation(stock, "100"));
-    QCOMPARE(static_cast<const ModelElement *>(document.find(stock))->equation(), QString("100"));
+    QVERIFY(document.setInitialEquation(stock, "100"));
+    const auto *stockModel = dynamic_cast<const Stock *>(document.find(stock));
+    QVERIFY(stockModel);
+    QCOMPARE(stockModel->initialEquation(), QString("100"));
+    QVERIFY(!document.setEquation(stock, "1"));
+    QCOMPARE(stockModel->initialEquation(), QString("100"));
     std::size_t modelCount = 0;
     for (const ModelElement &element : document.model().elements()) {
         Q_UNUSED(element)
@@ -310,7 +314,7 @@ void TestDocument::applyFailureIsAtomic()
     const EntityId cloud = document.createCloud();
     const EntityId flow = document.createFlow(stock, cloud);
     QVERIFY(document.rename(stock, "Population"));
-    QVERIFY(document.setEquation(stock, "100"));
+    QVERIFY(document.setInitialEquation(stock, "100"));
     QVERIFY(document.setUnit(stock, "people"));
     QVERIFY(document.setComment(stock, "Initial"));
     QVERIFY(document.setFontStyle(stock, {"Arial", 18}));
@@ -318,7 +322,7 @@ void TestDocument::applyFailureIsAtomic()
     const ElementData original = *document.capture(stock);
     ElementData edit = original;
     edit.displayName = "Stock2";
-    edit.equation = "200";
+    edit.initialEquation = "200";
     edit.unit = "invalid";
     QVERIFY(!document.apply(edit));
     QCOMPARE(*document.capture(stock), original);
@@ -379,7 +383,7 @@ void TestDocument::validation()
     const EntityId first = document.createVariable(ElementKind::Auxiliary);
     const EntityId second = document.createVariable(ElementKind::Auxiliary);
     document.rename(stock, "\u5E93\u5B58");
-    document.setEquation(stock, "100");
+    document.setInitialEquation(stock, "100");
     document.rename(first, "\u8F85\u52A9 \u53D8\u91CF");
     document.setEquation(first, "Auxiliary2 + Missing");
     document.setEquation(second, "\"\u8F85\u52A9 \u53D8\u91CF\"");

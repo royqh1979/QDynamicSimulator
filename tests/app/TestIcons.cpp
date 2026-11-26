@@ -12,7 +12,7 @@ private slots:
     {
         QDir directory(QStringLiteral(":/icons"));
         const QStringList files = directory.entryList({QStringLiteral("*.svg")}, QDir::Files);
-        QCOMPARE(files.size(), 48);
+        QCOMPARE(files.size(), 51);
         for (const QString &file : files) {
             const QString path = directory.absoluteFilePath(file);
             const QIcon icon(path);
