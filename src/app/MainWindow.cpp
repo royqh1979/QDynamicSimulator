@@ -6,9 +6,9 @@
 #include "EntityPalette.h"
 #include "MiniMapView.h"
 #include "PropertyPanel.h"
-#include <qds/io/DocumentFile.h>
-#include <qds/io/XmileFile.h>
-#include <qds/core/Validation.h>
+#include <io/DocumentFile.h>
+#include <io/XmileFile.h>
+#include <core/Validation.h>
 
 #include <QAction>
 #include <QActionGroup>

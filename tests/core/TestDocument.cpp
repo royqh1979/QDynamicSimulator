@@ -1,5 +1,5 @@
-#include <qds/core/Document.h>
-#include <qds/core/Validation.h>
+#include <core/Document.h>
+#include <core/Validation.h>
 
 #include <QtTest>
 

@@ -3,8 +3,8 @@
 #include "DiagramItems.h"
 #include "Routing.h"
 
-#include <qds/core/ChangeSet.h>
-#include <qds/core/Document.h>
+#include <core/ChangeSet.h>
+#include <core/Document.h>
 
 #include <QGraphicsScene>
 #include <QHash>

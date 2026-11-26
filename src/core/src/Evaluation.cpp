@@ -1,6 +1,6 @@
-#include <qds/core/Evaluation.h>
+#include <core/Evaluation.h>
 
-#include <qds/core/Function.h>
+#include <core/Function.h>
 
 #include <algorithm>
 #include <cmath>

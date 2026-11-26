@@ -1,4 +1,4 @@
-#include <qds/core/Formula.h>
+#include <core/Formula.h>
 
 #include <QtTest>
 

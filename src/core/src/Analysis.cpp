@@ -1,6 +1,6 @@
-#include <qds/core/Analysis.h>
+#include <core/Analysis.h>
 
-#include <qds/core/Function.h>
+#include <core/Function.h>
 
 #include <algorithm>
 #include <functional>

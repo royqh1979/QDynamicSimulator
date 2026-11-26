@@ -1,7 +1,7 @@
-#include <qds/core/Document.h>
-#include <qds/core/Evaluation.h>
-#include <qds/io/DocumentFile.h>
-#include <qds/io/XmileFile.h>
+#include <core/Document.h>
+#include <core/Evaluation.h>
+#include <io/DocumentFile.h>
+#include <io/XmileFile.h>
 
 #include <QFile>
 #include <QTemporaryDir>

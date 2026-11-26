@@ -1,7 +1,7 @@
 #pragma once
 
-#include <qds/core/ChangeSet.h>
-#include <qds/core/Document.h>
+#include <core/ChangeSet.h>
+#include <core/Document.h>
 
 #include <QObject>
 #include <QPointF>

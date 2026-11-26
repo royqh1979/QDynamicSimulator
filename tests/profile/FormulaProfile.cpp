@@ -1,6 +1,6 @@
-#include <qds/core/Analysis.h>
-#include <qds/core/Evaluation.h>
-#include <qds/core/Formula.h>
+#include <core/Analysis.h>
+#include <core/Evaluation.h>
+#include <core/Formula.h>
 
 #include <cmath>
 #include <numeric>

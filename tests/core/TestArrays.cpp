@@ -1,4 +1,4 @@
-#include <qds/core/Analysis.h>
+#include <core/Analysis.h>
 
 #include <algorithm>
 #include <string>

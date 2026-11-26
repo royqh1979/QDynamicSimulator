@@ -1,5 +1,5 @@
-#include <qds/core/Validation.h>
-#include <qds/core/Analysis.h>
+#include <core/Validation.h>
+#include <core/Analysis.h>
 
 namespace qds::core {
 

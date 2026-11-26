@@ -1,6 +1,6 @@
-#include <qds/io/DocumentFile.h>
+#include <io/DocumentFile.h>
 
-#include <qds/io/XmileFile.h>
+#include <io/XmileFile.h>
 
 #include <QCoreApplication>
 #include <QFile>

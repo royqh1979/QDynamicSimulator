@@ -1,4 +1,4 @@
-#include <qds/io/XmileFile.h>
+#include <io/XmileFile.h>
 
 #include <QCoreApplication>
 #include <QFile>

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <qds/core/Formula.h>
-#include <qds/core/Validation.h>
+#include <core/Formula.h>
+#include <core/Validation.h>
 
 #include <unordered_map>
 #include <unordered_set>

@@ -1,5 +1,5 @@
-#include <qds/io/DocumentFile.h>
-#include <qds/io/XmileFile.h>
+#include <io/DocumentFile.h>
+#include <io/XmileFile.h>
 
 #include <QFile>
 #include <QTemporaryDir>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <qds/core/Formula.h>
+#include <core/Formula.h>
 
 #include <functional>
 #include <optional>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <qds/core/Model.h>
+#include <core/Model.h>
 
 #include <cstddef>
 #include <memory>

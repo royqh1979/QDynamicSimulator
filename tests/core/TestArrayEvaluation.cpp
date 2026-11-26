@@ -1,5 +1,5 @@
-#include <qds/core/Analysis.h>
-#include <qds/core/Evaluation.h>
+#include <core/Analysis.h>
+#include <core/Evaluation.h>
 
 #include <algorithm>
 #include <cmath>

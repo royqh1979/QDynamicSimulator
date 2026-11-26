@@ -1,6 +1,6 @@
 #pragma once
 
-#include <qds/core/Document.h>
+#include <core/Document.h>
 
 #include <QHash>
 #include <QRectF>

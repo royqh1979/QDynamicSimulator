@@ -1,5 +1,5 @@
-#include <qds/io/XmileFile.h>
-#include <qds/core/Formula.h>
+#include <io/XmileFile.h>
+#include <core/Formula.h>
 
 #include <QDirIterator>
 #include <QFile>
