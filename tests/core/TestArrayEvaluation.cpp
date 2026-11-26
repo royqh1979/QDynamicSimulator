@@ -1,11 +1,12 @@
-#include <qds/core/Analysis.h>
-#include <qds/core/Evaluation.h>
+#include <core/formula/Analysis.h>
+#include <core/formula/Evaluation.h>
 
 #include <algorithm>
 #include <cmath>
-#include <string>
+#include <QString>
 #include <unordered_map>
-#include <vector>
+#include <QHash>
+#include <QVector>
 
 #include <QtTest>
 
@@ -27,13 +28,13 @@ private slots:
     void conditionsAndErrors();
 
 private:
-    EvaluationResult evaluate(const std::string &equation);
-    void setArray(EntityId id, std::vector<std::string> dimensions, std::vector<std::size_t> shape,
-        std::vector<double> values);
+    EvaluationResult evaluate(const QString &equation);
+    void setArray(const QString &name, QVector<QString> dimensions, QVector<std::size_t> shape,
+        QVector<double> values);
 
     Document document;
     EvaluationContext context;
-    std::unordered_map<EntityId, ArrayValue> arrays;
+    QHash<QString, ArrayValue> arrays;
     EntityId a = 0;
     EntityId b = 0;
     EntityId c = 0;
@@ -56,45 +57,45 @@ void TestArrayEvaluation::initTestCase()
     document.setDimensions(b, {"N", "Location"});
     document.setDimensions(c, {"N"});
     document.setDimensions(result, {"Location", "N"});
-    setArray(a, {"location", "n"}, {3, 2}, {1, 2, 3, 4, 5, 6});
-    setArray(b, {"n", "location"}, {2, 3}, {10, 30, 50, 20, 40, 60});
-    setArray(c, {"n"}, {2}, {7, 8});
-    context.readDimension = [this](const std::string &name) { return document.findDimension(name); };
-    context.readVariable = [this](EntityId id) -> std::optional<Value> {
-        const auto found = arrays.find(id);
-        return found == arrays.end() ? std::nullopt : std::optional<Value>(found->second);
+    setArray("a", {"location", "n"}, {3, 2}, {1, 2, 3, 4, 5, 6});
+    setArray("b", {"n", "location"}, {2, 3}, {10, 30, 50, 20, 40, 60});
+    setArray("c", {"n"}, {2}, {7, 8});
+    context.readDimension = [this](const QString &name) { return document.findDimension(name); };
+    context.readVariable = [this](const QString &name) -> std::optional<Value> {
+        const auto found = arrays.find(name);
+        return found == arrays.end() ? std::nullopt : std::optional<Value>(found.value());
     };
     context.scope.dimensions = {"location", "n"};
 }
 
-void TestArrayEvaluation::setArray(EntityId id, std::vector<std::string> dimensions,
-    std::vector<std::size_t> shape, std::vector<double> values)
+void TestArrayEvaluation::setArray(const QString &name, QVector<QString> dimensions,
+    QVector<std::size_t> shape, QVector<double> values)
 {
-    arrays[id] = {std::move(dimensions), std::move(shape), std::move(values)};
+    arrays[name] = {std::move(dimensions), std::move(shape), std::move(values)};
 }
 
-EvaluationResult TestArrayEvaluation::evaluate(const std::string &equation)
+EvaluationResult TestArrayEvaluation::evaluate(const QString &equation)
 {
     document.setEquation(result, equation);
     const ModelAnalysis analysis = analyzeDocument(document);
     const auto found = std::find_if(analysis.elements.begin(), analysis.elements.end(), [this](const ElementAnalysis &entry) {
         return entry.id == result;
     });
-    return evaluateFormula(found->formula.ast.get(), context);
+    return evaluateFormula(found->formula.root(), context);
 }
 
 void expectScalar(const EvaluationResult &result, double expected)
 {
-    QVERIFY2(result.value.has_value(), result.error.c_str());
+    QVERIFY2(result.value.has_value(), qPrintable(result.error));
     const auto *scalar = std::get_if<double>(&*result.value);
     QVERIFY(scalar);
     QVERIFY(qAbs(*scalar - expected) < 1e-12);
 }
 
-void expectArray(const EvaluationResult &result, const std::vector<std::string> &dimensions,
-    const std::vector<std::size_t> &shape, const std::vector<double> &values)
+void expectArray(const EvaluationResult &result, const QVector<QString> &dimensions,
+    const QVector<std::size_t> &shape, const QVector<double> &values)
 {
-    QVERIFY2(result.value.has_value(), result.error.c_str());
+    QVERIFY2(result.value.has_value(), qPrintable(result.error));
     const auto *array = std::get_if<ArrayValue>(&*result.value);
     QVERIFY(array);
     QCOMPARE(array->dimensions, dimensions);
@@ -136,11 +137,11 @@ void TestArrayEvaluation::applyToAllScope()
     expectScalar(evaluate("SUM(A[Location, *])"), 7.0);
     expectScalar(evaluate("SUM(SQRT(A[Location, *]))"), std::sqrt(3.0) + 2.0);
     context.scope.indices.clear();
-    context.scope.self = result;
-    setArray(result, {"location", "n"}, {3, 2}, {1, 2, 3, 4, 5, 6});
+    context.scope.self = "result";
+    setArray("result", {"location", "n"}, {3, 2}, {1, 2, 3, 4, 5, 6});
     expectScalar(evaluate("SIZE(SELF)"), 6.0);
-    context.scope.self = 0;
-    arrays.erase(result);
+    context.scope.self.clear();
+    arrays.remove("result");
 }
 
 void TestArrayEvaluation::arrayFunctions()
@@ -155,8 +156,8 @@ void TestArrayEvaluation::arrayFunctions()
         {1, std::sqrt(2.0), std::sqrt(3.0), 2, std::sqrt(5.0), std::sqrt(6.0)});
     expectArray(evaluate("MAX(A, 2)"), {"location", "n"}, {3, 2}, {2, 2, 3, 4, 5, 6});
 
-    setArray(a, {"location", "n"}, {3, 2}, {20, 10, 20, 10, 40, 30});
-    setArray(b, {"n", "location"}, {2, 3}, {2, 2, 3, 1, 0, 1});
+    setArray("a", {"location", "n"}, {3, 2}, {20, 10, 20, 10, 40, 30});
+    setArray("b", {"n", "location"}, {2, 3}, {2, 2, 3, 1, 0, 1});
     expectScalar(evaluate("RANK(A, 1)"), 2.0);
     expectScalar(evaluate("RANK(A, 1, B)"), 4.0);
     expectScalar(evaluate("RANK(A, 0)"), 0.0);
@@ -177,12 +178,12 @@ void TestArrayEvaluation::arrayLiterals()
 
 void TestArrayEvaluation::conditionsAndErrors()
 {
-    setArray(a, {"location", "n"}, {3, 2}, {1, 2, 3, 4, 5, 6});
+    setArray("a", {"location", "n"}, {3, 2}, {1, 2, 3, 4, 5, 6});
     expectArray(evaluate("IF A > 3 THEN A ELSE 0"), {"location", "n"}, {3, 2}, {0, 0, 0, 4, 5, 6});
     expectArray(evaluate("(A > 3) AND 1"), {"location", "n"}, {3, 2}, {0, 0, 0, 1, 1, 1});
-    setArray(a, {"location", "n"}, {2, 2}, {1, 2, 3, 4});
+    setArray("a", {"location", "n"}, {2, 2}, {1, 2, 3, 4});
     QVERIFY(!evaluate("A + 1").value);
-    setArray(a, {"location", "n"}, {3, 2}, {1, 2, 3, 4, 5, 6});
+    setArray("a", {"location", "n"}, {3, 2}, {1, 2, 3, 4, 5, 6});
     context.scope.indices = {0, 0};
     context.scope.dimensions.clear();
     QVERIFY(!evaluate("Location").value);

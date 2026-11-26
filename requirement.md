@@ -48,7 +48,7 @@
 - 开发语言与框架：C++17 及以上 + Qt 5（Widgets 技术栈，不使用 QML/Qt Quick）；
 - 画布：基于 QGraphicsView/QGraphicsScene 实现，配合自绘元素与视图变换优化大模型性能；
 - 图表：Qt Charts 或 QCustomPlot（建议在原型阶段对比大数据量渲染性能后定）；
-- 架构：仿真引擎与 UI 严格解耦，引擎为独立核心库（纯 C++、不依赖 Qt UI 模块，仅可用 QtCore），便于批量实验多线程执行及将来提供命令行/脚本接口；
+- 架构：仿真引擎与 UI 严格解耦，引擎为独立核心库（可使用 QtCore，不依赖 Qt UI 模块），便于批量实验多线程执行及将来提供命令行/脚本接口；
 - 构建：CMake + 跨平台 CI（Windows / macOS / Linux）；
 - 许可：GPL v3 开源发布；可自由复用 GPL/BSD/MIT 系开源组件（XMILE 解析库、QCustomPlot、开源 SD 引擎等）；
 - 模型文件：原生格式为 `.qds`，采用类 docx 的 ZIP deflate 容器封装单个 `document.xml`，完整保存模型结构、方程、图形布局和工作区；XMILE（SD 国际标准）仅用于未压缩 XML 的导入/导出，导出时明确不能表达的专有语义；兼容导入 Vensim `.mdl`。

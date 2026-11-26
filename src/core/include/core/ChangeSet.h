@@ -1,9 +1,9 @@
 #pragma once
 
-#include <qds/core/Document.h>
+#include <core/Document.h>
 
 #include <optional>
-#include <vector>
+#include <QVector>
 
 namespace qds::core {
 
@@ -15,13 +15,13 @@ struct ChangeRecord {
 };
 
 struct ChangeSet {
-    std::vector<ChangeRecord> records;
+    QVector<ChangeRecord> records;
 };
 
 struct ChangeNotification {
-    std::vector<EntityId> added;
-    std::vector<EntityId> updated;
-    std::vector<EntityId> removed;
+    QVector<EntityId> added;
+    QVector<EntityId> updated;
+    QVector<EntityId> removed;
     bool documentReset = false;
 };
 

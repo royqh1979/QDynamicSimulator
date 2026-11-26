@@ -1,10 +1,10 @@
 #pragma once
 
-#include <qds/core/Document.h>
-#include <qds/core/Formula.h>
+#include <core/Document.h>
+#include <core/formula/Formula.h>
 
-#include <string>
-#include <vector>
+#include <QString>
+#include <QVector>
 
 namespace qds::core {
 
@@ -16,11 +16,11 @@ enum class IssueSeverity {
 struct ModelIssue {
     EntityId entityId = 0;
     IssueSeverity severity = IssueSeverity::Error;
-    std::string message;
-    std::string code;
+    QString message;
+    QString code;
     SourceSpan span;
 };
 
-std::vector<ModelIssue> validateDocument(const Document &document);
+QVector<ModelIssue> validateDocument(const Document &document);
 
 } // namespace qds::core

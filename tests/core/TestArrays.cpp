@@ -1,9 +1,9 @@
-#include <qds/core/Analysis.h>
+#include <core/formula/Analysis.h>
 
 #include <algorithm>
-#include <string>
+#include <QString>
 #include <unordered_set>
-#include <vector>
+#include <QVector>
 
 #include <QtTest>
 
@@ -11,7 +11,7 @@ using namespace qds::core;
 
 namespace {
 
-bool hasIssue(const ModelAnalysis &analysis, const std::string &code)
+bool hasIssue(const ModelAnalysis &analysis, const QString &code)
 {
     return std::any_of(analysis.issues.begin(), analysis.issues.end(), [&code](const ModelIssue &issue) {
         return issue.code == code;
@@ -46,8 +46,8 @@ void TestArrays::dimensionDefinitions()
     QVERIFY(!document.defineDimension("Empty", 0));
     QVERIFY(!document.defineDimension("Duplicate", {"A", "a"}));
     QCOMPARE(document.dimensions().size(), std::size_t(2));
-    QCOMPARE(document.findDimension("LOCATION")->elements[1].nameKey, std::string("new_york"));
-    QCOMPARE(document.findDimension("N")->elements[2].displayName, std::string("3"));
+    QCOMPARE(document.findDimension("LOCATION")->elements[1].nameKey, QString("new_york"));
+    QCOMPARE(document.findDimension("N")->elements[2].displayName, QString("3"));
 
     const EntityId array = document.createVariable(ElementKind::Auxiliary);
     document.rename(array, "Sales");
@@ -55,19 +55,19 @@ void TestArrays::dimensionDefinitions()
     QVERIFY(!document.defineDimension("Sales", 2));
     const auto *model = static_cast<const ModelElement *>(document.find(array));
     QVERIFY(document.setDimensions(array, {"Location", "N"}));
-    QCOMPARE(model->dimensions, (std::vector<std::string> {"location", "n"}));
+    QCOMPARE(model->dimensions(), (QVector<QString> {"location", "n"}));
     QVERIFY(!document.setDimensions(array, {"Missing"}));
-    QCOMPARE(model->dimensions.size(), std::size_t(2));
+    QCOMPARE(model->dimensions().size(), std::size_t(2));
 
     QVERIFY(document.setElementEquation(array, {0, 0}, "1"));
     QVERIFY(document.setElementEquation(array, {0, 0}, "2"));
-    QCOMPARE(model->elementEquations.size(), std::size_t(1));
-    QCOMPARE(model->elementEquations[0].equation, std::string("2"));
+    QCOMPARE(model->elementEquations().size(), std::size_t(1));
+    QCOMPARE(model->elementEquations()[0].equation, QString("2"));
     QVERIFY(!document.setElementEquation(array, {0}, "3"));
     QVERIFY(!document.setElementEquation(array, {2, 0}, "3"));
     QVERIFY(!document.setElementEquation(array, {0, 3}, "3"));
     document.setEquation(array, "10");
-    QVERIFY(model->elementEquations.empty());
+    QVERIFY(model->elementEquations().empty());
     document.clear();
     QVERIFY(document.dimensions().empty());
 }
@@ -75,35 +75,35 @@ void TestArrays::dimensionDefinitions()
 void TestArrays::arraySyntax()
 {
     const FormulaAnalysis analysis = analyzeFormula("A[Dim, *, 1:3, @2]");
-    QVERIFY2(analysis.issues.empty(), "Array subscript syntax must parse");
-    const auto *subscript = dynamic_cast<const SubscriptNode *>(analysis.ast.get());
+    QVERIFY2(analysis.issues().empty(), "Array subscript syntax must parse");
+    const auto *subscript = dynamic_cast<const SubscriptNode *>(analysis.root());
     QVERIFY(subscript);
-    QCOMPARE(subscript->indices.size(), std::size_t(4));
-    QVERIFY(dynamic_cast<const ReferenceNode *>(subscript->indices[0].get()));
-    QVERIFY(dynamic_cast<const WildcardNode *>(subscript->indices[1].get()));
-    const auto *range = dynamic_cast<const RangeNode *>(subscript->indices[2].get());
+    QCOMPARE(subscript->indexCount(), std::size_t(4));
+    QVERIFY(dynamic_cast<const ReferenceNode *>(subscript->index(0)));
+    QVERIFY(dynamic_cast<const WildcardNode *>(subscript->index(1)));
+    const auto *range = dynamic_cast<const RangeNode *>(subscript->index(2));
     QVERIFY(range);
-    QVERIFY(dynamic_cast<const NumberNode *>(range->begin.get()));
-    QVERIFY(dynamic_cast<const NumberNode *>(range->end.get()));
-    const auto *position = dynamic_cast<const DimensionPositionNode *>(subscript->indices[3].get());
+    QVERIFY(dynamic_cast<const NumberNode *>(range->begin()));
+    QVERIFY(dynamic_cast<const NumberNode *>(range->end()));
+    const auto *position = dynamic_cast<const DimensionPositionNode *>(subscript->index(3));
     QVERIFY(position);
-    QCOMPARE(position->position, std::size_t(2));
-    QCOMPARE(formulaNodeCount(analysis.ast.get()), std::size_t(8));
+    QCOMPARE(position->position(), std::size_t(2));
+    QCOMPARE(formulaNodeCount(analysis.root()), std::size_t(8));
 
     const FormulaAnalysis literal = analyzeFormula("1, 2 + 3, 4");
-    QVERIFY2(literal.issues.empty(), "Array literal syntax must parse");
-    const auto *literalNode = dynamic_cast<const ArrayLiteralNode *>(literal.ast.get());
+    QVERIFY2(literal.issues().empty(), "Array literal syntax must parse");
+    const auto *literalNode = dynamic_cast<const ArrayLiteralNode *>(literal.root());
     QVERIFY(literalNode);
-    QCOMPARE(literalNode->values.size(), std::size_t(3));
-    QCOMPARE(literalNode->span, (SourceSpan {0, 11}));
-    QCOMPARE(formulaNodeCount(literal.ast.get()), std::size_t(6));
+    QCOMPARE(literalNode->valueCount(), std::size_t(3));
+    QCOMPARE(literalNode->span(), (SourceSpan {0, 11}));
+    QCOMPARE(formulaNodeCount(literal.root()), std::size_t(6));
 
     const FormulaAnalysis qualified = analyzeFormula("Location.Boston");
-    QCOMPARE(dynamic_cast<const ReferenceNode *>(qualified.ast.get())->nameKey, std::string("location.boston"));
-    QVERIFY(!analyzeFormula("A[@0]").issues.empty());
-    QVERIFY(!analyzeFormula("A[@1.5]").issues.empty());
-    QVERIFY(!analyzeFormula("A[1:]").issues.empty());
-    QVERIFY(!analyzeFormula("*").issues.empty());
+    QCOMPARE(dynamic_cast<const ReferenceNode *>(qualified.root())->nameKey(), QString("location.boston"));
+    QVERIFY(!analyzeFormula("A[@0]").issues().empty());
+    QVERIFY(!analyzeFormula("A[@1.5]").issues().empty());
+    QVERIFY(!analyzeFormula("A[1:]").issues().empty());
+    QVERIFY(!analyzeFormula("*").issues().empty());
 }
 
 void TestArrays::arrayAnalysis()
@@ -132,15 +132,15 @@ void TestArrays::arrayAnalysis()
     QVERIFY(!hasIssue(analysis, "undefined-variable"));
     QVERIFY(!hasIssue(analysis, "parse"));
     QVERIFY(!hasIssue(analysis, "algebraic-cycle"));
-    QCOMPARE(analysis.dependencies.edges.at(revenue), std::vector<EntityId> {sales});
-    QCOMPARE(analysis.dependencies.edges.at(costs), std::vector<EntityId> {sales});
+    QCOMPARE(analysis.dependencies.edges.at(revenue), QVector<EntityId> {sales});
+    QCOMPARE(analysis.dependencies.edges.at(costs), QVector<EntityId> {sales});
 
     document.setEquation(recursive, "");
     document.setElementEquation(recursive, {0}, "Revenue[Boston, 2]");
     analysis = analyzeDocument(document);
     const ElementAnalysis &recursiveAnalysis = element(analysis, recursive);
     QCOMPARE(recursiveAnalysis.elementFormulas.size(), std::size_t(1));
-    QCOMPARE(recursiveAnalysis.elementFormulas[0].indices, std::vector<std::size_t> {0});
+    QCOMPARE(recursiveAnalysis.elementFormulas[0].indices, QVector<std::size_t> {0});
     QCOMPARE(recursiveAnalysis.references, std::unordered_set<EntityId> {revenue});
     QVERIFY(hasIssue(analysis, "incomplete-array-elements"));
 }
@@ -161,13 +161,13 @@ void TestArrays::captureAndRestore()
     restored.defineDimension("Location", {"Boston", "Chicago"});
     QVERIFY(restored.restore(captured));
     const auto *model = static_cast<const ModelElement *>(restored.find(captured.id));
-    QCOMPARE(model->dimensions, captured.dimensions);
-    QCOMPARE(model->elementEquations, captured.elementEquations);
+    QCOMPARE(model->dimensions(), captured.dimensions);
+    QCOMPARE(model->elementEquations(), captured.elementEquations);
 
     QVERIFY(document.rename(input, "Rate"));
     model = static_cast<const ModelElement *>(document.find(array));
-    QCOMPARE(model->elementEquations[0].equation, std::string("Rate"));
-    QCOMPARE(model->elementEquations[1].equation, std::string("Rate * 2"));
+    QCOMPARE(model->elementEquations()[0].equation, QString("Rate"));
+    QCOMPARE(model->elementEquations()[1].equation, QString("Rate * 2"));
 }
 
 } // namespace

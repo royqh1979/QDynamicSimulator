@@ -8,7 +8,7 @@
 
 ## 2. 总体原则
 
-采用“核心模型无 Qt + 视图层继承 QGraphicsItem + 算法与几何使用组合”的混合设计：
+采用“核心独立于 UI、可使用 QtCore + 视图层继承 QGraphicsItem + 算法与几何使用组合”的混合设计：
 
 - 核心文档不包含 QGraphicsItem、QObject 或画布对象指针。
 - 实体和连接线作为场景对象时，继承 QGraphicsItem/QGraphicsObject。
@@ -17,12 +17,15 @@
 - 布线器、吸附算法、空间索引和样式通过组合使用，不与图元继承耦合。
 - Document 是唯一事实来源，QGraphicsScene 是可交互投影，不是另一个对等可写模型。
 - 双方通过稳定 ID 互找，不保存跨层对象指针，不使用名称或容器下标作为标识。
+- Document 长期持有且具有身份、命名、端点或索引约束的对象必须封装私有状态，通过 const 接口读取，通过 Document 或其它受控接口修改；不得用公开字段或非 const 容器绕过不变量。纯值对象和编辑 DTO 不机械增加封装。
+- 不可变性由逻辑语义决定：历史事实、已完成的分析和计算结果在构造/发布后不可变；当前文档状态由所有者受控修改；可变 Builder 只存在于构造阶段。现有代码是否修改字段只用于迁移评估，不作为分类依据。
+- 尽量使用 const/immutable 保证不变量是核心原则，但必须权衡构建和使用成本。逐步构建的对象可在专项设计中选择独立 Builder、不可逆 freeze() 或私有修改加受限友元；无论采用哪种形式，发布后的历史事实都不得保留公开写通道。
 
 ### 2.1 变更术语
 
-- **ChangeRecord**：一个对象的一条变化，保存 undo/redo 所需的 before/after 内存值。
-- **ChangeSet**：一次原子操作包含的全部 ChangeRecord，由命令持有，用于 undo/redo；不是整个 Document 或 Scene 的副本。
-- **ChangeNotification**：Document 修改成功后发给 Scene 的差异通知，只负责同步，不进入撤销栈。
+- **ChangeRecord**：一个对象的一条变化，保存 undo/redo 所需的 before/after 内存值；作为已经发生的历史事实，构造完成后不可变。
+- **ChangeSet**：一次原子操作包含的全部 ChangeRecord，由命令持有，用于 undo/redo；不是整个 Document 或 Scene 的副本；进入命令后不可再增删或改写记录。
+- **ChangeNotification**：Document 修改成功后发给 Scene 的差异通知，只负责同步，不进入撤销栈；发布后是不可变消息，接收方不得修改。
 - **Recovery Copy**：自动保存到磁盘的文档恢复副本，与上述内存变更结构无关。
 
 本文不使用含义过宽的“快照”描述 undo/redo 数据，也不把 ChangeNotification 当作撤销记录。
@@ -33,18 +36,21 @@
 
 ```text
 Document
-├── core::Model                  可计算、可仿真的语义变量
+├── core::Model                  模型变量的只读门面
 │   ├── Stock                    Vensim Level / XMILE stock
 │   ├── Flow                     Vensim Rate / XMILE flow
 │   ├── Auxiliary                XMILE aux
 │   ├── Constant                 变量分类，XMILE 使用 aux
 │   └── Data（数据）             变量分类，XMILE 使用 aux
-└── DiagramDefinition           当前视图的图形对象与布局
-    ├── Connector                Vensim Arrow / XMILE connector
-    ├── Cloud                    流量源/汇 / XMILE view cloud
-    ├── Comment                  Vensim Sketch Comment / XMILE text_box
-    ├── Route                    Flow 与 Connector 的路径
-    └── 位置、端口和其他视图状态
+├── Dimension                    Document 级数组维度定义
+├── MacroDefinition              Document 级自定义函数定义
+├── DiagramDefinition            当前视图的图形对象与布局
+│   ├── Connector                Vensim Arrow / XMILE connector
+│   ├── Cloud                    流量源/汇 / XMILE view cloud
+│   ├── Comment                  Vensim Sketch Comment / XMILE text_box
+│   ├── Route                    Flow 与 Connector 的路径
+│   └── 位置、端口和其他视图状态
+└── Workspace                    当前文档的视口、缩放和滚动位置
 ```
 
 | 对象 | 在 Document | 在 Model | 在 DiagramDefinition | 说明 |
@@ -53,16 +59,35 @@ Document
 | Arrow / Connector | 是 | 否 | 是 | 保存 from/to 和 Route；不是可计算变量 |
 | Cloud | 是 | 否 | 是 | 只表示流量的源/汇 |
 | Comment / Annotation | 是 | 否 | 是 | 只用于展示；作为 Arrow Junction 时可接 Connector |
+| Dimension | 是 | 否 | 否 | Document 级数组定义，不是 ModelElement |
+| MacroDefinition | 是 | 否 | 否 | Document 级自定义函数定义，不分配 EntityId |
+| Workspace | 是 | 否 | 否 | 当前文档的视口状态，不是模型语义 |
 
-因此，“不属于 Model”不等于“不属于 Document”。Arrow、Cloud、Comment 都由 Document 持有，参与统一 ID、撤销/重做和持久化，但不进入仿真变量索引。
+因此，“不属于 Model”不等于“不属于 Document”。Arrow、Cloud、Comment 都由 Document 持有，参与统一 ID、撤销/重做和持久化，但不进入仿真变量索引。Dimensions 和 Macros 同样属于 Document；XMILE 中 macro 与 model 是根级并列定义。宏体和默认参数的 AST 属于 ModelAnalysis，不属于 Document。
 
-- `core::Model` 供仿真引擎使用，不包含 Cloud、Comment 或 Connector。
+- 当前 `core::Model` 只是模型变量集合的只读门面，不是脱离 Document 即可独立求值的完整语义模型；公式分析和求值使用 Document 级上下文，同时访问变量、Dimensions 和 Macros。
 - `DiagramDefinition` 描述 SFD 布局及视图对象。
 - Flow 是 Model 中的实体，不是 Connector；FlowEndpoints 只是该实体的源/目标属性。
 - 两者及所有画布图元共用同一个 `EntityId` 空间。
 - Flow 端点可以是 Model 中的 Stock 或 DiagramDefinition 中的 Cloud，端点合法性由 Document 聚合层校验。
 - 选中、悬停、拖动预览等临时状态只存在 UI。
 - 当前缩放和滚动位置属于工作区状态，不属于模型语义。
+
+核心公共头文件和实现按上述职责分解，避免 Document.h 成为所有值对象的集合：
+
+| 文件 | 职责 |
+| --- | --- |
+| `Element.h` | EntityId、ElementKind 和不携带其他语义的 DocumentElement 基类 |
+| `Model.h/.cpp` | ModelElement、Variable、Flow、ModelRange 和 Model 只读门面 |
+| `Diagram.h/.cpp` | Vec2、Route、FontStyle、ViewElement 及其派生类、ViewRange、DiagramDefinition |
+| `Dimension.h/.cpp` | Dimension、DimensionElement 及维度元素查找 |
+| `Macro.h` | MacroDefinition、MacroParameter 和参数个数规则 |
+| `Identifier.h/.cpp` | trimDisplayName、normalizeIdentifier 的共享名称规范 |
+| `ElementRange.h` | Document 元素存储上的通用只读过滤迭代器，不拥有对象 |
+| `Document.h/.cpp` | Document 聚合、Workspace、ElementData、编辑、级联删除和 Capture/Apply/Restore |
+| `formula/Formula.h/.cpp`、`formula/Function.h/.cpp`、`formula/Analysis.h/.cpp`、`formula/Evaluation.h/.cpp` | 公式 AST、内置函数、符号与依赖分析、求值组成的公式子系统 |
+
+Document.h 负责组合上述类型，但不再自行定义 Vec2、Route 或视图元素。Model.cpp 不实现 Dimension 或通用名称规范。Validation 仍位于 core 根层，因为它提供 Document 级 ModelIssue 和 validateDocument()，不只是公式语法检查。formula 子目录只组织源码，不增加子命名空间或独立 CMake 库。此次分解只移动既有声明和实现，不改变模型语义、ID、持久化格式、公式 AST 或宏调用行为；验收以现有全部单元测试、Release 后 Debug 构建及应用/profile 目标构建为准，不增加无运行时变化的性能基线。
 
 ### 3.2 稳定标识
 
@@ -84,7 +109,7 @@ ChangeSet 不需要 UUID，也不经过 XMILE save/load。EntityId 保持 uint64
 
 ### 3.3 DocumentElement 基类与对象分类
 
-所有文档对象继承同一个不依赖 Qt 的核心基类。基类只提供身份和对象种类，不把名称、方程、位置或路径强加给所有对象：
+所有文档对象继承同一个不依赖 Qt UI 的核心基类。核心可以使用 QtCore，容器优先采用合适的 Qt 容器。基类只提供身份和对象种类，不把名称、方程、位置或路径强加给所有对象：
 
 ```cpp
 enum class ElementKind {
@@ -121,17 +146,18 @@ Stock、Auxiliary、Constant、Data 可继续共用 `Variable : ModelElement`，
 
 `Route`、`Vec2`、`Endpoint` 和 `PortGeometry` 仍是值对象，不需要继承 DocumentElement。选中状态和控制句柄也不是 DocumentElement。
 
+ModelElement、Flow、Connector、Comment 的长期状态使用私有字段和 const 访问接口。对象自身的私有非 const 方法维护局部约束；Document 负责名称索引、端点合法性、数组引用、布局和级联关系等全局约束。外部不能通过公开字段或非 const 查找直接修改这些对象。多字段 apply/restore 必须先完成全部语义校验，再提交修改；任何可预期失败不得留下部分更新。
+
 ### 3.4 统一注册与类型访问
 
 Document 提供唯一通用查找接口：
 
 ```cpp
-DocumentElement *Document::find(EntityId id);
 const DocumentElement *Document::find(EntityId id) const;
 DiagramItem *DiagramScene::item(EntityId id) const;
 ```
 
-不提供 findFlowById、findConnectorById、findCloudById 等平行接口。调用方首先通过统一接口取得对象；只有确实需要类型专属能力时，才根据 kind() 使用 Flow、Connector 等接口。id() 只负责身份，kind() 只负责对象分类，两者不承担对方职责。
+不提供 findFlowById、findConnectorById、findCloudById 等平行接口。调用方首先通过统一接口取得对象；只有确实需要类型专属能力时，才根据 kind() 使用 Flow、Connector 等接口。id() 只负责身份，kind() 只负责对象分类，两者不承担对方职责。Document 的可变对象只通过私有 findMutable() 在内部访问；公共 find() 只返回 const 对象。
 
 所有权与索引规则：
 
@@ -160,11 +186,11 @@ Stock、Flow、Auxiliary、Constant、Data 都可能进入公式，因此全部�
 - `nameKey`：由 displayName 派生，只用于名称索引、重名判断和方程引用解析；不作为显示文本，也不独立持久化，加载时重新计算。
 - 方程保留用户可读的名称形式，名称解析器将方程标识符转换为 nameKey 后查找同一 ModelElement；改名命令负责同步更新引用，不能只改声明。
 
-内部规范化采用简单、稳定的项目规则：去除首尾空白；ASCII A-Z 转为小写；内部空白与下划线折叠为单个下划线；其他 UTF-8 内容保持不变。核心只使用纯 C++ 实现该规则，不引入 ICU，也不宣称内部规则等同于完整 XMILE Unicode 规则。
+内部规范化采用简单、稳定的项目规则：去除首尾空白；ASCII A-Z 转为小写；内部空白与下划线折叠为单个下划线；其他 UTF-8 内容保持不变。核心实现不引入 ICU，也不宣称内部规则等同于完整 XMILE Unicode 规则。
 
 名称必须支持中文及其他合法 UTF-8 字符。displayName 和 nameKey 均使用有效 UTF-8；规范化只能按 ASCII 字节和已识别空白处理，不能逐字节修改多字节字符。方程词法分析、名称索引、搜索、复制和 XMILE 读写都使用同一 UTF-8 约定，中文不需要转拼音或英文别名。
 
-XMILE 3.2.2 的完整等价规则由 I/O 导入适配器处理，包括 Unicode 大小写、非断行空格和引号形式。导入器生成内部 nameKey 时，必须同步改写变量声明、stock inflow/outflow、connector from/to 和方程引用；只修改变量名会产生悬空引用。完整 Unicode/UCA 处理如需 ICU，只允许进入 I/O 适配层，不进入纯 C++ 核心。
+XMILE 3.2.2 的完整等价规则由 I/O 导入适配器处理，包括 Unicode 大小写、非断行空格和引号形式。导入器生成内部 nameKey 时，必须同步改写变量声明、stock inflow/outflow、connector from/to 和方程引用；只修改变量名会产生悬空引用。完整 Unicode/UCA 处理如需 ICU，只允许进入 I/O 适配层，不进入核心语义层。
 
 Document 集中维护唯一的名称索引：
 
@@ -428,7 +454,7 @@ DiagramScene 按 ChangeNotification 增量更新 Item
 
 ### 6.2 ChangeNotification
 
-核心保持纯 C++，Qt 侧 DocumentController 在修改成功后发出变化通知：
+核心不直接调用 Qt 信号或依赖 Qt UI，Qt 侧 DocumentController 在修改成功后发出变化通知：
 
 ```cpp
 struct ChangeNotification {
@@ -438,6 +464,8 @@ struct ChangeNotification {
     bool documentReset = false;
 };
 ```
+
+上述字段只表示通知的逻辑内容。正式接口在发布前允许受控组装，发布后只提供 const 访问，不允许 Scene 或其它接收方修改通知。
 
 `DiagramScene::apply(ChangeNotification)` 不再按对象类别使用平行通道：
 
@@ -476,6 +504,8 @@ class DocumentCommand : public QUndoCommand {
 };
 ```
 
+ChangeRecord/ChangeSet 的逻辑字段通过受控构造确定，完成后只读。可变收集过程使用构建器或内部编辑接口；命令和 undo/redo 不得修改记录。kind 等可派生信息应在构造时校验或消除重复，不能与其它字段发生矛盾。
+
 - redo() 应用各记录的 after，undo() 应用 before。
 - 创建、修改、删除可使用同一结构表达；删除时 after 表示不存在，创建时 before 表示不存在。
 - 属性修改只保存受影响字段，结构删除保存被删除对象及级联对象所需的完整内存值。
@@ -493,7 +523,9 @@ class DocumentCommand : public QUndoCommand {
 | 画布图元 | QGraphicsScene | `addItem()` 接管 DiagramItem* | Scene 的 ID 索引、RoutedItem 的端点 Item* |
 | 临时控制句柄 | QGraphicsScene | `addItem()` 接管 | Scene 当前句柄列表 |
 
-Document 是唯一核心所有者，Model 与 DiagramDefinition 只是分类视图。Scene 索引不拥有图元。命令不得保存已删除对象指针；核心对象不得保存 QGraphicsItem/QObject；DocumentElement 的地址只在对象存活期间有效，查找结果不得缓存到删除之后。
+Document 是唯一核心所有者，Model 与 DiagramDefinition 只是分类视图。Scene 索引不拥有图元。命令不得保存已删除对象指针；核心对象不得保存 QGraphicsItem/QObject；DocumentElement 的地址只在对象存活期间有效。
+
+find() 等查询返回的 raw pointer 只能在当前调用栈上即时使用，不得保存为成员、放入长期容器或由异步任务/长命 lambda 持有。Document 修改、删除、移动、清空或替换后，旧指针一律失效，需要时重新通过 EntityId 获取。对象地址不承担身份语义。
 
 ### 7.2 创建
 

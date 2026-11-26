@@ -2,7 +2,7 @@
 
 ## 1. 目标与边界
 
-目标是在 `qds-core` 中提供不依赖 Qt 的公式词法、语法、符号和依赖分析，为方程检查、执行排序及后续仿真求值提供同一套权威表示。
+目标是在 `qds-core` 中提供独立于 UI 的公式词法、语法、符号和依赖分析，为方程检查、执行排序及后续仿真求值提供同一套权威表示。核心可以使用 QtCore，容器优先采用合适的 Qt 容器，但不得依赖 Qt Widgets 或画布对象。
 
 权威语法依据为 `docs/references/xmile-1.1.html` 第 3.2～3.6 节。首阶段覆盖标量表达式；数组、宏、厂商方言和求值分阶段实现，不把 Vensim 特有行为误写成 XMILE 要求。
 
@@ -45,7 +45,7 @@
 
 阶段 1 必须先读取完整 Document 中全部模型元素和宏定义，再开始阶段 2 的模型公式分析；不得把遍历到某个 Flow 时的结构收集和公式分析混在同一循环中。这样，模型公式可以引用文件后面定义的变量或宏，宏也可以引用其他宏，不需要前置声明。最终 Document 中不存在的变量或宏仍分别报告未定义变量或未知函数。
 
-所有公式共用手写 Lexer 和 Pratt/precedence-climbing Parser，不引入第三方 parser 依赖。Pratt 实现右结合乘方、一元运算符、函数调用和 IF THEN ELSE，并保留每个节点的 UTF-8 SourceSpan。宏采用自定义函数语义，而不是 C 预处理器宏语义：分析期不替换文本、不复制实参到宏体、不级联展开；非递归、直接递归和间接递归都通过同一运行期调用机制执行。
+所有公式共用手写 Lexer 和 Pratt/precedence-climbing Parser，不引入第三方 parser 依赖。Pratt 实现右结合乘方、一元运算符、函数调用和 IF THEN ELSE，并保留每个节点与 QString 字符位置一致的 SourceSpan。宏采用自定义函数语义，而不是 C 预处理器宏语义：分析期不替换文本、不复制实参到宏体、不级联展开；非递归、直接递归和间接递归都通过同一运行期调用机制执行。
 
 AST 在语法分析完成后完全不可变，只保存语法结构、规范化名称、字面量和 SourceSpan。Resolve 是独立的按需过程，不在 AST 中写入 EntityId、内置函数目标、宏定义、签名或其它语义绑定，也不生成另一份 Resolved AST。`validateDocument()` 只是返回 ModelAnalysis.issues 的薄接口，不另建检查流程。
 
@@ -53,48 +53,47 @@ AST 在语法分析完成后完全不可变，只保存语法结构、规范化�
 
 ```cpp
 struct SourceSpan {
-    std::size_t begin = 0; // UTF-8 byte offset，含 begin，不含 end
-    std::size_t end = 0;
+    int begin = 0; // QString 字符位置，含 begin，不含 end
+    int end = 0;
 };
 
-enum class UnaryOperator { Positive, Negative, Not, Transpose };
-enum class BinaryOperator {
-    Power, Multiply, Divide, Modulo, Add, Subtract,
-    Less, LessEqual, Greater, GreaterEqual, Equal, NotEqual, And, Or
-};
-
-struct FormulaNode {
-    SourceSpan span;
+class FormulaNode {
+public:
+    FormulaNodeKind kind() const;
+    const SourceSpan &span() const;
     virtual ~FormulaNode() = default;
 };
 
-struct NumberNode : FormulaNode { double value; };
-struct ReferenceNode : FormulaNode {
-    std::string nameKey;
+class NumberNode final : public FormulaNode {
+public:
+    double value() const;
 };
-struct UnaryNode : FormulaNode {
-    UnaryOperator op;
-    std::unique_ptr<FormulaNode> operand;
+class ReferenceNode final : public FormulaNode {
+public:
+    const std::string &nameKey() const;
 };
-struct BinaryNode : FormulaNode {
-    BinaryOperator op;
-    std::unique_ptr<FormulaNode> left;
-    std::unique_ptr<FormulaNode> right;
+class UnaryNode final : public FormulaNode {
+public:
+    UnaryOperator op() const;
+    const FormulaNode *operand() const;
 };
-struct CallNode : FormulaNode {
-    std::string nameKey;
-    std::vector<std::unique_ptr<FormulaNode>> arguments;
+class BinaryNode final : public FormulaNode {
+public:
+    BinaryOperator op() const;
+    const FormulaNode *left() const;
+    const FormulaNode *right() const;
 };
-struct ConditionalNode : FormulaNode {
-    std::unique_ptr<FormulaNode> condition;
-    std::unique_ptr<FormulaNode> thenExpression;
-    std::unique_ptr<FormulaNode> elseExpression;
-};
-struct SubscriptNode : FormulaNode {
-    std::unique_ptr<FormulaNode> target;
-    std::vector<std::unique_ptr<FormulaNode>> indices;
+class CallNode final : public FormulaNode {
+public:
+    const std::string &nameKey() const;
+    std::size_t argumentCount() const;
+    const FormulaNode *argument(std::size_t position) const;
 };
 ```
+
+Conditional、Subscript、Range 等节点采用相同的私有状态和 const 子节点访问。集合节点只提供数量及按位置的 const 元素访问，不公开 `unique_ptr` 容器。FormulaAnalysis 私有持有 AST 和 issues，构建完成后只读；公式变化时替换整份结果。
+
+上述代码块只表达 AST 的逻辑结构，不表示公开字段接口。正式类型必须通过私有状态和只读访问接口保证创建后不可变；可变构造仅属于 Parser 内部，外部不能取得可修改的子节点指针。FormulaAnalysis 和独立保留的 ModelAnalysis 也是完成后不可变的派生结果，构建期可变与完成后只读相互分离。FormulaIssue、ModelIssue、ArrayValue 和 EvaluationResult 同样按逻辑结果语义提供不可变边界；输入 DTO、EvaluationContext 和内部 Builder 不被迫采用同一接口。
 
 `FormulaAnalysis` 保存 `unique_ptr<FormulaNode>`。`ModelAnalysis` 唯一拥有各元素公式 AST、每个宏的宏体/默认参数 AST、引用集合和诊断；同一宏体不得复制到调用方 AST。AST 不保存 Resolve 结果，`Formula.h` 也不为了实体绑定依赖 `Model.h`。DependencyGraph 作为独立分析结果可以保存 EntityId，因此 AST 或 Document 对象地址变化不会使图失效；EntityId 出现在依赖图中不属于 AST 语义绑定。
 
@@ -203,7 +202,7 @@ DependencyGraph 的边统一为 **dependency → dependent**，表示必须先�
 
 函数签名集中在 `Function.h/.cpp`，Analysis 和 Evaluator 都通过 `findFunctionSignature()` 查询同一份名称、参数个数和分类。无参数内置函数也由签名派生，不再维护独立名称集合。注册表只描述语义，不保存求值状态。
 
-`Evaluation.h/.cpp` 提供不依赖 Document/Qt 的同步标量求值：
+`Evaluation.h/.cpp` 提供不依赖 Document 或 Qt UI 的同步标量求值，可使用 QtCore 容器：
 
 ```cpp
 using VariableReader = std::function<std::optional<double>(const std::string &nameKey)>;
@@ -296,7 +295,7 @@ using DimensionReader = std::function<const Dimension *(const std::string &)>;
 struct EvaluationScope {
     std::vector<std::string> dimensions; // 当前方程输出维度
     std::vector<std::size_t> indices;    // 为空表示整体求值，否则为当前元素零基下标
-    EntityId self = 0;
+    std::string self; // 当前方程元素的 nameKey，供 SELF 与普通变量共用读取入口
 };
 
 struct EvaluationContext {

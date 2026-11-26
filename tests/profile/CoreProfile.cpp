@@ -1,12 +1,12 @@
-#include <qds/core/Document.h>
-#include <qds/core/Validation.h>
+#include <core/Document.h>
+#include <core/Validation.h>
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QTextStream>
 
-#include <vector>
+#include <QVector>
 
 using namespace qds::core;
 
@@ -20,7 +20,7 @@ int main(int argc, char **argv)
     QElapsedTimer timer;
     timer.start();
     Document document;
-    std::vector<EntityId> ids;
+    QVector<EntityId> ids;
     ids.reserve(static_cast<std::size_t>(count));
     for (int index = 0; index < count; ++index)
         ids.push_back(document.createVariable(ElementKind::Stock, {index * 10.0, index * 5.0}));
@@ -42,7 +42,7 @@ int main(int argc, char **argv)
     timer.restart();
     for (int repeat = 0; repeat < 10; ++repeat) {
         for (int index = 0; index < count; ++index) {
-            const std::string name = "Stock" + std::to_string(index + 1);
+            const QString name = "Stock" + QString::number(index + 1);
             const ModelElement *element = document.model().findByName(name);
             checksum += element ? element->id() : 0;
         }

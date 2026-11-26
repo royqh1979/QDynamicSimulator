@@ -1,17 +1,28 @@
+find_package(Qt5 5.12 REQUIRED COMPONENTS Core)
+
 add_library(qds-core STATIC
-    include/qds/core/ChangeSet.h
-    include/qds/core/Analysis.h
-    include/qds/core/Document.h
-    include/qds/core/Evaluation.h
-    include/qds/core/Formula.h
-    include/qds/core/Function.h
-    include/qds/core/Model.h
-    include/qds/core/Validation.h
-    src/Analysis.cpp
+    include/core/ChangeSet.h
+    include/core/Diagram.h
+    include/core/Dimension.h
+    include/core/Document.h
+    include/core/Element.h
+    include/core/ElementRange.h
+    include/core/formula/Analysis.h
+    include/core/formula/Evaluation.h
+    include/core/formula/Formula.h
+    include/core/formula/Function.h
+    include/core/Identifier.h
+    include/core/Macro.h
+    include/core/Model.h
+    include/core/Validation.h
+    src/Diagram.cpp
+    src/Dimension.cpp
     src/Document.cpp
-    src/Evaluation.cpp
-    src/Formula.cpp
-    src/Function.cpp
+    src/formula/Analysis.cpp
+    src/formula/Evaluation.cpp
+    src/formula/Formula.cpp
+    src/formula/Function.cpp
+    src/Identifier.cpp
     src/Model.cpp
     src/Validation.cpp
 )
@@ -23,3 +34,5 @@ target_include_directories(qds-core
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+
+target_link_libraries(qds-core PUBLIC Qt5::Core)

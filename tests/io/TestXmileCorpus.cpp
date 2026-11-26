@@ -1,5 +1,5 @@
-#include <qds/io/XmileFile.h>
-#include <qds/core/Formula.h>
+#include <io/XmileFile.h>
+#include <core/formula/Formula.h>
 
 #include <QDirIterator>
 #include <QFile>
@@ -79,14 +79,14 @@ private slots:
             for (const DocumentElement &element : document.elements()) {
                 if (element.kind() == ElementKind::Flow) {
                     const auto &flow = static_cast<const Flow &>(element);
-                    if (flow.endpoints.from == 0 || flow.endpoints.to == 0
-                        || !document.find(flow.endpoints.from) || !document.find(flow.endpoints.to)) {
+                    if (flow.endpoints().from == 0 || flow.endpoints().to == 0
+                        || !document.find(flow.endpoints().from) || !document.find(flow.endpoints().to)) {
                         failures.append(path + ": invalid flow endpoints");
                         continue;
                     }
                     connected.insert(flow.id());
-                    connected.insert(flow.endpoints.from);
-                    connected.insert(flow.endpoints.to);
+                    connected.insert(flow.endpoints().from);
+                    connected.insert(flow.endpoints().to);
                 } else if (element.kind() == ElementKind::Connector) {
                     const auto &connector = static_cast<const Connector &>(element);
                     if (connector.from == 0 || connector.to == 0
@@ -109,21 +109,21 @@ private slots:
                 }
                 failures.append(path + ": isolated element " + QString::number(element.id()));
             }
-            const auto checkFormula = [&corpusFormulaCount](const std::string &equation) {
+            const auto checkFormula = [&corpusFormulaCount](const QString &equation) {
                 if (equation.empty())
                     return;
                 ++corpusFormulaCount;
                 FormulaAnalysis analysis = analyzeFormula(equation);
-                if (analysis.ast)
-                    QVERIFY(formulaNodeCount(analysis.ast.get()) > 0);
-                for (const FormulaIssue &issue : analysis.issues) {
+                if (analysis.root())
+                    QVERIFY(formulaNodeCount(analysis.root()) > 0);
+                for (const FormulaIssue &issue : analysis.issues()) {
                     QVERIFY(issue.span.begin <= issue.span.end);
                     QVERIFY(issue.span.end <= equation.size());
                 }
             };
             for (const ModelElement &element : document.model().elements()) {
-                checkFormula(element.equation);
-                for (const ArrayElementEquation &entry : element.elementEquations)
+                checkFormula(element.equation());
+                for (const ArrayElementEquation &entry : element.elementEquations())
                     checkFormula(entry.equation);
             }
             for (const auto &entry : document.diagram().routes()) {

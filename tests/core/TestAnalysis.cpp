@@ -1,9 +1,9 @@
-#include <qds/core/Analysis.h>
+#include <core/formula/Analysis.h>
 
 #include <algorithm>
-#include <string>
+#include <QString>
 #include <unordered_set>
-#include <vector>
+#include <QVector>
 
 #include <QtTest>
 
@@ -11,7 +11,7 @@ using namespace qds::core;
 
 namespace {
 
-bool hasIssue(const ModelAnalysis &analysis, const std::string &code)
+bool hasIssue(const ModelAnalysis &analysis, const QString &code)
 {
     return std::any_of(analysis.issues.begin(), analysis.issues.end(), [&code](const ModelIssue &issue) {
         return issue.code == code;
@@ -85,13 +85,13 @@ void TestAnalysis::functionSignatures()
 
     document.setEquation(auxiliary, "POISSON(1, 2) + RANK(Auxiliary1, 1, 2)");
     QVERIFY(!hasIssue(analyzeDocument(document), "invalid-arity"));
-    const std::vector<std::string> invalidCalls {
+    const QVector<QString> invalidCalls {
         "POISSON()", "POISSON(1, 2, 3)", "RANK(Auxiliary1)", "RANK(Auxiliary1, 1, 2, 3)",
         "ABS()", "ABS(1, 2)", "MAX()", "MAX(1, 2, 3)", "PREVIOUS(Auxiliary1)"
     };
-    for (const std::string &call : invalidCalls) {
+    for (const QString &call : invalidCalls) {
         document.setEquation(auxiliary, call);
-        QVERIFY2(hasIssue(analyzeDocument(document), "invalid-arity"), call.c_str());
+        QVERIFY2(hasIssue(analyzeDocument(document), "invalid-arity"), qPrintable(call));
     }
 }
 
@@ -104,8 +104,8 @@ void TestAnalysis::dependencyCycles()
     document.setEquation(second, "Auxiliary1");
     const ModelAnalysis analysis = analyzeDocument(document);
     QVERIFY(hasIssue(analysis, "algebraic-cycle"));
-    QCOMPARE(analysis.dependencies.edges.at(first), std::vector<EntityId> {second});
-    QCOMPARE(analysis.dependencies.edges.at(second), std::vector<EntityId> {first});
+    QCOMPARE(analysis.dependencies.edges.at(first), QVector<EntityId> {second});
+    QCOMPARE(analysis.dependencies.edges.at(second), QVector<EntityId> {first});
 
     Document connectors;
     const EntityId source = connectors.createVariable(ElementKind::Auxiliary);

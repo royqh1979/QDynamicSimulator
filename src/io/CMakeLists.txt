@@ -1,8 +1,8 @@
 find_package(Qt5 5.12 QUIET COMPONENTS Zlib)
 
 add_library(qds-io STATIC
-    include/qds/io/DocumentFile.h
-    include/qds/io/XmileFile.h
+    include/io/DocumentFile.h
+    include/io/XmileFile.h
     src/DocumentFile.cpp
     src/XmileFile.cpp
 )

@@ -49,7 +49,7 @@ cmake --build R:/build-qdynamic-simulator-qt5-release --parallel
 ```text
 src/
 ├── app/                 Qt Widgets 应用、主窗口与 SFD 画布
-├── core/                独立于 UI 的纯 C++ 核心库
+├── core/                独立于 UI 的核心库，可使用 QtCore
 └── io/                  基于 QtCore 的 XMILE/ZIP 读写
 docs/design/             架构与模块设计文档
 translations/            Qt Linguist TS 源文件，QM 在构建目录生成并内嵌

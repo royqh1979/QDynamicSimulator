@@ -4,8 +4,8 @@
 #include "DocumentController.h"
 #include "MainWindow.h"
 #include "PropertyPanel.h"
-#include <qds/io/DocumentFile.h>
-#include <qds/io/XmileFile.h>
+#include <io/DocumentFile.h>
+#include <io/XmileFile.h>
 
 #include <QActionGroup>
 #include <QApplication>
@@ -29,7 +29,7 @@
 #include <QTextStream>
 #include <QTranslator>
 
-#include <vector>
+#include <QVector>
 
 using namespace qds::core;
 
@@ -70,7 +70,7 @@ int main(int argc, char **argv)
 
     DocumentController controller;
     DiagramScene scene(&controller);
-    std::vector<EntityId> ids;
+    QVector<EntityId> ids;
     ids.reserve(static_cast<std::size_t>(count));
     QElapsedTimer timer;
     timer.start();
@@ -91,7 +91,7 @@ int main(int argc, char **argv)
 
     timer.restart();
     int connectionCount = 0;
-    std::vector<EntityId> connectionIds;
+    QVector<EntityId> connectionIds;
     for (int index = 1; index < count; ++index) {
         const EntityId id = controller.createConnector(ids[static_cast<std::size_t>(index - 1)], ids[static_cast<std::size_t>(index)]);
         if (id != 0) {
@@ -281,7 +281,7 @@ int main(int argc, char **argv)
         QApplication::sendEvent(editor, &enterPress);
         inlineRenameNs += timer.nsecsElapsed();
         const auto *model = dynamic_cast<const ModelElement *>(renameController.document().find(renameStock));
-        if (!model || model->displayName != "Population" || inlineNameEditor(renameScene))
+        if (!model || model->displayName() != "Population" || inlineNameEditor(renameScene))
             return 23;
         ++inlineRenameCount;
         renameController.undoStack()->undo();
@@ -450,7 +450,7 @@ int main(int argc, char **argv)
         const auto *flow = dynamic_cast<const Flow *>(previewFlowController.document().find(previewFlow));
         const QPainterPath arrowPath = previewFlowArrow->geometryPath();
         const QPointF expectedEnd = previewFlowItem->boundaryPointToward(arrowPath.elementAt(arrowPath.elementCount() - 2));
-        if (!flow || flow->endpoints.to != target || previewFlowItem->previewing()
+        if (!flow || flow->endpoints().to != target || previewFlowItem->previewing()
             || QLineF(arrowPath.pointAtPercent(1.0), expectedEnd).length() > 0.75)
             return 21;
         ++flowEndpointPreviewCount;
@@ -479,12 +479,12 @@ int main(int argc, char **argv)
         QMouseEvent release(QEvent::MouseButtonRelease, end, flowTargetView.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
         QApplication::sendEvent(flowTargetView.viewport(), &release);
         connectorToFlowNs += timer.nsecsElapsed();
-        const std::vector<EntityId> selection = flowTargetScene.selectedElementIds();
+        const QVector<EntityId> selection = flowTargetScene.selectedElementIds();
         if (selection.size() != 1)
             return 17;
         const auto *connector = dynamic_cast<const Connector *>(flowTargetController.document().find(selection.front()));
         const auto *arrow = dynamic_cast<const ArrowItem *>(flowTargetScene.item(selection.front()));
-        if (!connector || !arrow || connector->from != flowTargetSource || connector->to != flowTargetFlow
+        if (!connector || !arrow || connector->from() != flowTargetSource || connector->to() != flowTargetFlow
             || arrow->to() != flowTargetScene.item(flowTargetFlow))
             return 18;
         ++connectorToFlowCount;
@@ -598,7 +598,7 @@ int main(int argc, char **argv)
         const EntityId id = blankController.createFlow(0, 0, from, from + QPointF(160.0, 0.0));
         if (id == 0)
             return 7;
-        const FlowEndpoints endpoints = static_cast<const Flow *>(blankController.document().find(id))->endpoints;
+        const FlowEndpoints endpoints = static_cast<const Flow *>(blankController.document().find(id))->endpoints();
         blankController.undoStack()->undo();
         if (blankController.document().find(id) || blankController.document().find(endpoints.from)
             || blankController.document().find(endpoints.to))
@@ -636,7 +636,7 @@ int main(int argc, char **argv)
         timer.restart();
         fontController.setFontStyle(fontStock, font);
         fontStyleNs += timer.nsecsElapsed();
-        const FontStyle expected {font.family().toStdString(), font.pointSize()};
+        const FontStyle expected {font.family(), font.pointSize()};
         if (fontController.document().diagram().fontStyle(fontStock) != expected
             || fontScene.item(fontStock)->labelFont().family() != font.family()
             || fontScene.item(fontStock)->labelFont().pointSize() != font.pointSize())
@@ -670,7 +670,7 @@ int main(int argc, char **argv)
 
     DocumentController pngController;
     DiagramScene pngScene(&pngController);
-    std::vector<EntityId> pngIds;
+    QVector<EntityId> pngIds;
     for (int index = 0; index < 20; ++index) {
         const ElementKind kind = index % 2 == 0 ? ElementKind::Stock : ElementKind::Auxiliary;
         pngIds.push_back(pngController.createVariable(kind, QPointF((index % 5) * 180.0, (index / 5) * 140.0)));
@@ -834,7 +834,7 @@ int main(int argc, char **argv)
     const ModelElement *infectious = sirController.document().findByName("infectious");
     if (!infectious)
         return 14;
-    std::vector<ArrowItem *> dependentArrows;
+    QVector<ArrowItem *> dependentArrows;
     for (const ViewElement &element : sirController.document().diagram().elements()) {
         if (element.kind() != ElementKind::Connector)
             continue;
@@ -867,7 +867,7 @@ int main(int argc, char **argv)
     std::size_t originalModelCount = 0;
     for (const ModelElement &element : controller.document().model().elements()) {
         ++originalModelCount;
-        const ModelElement *loadedElement = loaded.findByName(element.displayName);
+        const ModelElement *loadedElement = loaded.findByName(element.displayName());
         variableKindsMatch = variableKindsMatch && loadedElement && loadedElement->kind() == element.kind();
     }
 

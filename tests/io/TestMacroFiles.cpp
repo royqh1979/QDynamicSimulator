@@ -1,7 +1,7 @@
-#include <qds/core/Analysis.h>
-#include <qds/core/Evaluation.h>
-#include <qds/io/DocumentFile.h>
-#include <qds/io/XmileFile.h>
+#include <core/formula/Analysis.h>
+#include <core/formula/Evaluation.h>
+#include <io/DocumentFile.h>
+#include <io/XmileFile.h>
 
 #include <algorithm>
 
@@ -25,16 +25,16 @@ void verifyMacro(const Document &document)
 {
     QCOMPARE(document.macros().size(), std::size_t(1));
     const MacroDefinition &macro = document.macros().front();
-    QCOMPARE(macro.displayName, std::string("Scale"));
+    QCOMPARE(macro.displayName, QString("Scale"));
     QCOMPARE(macro.parameters.size(), std::size_t(2));
-    QCOMPARE(macro.parameters[0].nameKey, std::string("x"));
-    QCOMPARE(macro.parameters[1].defaultEquation, std::string("2"));
-    QCOMPARE(macro.equation, std::string("x * factor"));
+    QCOMPARE(macro.parameters[0].nameKey, QString("x"));
+    QCOMPARE(macro.parameters[1].defaultEquation, QString("2"));
+    QCOMPARE(macro.equation, QString("x * factor"));
     const ModelAnalysis analysis = analyzeDocument(document);
     const auto found = std::find_if(analysis.elements.begin(), analysis.elements.end(), [](const ElementAnalysis &entry) {
-        return entry.formula.ast != nullptr;
+        return entry.formula.root() != nullptr;
     });
-    const EvaluationResult result = evaluateFormula(found->formula.ast.get(), {});
+    const EvaluationResult result = evaluateFormula(found->formula.root(), {});
     const auto *scalar = result.value ? std::get_if<double>(&*result.value) : nullptr;
     QVERIFY(scalar);
     QCOMPARE(*scalar, 10.0);

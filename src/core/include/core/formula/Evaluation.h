@@ -1,19 +1,20 @@
 #pragma once
 
-#include <qds/core/Formula.h>
+#include <core/Dimension.h>
+#include <core/formula/Formula.h>
 
 #include <functional>
 #include <optional>
-#include <string>
+#include <QString>
 #include <variant>
-#include <vector>
+#include <QVector>
 
 namespace qds::core {
 
 struct ArrayValue {
-    std::vector<std::string> dimensions;
-    std::vector<std::size_t> shape;
-    std::vector<double> values;
+    QVector<QString> dimensions;
+    QVector<std::size_t> shape;
+    QVector<double> values;
 
     bool operator==(const ArrayValue &other) const
     {
@@ -22,13 +23,13 @@ struct ArrayValue {
 };
 
 using Value = std::variant<double, ArrayValue>;
-using VariableReader = std::function<std::optional<Value>(EntityId)>;
-using DimensionReader = std::function<const Dimension *(const std::string &)>;
+using VariableReader = std::function<std::optional<Value>(const QString &nameKey)>;
+using DimensionReader = std::function<const Dimension *(const QString &)>;
 
 struct EvaluationScope {
-    std::vector<std::string> dimensions;
-    std::vector<std::size_t> indices;
-    EntityId self = 0;
+    QVector<QString> dimensions;
+    QVector<std::size_t> indices;
+    QString self;
 };
 
 struct EvaluationContext {
@@ -43,7 +44,7 @@ struct EvaluationContext {
 
 struct EvaluationResult {
     std::optional<Value> value;
-    std::string error;
+    QString error;
     SourceSpan errorSpan;
 };
 

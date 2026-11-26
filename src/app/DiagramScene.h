@@ -3,8 +3,8 @@
 #include "DiagramItems.h"
 #include "Routing.h"
 
-#include <qds/core/ChangeSet.h>
-#include <qds/core/Document.h>
+#include <core/ChangeSet.h>
+#include <core/Document.h>
 
 #include <QGraphicsScene>
 #include <QHash>
@@ -48,8 +48,8 @@ public:
     bool setSelectedEquation(const QString &equation);
     const qds::core::ModelElement *selectedModelElement() const;
     const qds::core::Comment *selectedComment() const;
-    std::vector<qds::core::EntityId> selectedElementIds() const;
-    std::vector<qds::core::EntityId> findElements(const QString &text) const;
+    QVector<qds::core::EntityId> selectedElementIds() const;
+    QVector<qds::core::EntityId> findElements(const QString &text) const;
     void selectAllItems();
     void alignSelected(Qt::Alignment alignment);
     void distributeSelected(bool horizontal);
@@ -77,7 +77,7 @@ protected:
 private:
     void applyChangeNotification(const qds::core::ChangeNotification &notification);
     DiagramItem *createCanvasItem(qds::core::EntityId id);
-    void createCanvasItems(std::vector<qds::core::EntityId> ids);
+    void createCanvasItems(QVector<qds::core::EntityId> ids);
     RoutedItem *selectedRoutedItem() const;
     void updateDependentRoutes(qds::core::EntityId id);
     void updateSceneRect();

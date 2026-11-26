@@ -1,9 +1,9 @@
-#include <qds/core/Validation.h>
-#include <qds/core/Analysis.h>
+#include <core/Validation.h>
+#include <core/formula/Analysis.h>
 
 namespace qds::core {
 
-std::vector<ModelIssue> validateDocument(const Document &document)
+QVector<ModelIssue> validateDocument(const Document &document)
 {
     return analyzeDocument(document).issues;
 }

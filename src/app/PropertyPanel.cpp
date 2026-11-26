@@ -116,21 +116,21 @@ void PropertyPanel::refresh()
     m_unitEdit->setEnabled(variable != nullptr);
     m_commentEdit->setEnabled(variable != nullptr || comment != nullptr);
     m_commentLabel->setText(comment ? tr("Content") : tr("Comment"));
-    m_nameEdit->setText(variable ? QString::fromStdString(variable->displayName) : QString());
-    m_equationEdit->setText(variable ? QString::fromStdString(variable->equation) : QString());
+    m_nameEdit->setText(variable ? (variable->displayName()) : QString());
+    m_equationEdit->setText(variable ? (variable->equation()) : QString());
     QStringList completionWords;
     for (const qds::core::ModelElement &entry : m_controller->document().model().elements())
-        completionWords.append(QString::fromStdString(entry.displayName));
+        completionWords.append((entry.displayName()));
     m_equationEdit->setCompletionWords(completionWords);
-    m_unitEdit->setText(variable ? QString::fromStdString(variable->unit) : QString());
-    m_commentEdit->setText(variable ? QString::fromStdString(variable->comment)
-        : comment ? QString::fromStdString(comment->content) : QString());
+    m_unitEdit->setText(variable ? (variable->unit()) : QString());
+    m_commentEdit->setText(variable ? (variable->comment())
+        : comment ? (comment->content()) : QString());
     QFont font = QApplication::font();
-    const std::vector<qds::core::EntityId> selection = m_scene->selectedElementIds();
+    const QVector<qds::core::EntityId> selection = m_scene->selectedElementIds();
     if (selection.size() == 1) {
         const qds::core::FontStyle style = m_controller->document().diagram().fontStyle(selection.front());
-        if (!style.family.empty())
-            font.setFamily(QString::fromStdString(style.family));
+        if (!style.family.isEmpty())
+            font.setFamily((style.family));
         if (style.pointSize > 0)
             font.setPointSize(style.pointSize);
     }
@@ -140,7 +140,7 @@ void PropertyPanel::refresh()
 
 void PropertyPanel::commitFontStyle(const QFont &font)
 {
-    const std::vector<qds::core::EntityId> selection = m_scene->selectedElementIds();
+    const QVector<qds::core::EntityId> selection = m_scene->selectedElementIds();
     if (selection.size() == 1)
         m_controller->setFontStyle(selection.front(), font);
 }
