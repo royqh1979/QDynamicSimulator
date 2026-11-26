@@ -2,7 +2,7 @@
 
 创建时间：2026-11-26 11:30:29 +0800
 
-状态：Document 封装与不可变 AST 阶段已完成并合并；后续 Formula/Analysis 归属由 2026-11-26-formula-analysis-restructure.md 继续记录
+状态：已完成并合并；Document 封装与不可变 AST 阶段通过全量验证，Formula/Analysis 归属由 2026-11-26-formula-analysis-restructure-done.md 继续记录
 
 ## 1. 背景与已经确定的约束
 

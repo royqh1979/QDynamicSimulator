@@ -58,10 +58,11 @@ void TestMacroFiles::macroRoundTrips()
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
     QString error;
+    qds::io::Workspace workspace;
     const QString nativePath = directory.filePath(QStringLiteral("macro.qds"));
-    QVERIFY2(qds::io::DocumentFile::save(nativePath, document, &error), qPrintable(error));
+    QVERIFY2(qds::io::DocumentFile::save(nativePath, document, workspace, &error), qPrintable(error));
     Document native;
-    QVERIFY2(qds::io::DocumentFile::open(nativePath, native, &error), qPrintable(error));
+    QVERIFY2(qds::io::DocumentFile::open(nativePath, native, workspace, &error), qPrintable(error));
     verifyMacro(native);
 
     const QString xmilePath = directory.filePath(QStringLiteral("macro.xmile"));

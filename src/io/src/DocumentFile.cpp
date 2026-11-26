@@ -425,7 +425,7 @@ void writeNativeArrayDefinition(QXmlStreamWriter &writer, const core::Document &
     }
 }
 
-QByteArray writeNativeXml(const core::Document &document)
+QByteArray writeNativeXml(const core::Document &document, const Workspace &workspace)
 {
     QByteArray output;
     QXmlStreamWriter writer(&output);
@@ -480,7 +480,6 @@ QByteArray writeNativeXml(const core::Document &document)
         writer.writeEndElement();
     }
     writer.writeEndElement();
-    const core::Workspace &workspace = document.workspace();
     if (workspace.hasViewport) {
         writer.writeStartElement(QStringLiteral("workspace"));
         writer.writeAttribute(QStringLiteral("zoom"), QString::number(workspace.zoom, 'g', 15));
@@ -694,11 +693,17 @@ bool parseNativeElement(QXmlStreamReader &reader, NativeRecord &record)
     return false;
 }
 
-bool parseNativeXml(const QByteArray &xml, core::Document &document, QString *errorMessage)
+bool validWorkspace(const Workspace &workspace)
+{
+    return std::isfinite(workspace.zoom) && workspace.zoom > 0.0
+        && std::isfinite(workspace.center.x) && std::isfinite(workspace.center.y);
+}
+
+bool parseNativeXml(const QByteArray &xml, core::Document &document, Workspace &workspace, QString *errorMessage)
 {
     QXmlStreamReader reader(xml);
     core::Document parsed;
-    core::Workspace workspace;
+    Workspace parsedWorkspace;
     QVector<NativeRecord> records;
     std::unordered_set<quint64> uniqueUids;
     bool foundRoot = false;
@@ -734,27 +739,26 @@ bool parseNativeXml(const QByteArray &xml, core::Document &document, QString *er
             bool scrollXOk = true;
             bool scrollYOk = true;
             if (attributes.hasAttribute(QStringLiteral("zoom"))) {
-                workspace.hasViewport = true;
-                workspace.zoom = attributes.value(QStringLiteral("zoom")).toDouble(&zoomOk);
+                parsedWorkspace.hasViewport = true;
+                parsedWorkspace.zoom = attributes.value(QStringLiteral("zoom")).toDouble(&zoomOk);
             }
             if (attributes.hasAttribute(QStringLiteral("center-x"))) {
-                workspace.hasViewport = true;
-                workspace.center.x = attributes.value(QStringLiteral("center-x")).toDouble(&xOk);
+                parsedWorkspace.hasViewport = true;
+                parsedWorkspace.center.x = attributes.value(QStringLiteral("center-x")).toDouble(&xOk);
             }
             if (attributes.hasAttribute(QStringLiteral("center-y"))) {
-                workspace.hasViewport = true;
-                workspace.center.y = attributes.value(QStringLiteral("center-y")).toDouble(&yOk);
+                parsedWorkspace.hasViewport = true;
+                parsedWorkspace.center.y = attributes.value(QStringLiteral("center-y")).toDouble(&yOk);
             }
             if (attributes.hasAttribute(QStringLiteral("scroll-x"))) {
-                workspace.hasScrollValues = true;
-                workspace.scrollX = attributes.value(QStringLiteral("scroll-x")).toInt(&scrollXOk);
+                parsedWorkspace.hasScrollValues = true;
+                parsedWorkspace.scrollX = attributes.value(QStringLiteral("scroll-x")).toInt(&scrollXOk);
             }
             if (attributes.hasAttribute(QStringLiteral("scroll-y"))) {
-                workspace.hasScrollValues = true;
-                workspace.scrollY = attributes.value(QStringLiteral("scroll-y")).toInt(&scrollYOk);
+                parsedWorkspace.hasScrollValues = true;
+                parsedWorkspace.scrollY = attributes.value(QStringLiteral("scroll-y")).toInt(&scrollYOk);
             }
-            if (!zoomOk || !xOk || !yOk || !scrollXOk || !scrollYOk || workspace.zoom <= 0.0
-                || !std::isfinite(workspace.zoom) || !std::isfinite(workspace.center.x) || !std::isfinite(workspace.center.y)) {
+            if (!zoomOk || !xOk || !yOk || !scrollXOk || !scrollYOk || !validWorkspace(parsedWorkspace)) {
                 setError(errorMessage, translate("The QDS workspace is invalid."));
                 return false;
             }
@@ -813,7 +817,7 @@ bool parseNativeXml(const QByteArray &xml, core::Document &document, QString *er
         }
         uids[record.uid] = nextId++;
     }
-    parsed.setWorkspace(workspace);
+    workspace = parsedWorkspace;
     document = std::move(parsed);
     return true;
 }
@@ -849,9 +853,14 @@ bool writeFileBytes(const QString &fileName, const QByteArray &contents, QString
 
 } // namespace
 
-bool DocumentFile::save(const QString &fileName, const core::Document &document, QString *errorMessage)
+bool DocumentFile::save(const QString &fileName, const core::Document &document, const Workspace &workspace,
+    QString *errorMessage)
 {
-    const QByteArray archive = makeZip(writeNativeXml(document));
+    if (!validWorkspace(workspace)) {
+        setError(errorMessage, translate("The QDS workspace is invalid."));
+        return false;
+    }
+    const QByteArray archive = makeZip(writeNativeXml(document, workspace));
     if (archive.isEmpty()) {
         setError(errorMessage, translate("Could not create the QDS ZIP container."));
         return false;
@@ -859,18 +868,25 @@ bool DocumentFile::save(const QString &fileName, const core::Document &document,
     return writeFileBytes(fileName, archive, errorMessage);
 }
 
-bool DocumentFile::open(const QString &fileName, core::Document &document, QString *errorMessage, bool *nativeFormat)
+bool DocumentFile::open(const QString &fileName, core::Document &document, Workspace &workspace,
+    QString *errorMessage, bool *nativeFormat)
 {
     if (nativeFormat)
         *nativeFormat = false;
     QByteArray contents;
     if (!readFileBytes(fileName, contents, errorMessage))
         return false;
-    if (!contents.startsWith("PK"))
-        return XmileFile::importFile(fileName, document, errorMessage);
+    if (!contents.startsWith("PK")) {
+        core::Document imported;
+        if (!XmileFile::importFile(fileName, imported, errorMessage))
+            return false;
+        workspace = {};
+        document = std::move(imported);
+        return true;
+    }
 
     QByteArray xml;
-    if (!readZip(contents, xml, errorMessage) || !parseNativeXml(xml, document, errorMessage))
+    if (!readZip(contents, xml, errorMessage) || !parseNativeXml(xml, document, workspace, errorMessage))
         return false;
     if (nativeFormat)
         *nativeFormat = true;

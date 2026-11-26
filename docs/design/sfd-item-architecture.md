@@ -2,7 +2,7 @@
 
 ## 1. 状态与目标
 
-本文记录当前待审查的目标设计，不代表下列重构已经完成。现有实现已有稳定 ID、Document、命令、ChangeNotification、Scene 增量同步、端点/拐点句柄和基础自动布线；高级端口分配和更多路径优化按后续阶段实施。
+本文记录当前核心文档与画布设计。现有实现已有稳定 ID、Document、命令、ChangeNotification、Scene 增量同步、端点/拐点句柄和基础自动布线；高级端口分配和更多路径优化按后续阶段实施。
 
 目标是明确核心元素、画布元素、连接线和控制句柄的类体系，以及核心文档与 QGraphicsScene 的互找和一致性维护方式，避免双向指针、重复可写状态、循环更新和撤销失效。
 
@@ -15,7 +15,7 @@
 - 吸附点默认是几何数据，仅在显示或交互时创建临时句柄。
 - 拐点在文档中保存为路径值，仅在选中连接线时显示控制句柄。
 - 布线器、吸附算法、空间索引和样式通过组合使用，不与图元继承耦合。
-- Document 是唯一事实来源，QGraphicsScene 是可交互投影，不是另一个对等可写模型。
+- Document 是语义对象及持久布局的唯一事实来源；DiagramView 持有当前视口。QGraphicsScene 只是它们的可交互投影，不是另一个对等可写模型。
 - 双方通过稳定 ID 互找，不保存跨层对象指针，不使用名称或容器下标作为标识。
 - Document 长期持有且具有身份、命名、端点或索引约束的对象必须封装私有状态，通过 const 接口读取，通过 Document 或其它受控接口修改；不得用公开字段或非 const 容器绕过不变量。纯值对象和编辑 DTO 不机械增加封装。
 - 不可变性由逻辑语义决定：历史事实、已完成的分析和计算结果在构造/发布后不可变；当前文档状态由所有者受控修改；可变 Builder 只存在于构造阶段。现有代码是否修改字段只用于迁移评估，不作为分类依据。
@@ -35,7 +35,7 @@
 ### 3.1 Document 组成
 
 ```text
-Document
+core::Document
 ├── core::Model                  模型变量的只读门面
 │   ├── Stock                    Vensim Level / XMILE stock
 │   ├── Flow                     Vensim Rate / XMILE flow
@@ -44,29 +44,31 @@ Document
 │   └── Data（数据）             变量分类，XMILE 使用 aux
 ├── Dimension                    Document 级数组维度定义
 ├── MacroDefinition              Document 级自定义函数定义
-├── DiagramDefinition            当前视图的图形对象与布局
-│   ├── Connector                Vensim Arrow / XMILE connector
-│   ├── Cloud                    流量源/汇 / XMILE view cloud
-│   ├── Comment                  Vensim Sketch Comment / XMILE text_box
-│   ├── Route                    Flow 与 Connector 的路径
-│   └── 位置、端口和其他视图状态
-└── Workspace                    当前文档的视口、缩放和滚动位置
+└── DiagramDefinition            当前视图的图形对象与持久布局
+    ├── Connector                Vensim Arrow / XMILE connector，保存 from/to
+    ├── Cloud                    流量源/汇 / XMILE view cloud，可作为 Flow 端点
+    ├── Comment                  Vensim Sketch Comment / XMILE text_box，保存正文
+    ├── Route                    Flow 与 Connector 的路径
+    └── 位置、字体和其他持久视图状态
+
+MainWindow / DiagramView
+└── Workspace                    当前视口、缩放和滚动位置，保存时生成 qds::io::Workspace DTO
 ```
 
 | 对象 | 在 Document | 在 Model | 在 DiagramDefinition | 说明 |
 | --- | :---: | :---: | :---: | --- |
-| Stock、Flow、Auxiliary、Constant、Data | 是 | 是 | 只保存其布局 | 具有名称和方程等模型语义 |
+| Stock、Flow、Auxiliary、Constant、Data | 是 | 是 | 保存其布局 | 具有名称和方程等模型语义 |
 | Arrow / Connector | 是 | 否 | 是 | 保存 from/to 和 Route；不是可计算变量 |
 | Cloud | 是 | 否 | 是 | 只表示流量的源/汇 |
-| Comment / Annotation | 是 | 否 | 是 | 只用于展示；作为 Arrow Junction 时可接 Connector |
+| Comment / Annotation | 是 | 否 | 是 | 保存正文；作为 Arrow Junction 时可接 Connector |
 | Dimension | 是 | 否 | 否 | Document 级数组定义，不是 ModelElement |
 | MacroDefinition | 是 | 否 | 否 | Document 级自定义函数定义，不分配 EntityId |
-| Workspace | 是 | 否 | 否 | 当前文档的视口状态，不是模型语义 |
+| Workspace | 否 | 否 | 否 | 由 DiagramView 持有，不是模型语义 |
 
 因此，“不属于 Model”不等于“不属于 Document”。Arrow、Cloud、Comment 都由 Document 持有，参与统一 ID、撤销/重做和持久化，但不进入仿真变量索引。Dimensions 和 Macros 同样属于 Document；XMILE 中 macro 与 model 是根级并列定义。宏体、默认参数及其它定义的原始文本和不可变 AST 统一封装为 Formula，由对应 Document 定义持有；AnalysisReport 不复制这些 AST。
 
 - 当前 `core::Model` 只是模型变量集合的只读门面，不是脱离 Document 即可独立求值的完整语义模型；公式分析和求值使用 Document 级上下文，同时访问变量、Dimensions 和 Macros。
-- `DiagramDefinition` 描述 SFD 布局及视图对象。
+- `DiagramDefinition` 描述 SFD 对象及持久布局；位置、Route 和 FontStyle 继续与对象身份一同参与 ChangeSet、复制粘贴和级联删除，不建立平行 Layout 模型。
 - Flow 是 Model 中的实体，不是 Connector；FlowEndpoints 只是该实体的源/目标属性。
 - 两者及所有画布图元共用同一个 `EntityId` 空间。
 - Flow 端点可以是 Model 中的 Stock 或 DiagramDefinition 中的 Cloud，端点合法性由 Document 聚合层校验。
@@ -81,13 +83,13 @@ Document
 | `Model.h/.cpp` | ModelElement、Variable、Flow、ModelRange 和 Model 只读门面 |
 | `Diagram.h/.cpp` | Vec2、Route、FontStyle、ViewElement 及其派生类、ViewRange、DiagramDefinition |
 | `Dimension.h/.cpp` | Dimension、DimensionElement 及维度元素查找 |
-| `Macro.h` | MacroDefinition、MacroParameter 和参数个数规则 |
+| `Macro.h` | MacroDefinitionData、MacroDefinition、MacroParameter 和参数个数规则 |
 | `Identifier.h/.cpp` | trimDisplayName、normalizeIdentifier 的共享名称规范 |
 | `ElementRange.h` | Document 元素存储上的通用只读过滤迭代器，不拥有对象 |
-| `Document.h/.cpp` | Document 聚合、Workspace、ElementData、编辑、级联删除和 Capture/Apply/Restore |
+| `Document.h/.cpp` | Document 聚合、ElementData、编辑、级联删除和 Capture/Apply/Restore；不含 Workspace |
 | `formula/Formula.h/.cpp`、`formula/Function.h/.cpp`、`formula/Analysis.h/.cpp`、`formula/Evaluation.h/.cpp` | 公式 AST、内置函数、符号与依赖分析、求值组成的公式子系统 |
 
-Document.h 负责组合上述类型，但不再自行定义 Vec2、Route 或视图元素。Model.cpp 不实现 Dimension 或通用名称规范。Validation 仍位于 core 根层，因为它提供 Document 级 ModelIssue 和 validateDocument()，不只是公式语法检查。formula 子目录只组织源码，不增加子命名空间或独立 CMake 库。此次分解只移动既有声明和实现，不改变模型语义、ID、持久化格式、公式 AST 或宏调用行为；验收以现有全部单元测试、Release 后 Debug 构建及应用/profile 目标构建为准，不增加无运行时变化的性能基线。
+Document.h 组合语义对象及 DiagramDefinition，但不包含 Workspace。Model.cpp 不实现 Dimension 或通用名称规范。Validation 仍位于 core 根层，因为它提供 Document 级 ModelIssue 和 validateDocument()，不只是公式语法检查。formula 子目录只组织源码，不增加子命名空间或独立 CMake 库。qds::io::Workspace 只是 View 与 I/O 的交换 DTO；本项迁移不得改变 QDS 外部 XML 格式、XMILE 语义或现有绘制行为。
 
 ### 3.2 稳定标识
 
@@ -303,7 +305,7 @@ public:
 
 稳定文档中的 Flow 端点只能是 Stock 或 Cloud，不使用 EntityId 0 表示画布上的空白端。Rate 工具允许从任意空白位置开始并在任意空白位置结束；释放时，每个空白端都创建一个真正的 Cloud，已有 Cloud 则直接复用。由此支持 Stock→Stock、Stock→Cloud、Cloud→Stock 和 Cloud→Cloud，不需要增加“隐式端点”类型。“隐式 Cloud”只描述由工具自动创建的交互方式，提交后仍是普通 Cloud。
 
-创建 Cloud、Flow、位置和 Route 必须属于同一个 ChangeSet；Esc、右键取消或创建失败时不留下任何对象。首版中自动创建的 Cloud 提交后与其他 Cloud 采用相同生命周期，删除 Flow 时不擅自级联删除 Cloud，避免误删共享或用户继续使用的云团；删除 Stock/Cloud 时仍必须级联删除关联 Flow。若以后需要由 Flow 独占并回收 Cloud，必须先明确所有权，不能仅按当前连接数猜测。
+创建 Cloud、Flow 的语义对象及其位置、Route 必须属于同一个 ChangeSet；Esc、右键取消或创建失败时不留下任何对象。首版中自动创建的 Cloud 提交后与其他 Cloud 采用相同生命周期，删除 Flow 时不擅自级联删除 Cloud，避免误删共享或用户继续使用的云团；删除 Stock/Cloud 时仍必须级联删除关联 Flow。若以后需要由 Flow 独占并回收 Cloud，必须先明确所有权，不能仅按当前连接数猜测。
 
 XMILE 中未被任何 Stock 引用的 Flow 仍是语义变量，导入时不得丢弃；但它不能成为编辑器中不可见的模型对象。若原文件没有对应视图或可用路径，导入器应补建默认 Flow 图形，并为开放端补建 Cloud，因此未被 Stock 引用的 Flow 可表示为 Cloud→Cloud。EntityId 0 只允许出现在导入解析的临时数据中，提交完整 Document 前必须解析为有效 Stock/Cloud；稳定文档不保存 `{0, 0}` 或半连接 Flow。
 
@@ -349,6 +351,8 @@ I/O 职责按格式拆分为独立类和源码文件：`DocumentFile` 负责 QDS
 `model` 保存 Stock、Flow、Auxiliary、Constant、Data 及方程、单位、说明和 Flow 端点；`diagram` 保存 Cloud、Comment、Connector、位置和 Route。所有对象使用文件内 uid 引用，加载时重新分配 EntityId 并建立 uid→EntityId 映射。displayName 持久化，nameKey 加载时派生；Comment 保存 content，Cloud 不使用名称。
 
 原生读取采用两阶段构建：先建立非路由对象，再按映射建立 Flow、Connector。原生往返必须完整保留 ElementKind、重复 Comment、Cloud、端点、路径模式、控制点和锁定状态。ZIP 中缺少 document.xml、XML 损坏或引用无效时加载失败并保留原 Document。XMILE 导入通道遇到 ZIP 直接报错，不尝试猜测旧格式。
+
+DocumentFile::save/open 显式交换独立的 qds::io::Workspace DTO；XmileFile 接口不涉及 Workspace，经 DocumentFile 打开 XMILE 时返回默认值。I/O 不依赖 DiagramScene、DiagramView 或其它 Widgets。MainWindow 保存时从实际 DiagramView 捕获 Workspace，加载成功后才由 Controller 替换 Document 并应用 Workspace；解析或校验失败不得改变当前文档、视口或撤销栈。
 
 ### 4.3 吸附点和端口
 
@@ -446,7 +450,7 @@ DiagramScene 按 ChangeNotification 增量更新 Item
 
 约束：
 
-- DiagramItem 不直接修改名称、方程或持久化位置。
+- DiagramItem 不直接修改名称、方程、持久化位置、Route 或字体。
 - ArrowItem 不直接修改连接关系。
 - ControlPointHandle 不直接修改 Route。
 - Scene 不能绕过命令体系写文档。
@@ -519,7 +523,8 @@ ChangeRecord/ChangeSet 的逻辑字段通过受控构造确定，完成后只读
 
 | 层 | 拥有者 | 所有权形式 | 非拥有索引/引用 |
 | --- | --- | --- | --- |
-| 全部核心对象 | Document | `unordered_map<EntityId, unique_ptr<DocumentElement>>` | Model/DiagramDefinition 的过滤范围 |
+| 全部核心语义对象 | Document | `unordered_map<EntityId, unique_ptr<DocumentElement>>` | Model/DiagramDefinition 的过滤范围 |
+| 当前视口 | DiagramView | 实际 transform、滚动条与中心 | 保存时生成 Workspace DTO |
 | 画布图元 | QGraphicsScene | `addItem()` 接管 DiagramItem* | Scene 的 ID 索引、RoutedItem 的端点 Item* |
 | 临时控制句柄 | QGraphicsScene | `addItem()` 接管 | Scene 当前句柄列表 |
 
@@ -565,7 +570,7 @@ RoutedItem 的端点指针是非拥有引用，因此必须先删除或重绑相
 
 - 删除命令在核心对象仍存在时建立 ChangeSet：每条 ChangeRecord 保存类型、ID、名称/方程、端点、位置、Route 及级联对象的 before 值。
 - 删除后，原核心指针和原图元指针立即失效，命令不得继续持有或复用它们。
-- 撤销根据 ChangeSet 的 before 值重新创建核心对象并恢复相同 ID；ChangeNotification 驱动 Scene 创建全新的 DiagramItem。
+- 撤销根据 ChangeSet 的 before 值重新创建核心对象、恢复相同 ID 和布局；ChangeNotification 驱动 Scene 创建全新的 DiagramItem。
 - 重走删除时再次销毁本次创建的对象；ID 稳定不等于对象地址稳定。
 - 复合操作作为一个撤销单元，所有 ChangeRecord 在首个对象删除前取得。
 
@@ -574,13 +579,15 @@ RoutedItem 的端点指针是非拥有引用，因此必须先删除或重绑相
 打开文件或新建文档时：
 
 ```text
-DocumentController 构造完整的新 Document
+I/O 构造并校验局部 Document 与 Workspace
+→ DocumentController 替换 Document
 → 旧 Document 析构并销毁全部核心对象，旧 ID 容器和分类范围随之失效
 → 发出 documentReset
 → Scene 先清除临时句柄
 → QGraphicsScene::clear() 销毁全部图元
 → Scene 清空统一 ID 索引
 → 按新 Document 创建全部图元并重建索引
+→ MainWindow 将 Workspace 应用到 DiagramView
 ```
 
 不得让旧 Document ID 容器、旧 Scene 索引、控制句柄或命令引用跨文档重置继续存活。
@@ -636,10 +643,11 @@ ControlPointHandle
 | --- | --- |
 | 语义变量名称、方程、单位、类型 | core::Model |
 | FlowEndpoints | core::Model::Flow；端点合法性由 Document 校验 |
-| Connector 的 from/to | DiagramDefinition |
-| Cloud、Comment 的内容和类型 | DiagramDefinition |
-| 元素坐标、端口、路径 | DiagramDefinition |
-| 当前缩放、滚动位置 | 工作区状态 |
+| Connector 的 from/to | core::Document::DiagramDefinition |
+| Cloud、Comment 的内容和类型 | core::Document::DiagramDefinition |
+| 元素坐标、路径、字体 | DiagramDefinition |
+| 逻辑端口、边界交点 | 从语义与布局派生的几何，不独立持久化 |
+| 当前缩放、滚动位置 | DiagramView；保存时生成 Workspace DTO |
 | 当前选中项、悬停项 | DiagramScene/编辑器 |
 | 拖动中的预览路径 | ArrowEditor |
 | 自动布线缓存 | UI/路由层，可随时重建 |
@@ -692,9 +700,9 @@ ControlPointHandle
 - 创建、改名、删除、restore、clear、undo/redo 和 XMILE 加载后，名称索引均满足上述约束；自动命名发生冲突时递增计数器且不扫描全部变量。
 - 所有索引无重复、无失效 ID。
 - 普通编辑、撤销和重做后均满足上述约束。
-- 统一 ID 的 undo/redo 必须使用以下完整场景：创建 Stock、Cloud、Flow、Connector 时 ID 来自同一递增序列；删除 Stock 级联删除 Flow/Connector 后，undo 根据命令持有的 ChangeSet 恢复全部原 ID 和端点，redo 再删除；再次 undo 后新建对象使用大于历史最大值的 ID，不复用已恢复 ID。
+- 统一 ID 的 undo/redo 必须使用以下完整场景：创建 Stock、Cloud、Flow、Connector 时 ID 来自同一递增序列；删除 Stock 级联删除 Flow/Connector 后，undo 根据命令持有的 ChangeSet 恢复全部原 ID、端点和布局，redo 再删除；再次 undo 后新建对象使用大于历史最大值的 ID，不复用已恢复 ID。
 - 在 undo 后执行新编辑会清空 redo 栈，随后创建/删除/撤销不得与 ChangeSet 中的 ID 冲突；复制粘贴和跨文档粘贴始终分配新 ID 并重建端点映射。
 - 连续执行多轮删除→undo→redo 后，Document::find(id) 与 DiagramScene::item(id) 一一对应，无重复 ID、悬空端点或旧指针复用。
 - 打开→编辑→保存→重开后，语义和布局一致。
 
-最终约束概括为：ID 负责互找，Document 负责保存，Command 负责修改，ChangeNotification 负责同步，Scene 负责显示。
+最终约束概括为：ID 负责互找，Document 负责语义与持久布局，DiagramView 负责当前视口，Command 负责修改，ChangeNotification 负责同步，Scene 负责显示，I/O 通过独立 Workspace DTO 读写视口。

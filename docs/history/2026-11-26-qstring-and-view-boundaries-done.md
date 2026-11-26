@@ -2,7 +2,7 @@
 
 创建时间：2026-11-26 15:14:05 +0800
 
-状态：QString 迁移及 Release/Debug 全量验证完成，等待审核；Document 视图边界尚未实施
+状态：已完成并合并；QString、raw pointer 纪律与 Workspace 独立 DTO 迁移均通过全量验证
 
 ## 1. 目标
 
@@ -79,3 +79,65 @@ find() 返回的指针只能在当前调用栈上即时读取或传给同步调�
 与上一阶段同场景结果相比，Document 分析、数组分析和标量求值出现明显增时。该数据只作为后续性能分析的基线，不在本迁移中声称优化或自动开始性能改造。
 
 - 2026-11-26 16:19:58 +0800：完成 QString/QByteArray 边界迁移、raw pointer 纪律文档、Release/Debug 回归及 Core/公式 profile；记录性能增时，等待审核。
+
+## 9. Workspace 边界目标设计（2026-11-26）
+
+### 9.1 审查结论
+
+完整拆出元素位置、Route 和 FontStyle 的收益不足以抵消一致性成本：这些内容需要与语义对象一起参与创建、级联删除、复制粘贴、undo/redo 和 QDS 往返。核心不依赖 Widgets 也不要求 Document 排除纯几何 DTO。当前单文档、单视图阶段不引入 DiagramLayout、DocumentViewData 或 EditorChangeRecord 等额外聚合层。
+
+本项只拆出当前视口 Workspace：
+
+```text
+core::Document
+└─ 语义对象、DiagramDefinition、位置、Route、FontStyle
+
+MainWindow / DiagramView
+└─ 实际 transform、中心及滚动条状态
+
+qds::io::Workspace
+└─ 仅在 View 与 DocumentFile 之间交换的持久化 DTO
+```
+
+位置、Route、FontStyle、ElementData 和 ChangeSet 保持现有权威关系；Connector/Cloud/Comment 的身份与关系也保持不变。
+
+### 9.2 I/O 接口与原子性
+
+- `qds::io::Workspace` 定义在 DocumentFile 接口中，包含现有 hasViewport、zoom、center、hasScrollValues 和滚动值；不属于 core::Document。
+- `DocumentFile::save(path, document, workspace)` 显式接收视口 DTO；`DocumentFile::open(path, document, workspace)` 在成功时返回它。
+- QDS 仍是 ZIP 中单个 document.xml，`<workspace>` 的外部格式不变。
+- 经 DocumentFile 打开 XMILE 时返回默认 Workspace；XmileFile 自身的导入/导出接口不增加 Workspace 参数。
+- 原生解析仍先构造局部 Document 和 Workspace，全部成功后同时替换输出参数；失败不得只更新其中一个。
+- MainWindow 保存和自动保存时直接从 DiagramView 捕获 Workspace，不再调用 DocumentController::setWorkspace。
+- 正常打开、拖放和恢复副本共用视口应用逻辑；有保存视口则恢复缩放与滚动/中心，否则按场景内容居中。
+
+### 9.3 迁移边界与步骤
+
+本项不改变元素布局、Route、字体、撤销、剪贴板、XMILE 语义、XML 格式、路径算法、绘制外观或窗口 QSettings 布局，不引入多文档、多视图或新运行库。
+
+1. 从 Document 删除 Workspace 成员、查询、setWorkspace 和移动语义。
+2. 在 I/O 接口建立 Workspace DTO，迁移 QDS 读写与失败原子性。
+3. 迁移 MainWindow 保存、打开、自动保存和恢复副本的 View 直读/直写。
+4. 保留现有场景，迁移 Workspace 单元测试及 profile，补充失败时 Document/Workspace 均不变化和恢复副本视口断言。
+5. 运行 Editor 同场景 profile，完成 Release 后 Debug 全量回归和自审；停止等待审核，不自动提交或合并。
+
+### 9.4 验收
+
+- core::Document 不含 Workspace 存储或修改接口；元素位置、Route 和 FontStyle 行为不变。
+- QDS 往返完整保留语义、布局和显式传入的 Workspace；XMILE 打开返回默认 Workspace。
+- 无效 QDS/XMILE 不部分修改 Document 或 Workspace；恢复副本与正常打开的视口行为一致。
+- 现有画布、持久化、undo/redo 回归不丢失；Editor profile 可重复，Release/Debug 全量测试通过。
+
+- 2026-11-26 18:45:28 +0800：记录完整拆分方案供审查。
+- 2026-11-26：比较拆分与不拆分的收益后，确认仅拆出 Workspace，保留元素布局及现有 ChangeSet 聚合，按此范围实施。
+
+## 10. Workspace 迁移验证记录
+
+- core::Document 不再含 Workspace 成员、查询、setWorkspace 或移动逻辑；位置、Route、FontStyle、ElementData 和 ChangeSet 保持原归属。
+- qds::io::Workspace 由 DocumentFile 接口定义；save/open 显式交换 DTO，QDS 的 ZIP 和 document.xml 外部格式不变，XMILE 打开返回默认 Workspace。
+- MainWindow 保存和自动保存直接捕获 DiagramView；正常打开、拖放和恢复副本统一应用 Workspace。打开失败时 Document 与 Workspace 均保持原值。
+- 原核心 Workspace 校验场景迁移到 I/O：非法 zoom/中心拒绝保存且不覆盖已有文件；损坏 QDS、无效 XMILE 均验证输出原子性。新增恢复副本缩放、中心和滚动值回归。
+- Release 与 Debug 全量 CTest 均为 12/12；应用、全部测试及全部 profile 目标的 Release 构建通过。
+- 本机 `profile-editor.exe 1000` 的 workspace_roundtrip 为 100 次、232.992 ms、2329.92 μs/次；该结果只记录当前同场景数据，不据此宣称性能优化。
+
+- 2026-11-26 19:37:45 +0800：完成 Workspace 有限拆分、测试、profile、Release/Debug 全量回归及自审，等待用户审核；未提交、未合并。

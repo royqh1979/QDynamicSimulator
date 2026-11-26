@@ -13,11 +13,14 @@
 #include <io/DocumentFile.h>
 #include <io/XmileFile.h>
 
+#include <QAbstractButton>
 #include <QClipboard>
 #include <QVector>
+#include <QDir>
 #include <QDockWidget>
 #include <QDropEvent>
 #include <QFile>
+#include <QFileInfo>
 #include <QFontComboBox>
 #include <QFrame>
 #include <QGraphicsProxyWidget>
@@ -28,6 +31,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPaintEvent>
@@ -36,6 +40,7 @@
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QToolBar>
@@ -159,6 +164,7 @@ private slots:
     void fileDropOpen();
     void pngExportAndClipboard();
     void workspaceRestore();
+    void recoveryRestoresWorkspace();
     void cursorPositionStatus();
     void windowLayoutPersistence();
     void simplifiedChineseTranslation();
@@ -503,8 +509,9 @@ void TestEditor::directConnectorMoveUndoRepaint()
 void TestEditor::multipleFlowConnectorsMoveUndoRepaint()
 {
     Document document;
+    qds::io::Workspace workspace;
     QString error;
-    QVERIFY2(qds::io::DocumentFile::open(QStringLiteral(QDS_MOVE_UNDO_QDS_PATH), document, &error), qPrintable(error));
+    QVERIFY2(qds::io::DocumentFile::open(QStringLiteral(QDS_MOVE_UNDO_QDS_PATH), document, workspace, &error), qPrintable(error));
     MainWindow window;
     DocumentController &controller = *window.findChild<DocumentController *>();
     DiagramScene &scene = *window.findChild<DiagramScene *>();
@@ -628,8 +635,9 @@ void TestEditor::missingViewImportProjectsAllVariables()
                "</variables></model></xmile>");
     file.close();
     Document loaded;
+    qds::io::Workspace workspace;
     QString error;
-    QVERIFY2(qds::io::DocumentFile::open(path, loaded, &error), qPrintable(error));
+    QVERIFY2(qds::io::DocumentFile::open(path, loaded, workspace, &error), qPrintable(error));
 
     DocumentController controller;
     DiagramScene scene(&controller);
@@ -2007,9 +2015,10 @@ void TestEditor::connectToolTargetsFlow()
     QVERIFY(directory.isValid());
     QString error;
     const QString nativePath = directory.filePath(QStringLiteral("connector-to-flow.qds"));
-    QVERIFY2(qds::io::DocumentFile::save(nativePath, controller.document(), &error), qPrintable(error));
+    QVERIFY2(qds::io::DocumentFile::save(nativePath, controller.document(), qds::io::Workspace {}, &error), qPrintable(error));
     Document nativeLoaded;
-    QVERIFY2(qds::io::DocumentFile::open(nativePath, nativeLoaded, &error), qPrintable(error));
+    qds::io::Workspace workspace;
+    QVERIFY2(qds::io::DocumentFile::open(nativePath, nativeLoaded, workspace, &error), qPrintable(error));
     const auto *nativeConnector = dynamic_cast<const Connector *>(nativeLoaded.find(connector));
     QVERIFY(nativeConnector);
     QCOMPARE(nativeConnector->from(), source);
@@ -2245,7 +2254,7 @@ void TestEditor::fileDropOpen()
     const EntityId stock = document.createVariable(ElementKind::Stock, {10.0, 20.0});
     document.rename(stock, "\u4E2D\u6587\u5E93\u5B58");
     QString error;
-    QVERIFY2(qds::io::DocumentFile::save(path, document, &error), qPrintable(error));
+    QVERIFY2(qds::io::DocumentFile::save(path, document, qds::io::Workspace {}, &error), qPrintable(error));
 
     MainWindow window;
     DiagramView *view = window.findChild<DiagramView *>();
@@ -2395,12 +2404,13 @@ void TestEditor::workspaceRestore()
     QVERIFY(window.saveFile(path));
 
     Document document;
+    qds::io::Workspace workspace;
     QString error;
-    QVERIFY2(qds::io::DocumentFile::open(path, document, &error), qPrintable(error));
-    QVERIFY(document.workspace().hasViewport);
-    QCOMPARE(document.workspace().zoom, expectedZoom);
-    QVERIFY(qAbs(document.workspace().center.x - expectedCenter.x()) < 1e-9);
-    QVERIFY(qAbs(document.workspace().center.y - expectedCenter.y()) < 1e-9);
+    QVERIFY2(qds::io::DocumentFile::open(path, document, workspace, &error), qPrintable(error));
+    QVERIFY(workspace.hasViewport);
+    QCOMPARE(workspace.zoom, expectedZoom);
+    QVERIFY(qAbs(workspace.center.x - expectedCenter.x()) < 1e-9);
+    QVERIFY(qAbs(workspace.center.y - expectedCenter.y()) < 1e-9);
 
     MainWindow restored;
     auto *restoredView = restored.findChild<DiagramView *>();
@@ -2413,6 +2423,48 @@ void TestEditor::workspaceRestore()
             .arg(center.x()).arg(center.y()).arg(expectedCenter.x()).arg(expectedCenter.y())));
     QVERIFY(restoredView->horizontalScrollBar()->value() == view->horizontalScrollBar()->value());
     QVERIFY(restoredView->verticalScrollBar()->value() == view->verticalScrollBar()->value());
+}
+
+void TestEditor::recoveryRestoresWorkspace()
+{
+    QStandardPaths::setTestModeEnabled(true);
+    const QString path = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+        + QStringLiteral("/recovery.qds");
+    QVERIFY(QDir().mkpath(QFileInfo(path).absolutePath()));
+    QFile::remove(path);
+    Document document;
+    document.createVariable(ElementKind::Stock);
+    MainWindow window;
+    auto *view = window.findChild<DiagramView *>();
+    QVERIFY(view);
+    view->setTransform(QTransform::fromScale(0.66, 0.66));
+    view->centerOn(QPointF(123.5, 456.25));
+    qds::io::Workspace expected;
+    expected.hasViewport = true;
+    expected.zoom = view->transform().m11();
+    const QPointF expectedCenter = view->mapToScene(view->viewport()->rect().center());
+    expected.center = {expectedCenter.x(), expectedCenter.y()};
+    expected.hasScrollValues = true;
+    expected.scrollX = view->horizontalScrollBar()->value();
+    expected.scrollY = view->verticalScrollBar()->value();
+    QString error;
+    QVERIFY2(qds::io::DocumentFile::save(path, document, expected, &error), qPrintable(error));
+
+    view->resetTransform();
+    view->centerOn(QPointF());
+    QTimer::singleShot(0, &window, []() {
+        auto *message = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+        if (message)
+            message->button(QMessageBox::Yes)->click();
+    });
+    window.offerRecovery();
+    QCOMPARE(view->transform().m11(), expected.zoom);
+    const QPointF center = view->mapToScene(view->viewport()->rect().center());
+    QVERIFY(QLineF(center, expectedCenter).length() < 0.001);
+    QCOMPARE(view->horizontalScrollBar()->value(), expected.scrollX);
+    QCOMPARE(view->verticalScrollBar()->value(), expected.scrollY);
+    QFile::remove(path);
+    QStandardPaths::setTestModeEnabled(false);
 }
 
 void TestEditor::cursorPositionStatus()
