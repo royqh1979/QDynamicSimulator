@@ -1,6 +1,7 @@
 #include <core/Analysis.h>
 
 #include <core/Function.h>
+#include <core/Identifier.h>
 
 #include <algorithm>
 #include <functional>

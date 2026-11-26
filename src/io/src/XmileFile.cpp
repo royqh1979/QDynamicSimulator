@@ -1,5 +1,7 @@
 #include <io/XmileFile.h>
 
+#include <core/Identifier.h>
+
 #include <QCoreApplication>
 #include <QFile>
 #include <QSaveFile>

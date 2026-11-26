@@ -1,5 +1,7 @@
 #include <core/Formula.h>
 
+#include <core/Identifier.h>
+
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>

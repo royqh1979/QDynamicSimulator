@@ -1,5 +1,6 @@
 #include <core/Analysis.h>
 #include <core/Evaluation.h>
+#include <core/Identifier.h>
 
 #include <algorithm>
 #include <string>

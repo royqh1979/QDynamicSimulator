@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/Formula.h>
+#include <core/Macro.h>
 #include <core/Validation.h>
 
 #include <unordered_map>

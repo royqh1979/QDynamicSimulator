@@ -33,18 +33,21 @@
 
 ```text
 Document
-├── core::Model                  可计算、可仿真的语义变量
+├── core::Model                  模型变量的只读门面
 │   ├── Stock                    Vensim Level / XMILE stock
 │   ├── Flow                     Vensim Rate / XMILE flow
 │   ├── Auxiliary                XMILE aux
 │   ├── Constant                 变量分类，XMILE 使用 aux
 │   └── Data（数据）             变量分类，XMILE 使用 aux
-└── DiagramDefinition           当前视图的图形对象与布局
-    ├── Connector                Vensim Arrow / XMILE connector
-    ├── Cloud                    流量源/汇 / XMILE view cloud
-    ├── Comment                  Vensim Sketch Comment / XMILE text_box
-    ├── Route                    Flow 与 Connector 的路径
-    └── 位置、端口和其他视图状态
+├── Dimension                    Document 级数组维度定义
+├── MacroDefinition              Document 级自定义函数定义
+├── DiagramDefinition            当前视图的图形对象与布局
+│   ├── Connector                Vensim Arrow / XMILE connector
+│   ├── Cloud                    流量源/汇 / XMILE view cloud
+│   ├── Comment                  Vensim Sketch Comment / XMILE text_box
+│   ├── Route                    Flow 与 Connector 的路径
+│   └── 位置、端口和其他视图状态
+└── Workspace                    当前文档的视口、缩放和滚动位置
 ```
 
 | 对象 | 在 Document | 在 Model | 在 DiagramDefinition | 说明 |
@@ -53,16 +56,34 @@ Document
 | Arrow / Connector | 是 | 否 | 是 | 保存 from/to 和 Route；不是可计算变量 |
 | Cloud | 是 | 否 | 是 | 只表示流量的源/汇 |
 | Comment / Annotation | 是 | 否 | 是 | 只用于展示；作为 Arrow Junction 时可接 Connector |
+| Dimension | 是 | 否 | 否 | Document 级数组定义，不是 ModelElement |
+| MacroDefinition | 是 | 否 | 否 | Document 级自定义函数定义，不分配 EntityId |
+| Workspace | 是 | 否 | 否 | 当前文档的视口状态，不是模型语义 |
 
-因此，“不属于 Model”不等于“不属于 Document”。Arrow、Cloud、Comment 都由 Document 持有，参与统一 ID、撤销/重做和持久化，但不进入仿真变量索引。
+因此，“不属于 Model”不等于“不属于 Document”。Arrow、Cloud、Comment 都由 Document 持有，参与统一 ID、撤销/重做和持久化，但不进入仿真变量索引。Dimensions 和 Macros 同样属于 Document；XMILE 中 macro 与 model 是根级并列定义。宏体和默认参数的 AST 属于 ModelAnalysis，不属于 Document。
 
-- `core::Model` 供仿真引擎使用，不包含 Cloud、Comment 或 Connector。
+- 当前 `core::Model` 只是模型变量集合的只读门面，不是脱离 Document 即可独立求值的完整语义模型；公式分析和求值使用 Document 级上下文，同时访问变量、Dimensions 和 Macros。
 - `DiagramDefinition` 描述 SFD 布局及视图对象。
 - Flow 是 Model 中的实体，不是 Connector；FlowEndpoints 只是该实体的源/目标属性。
 - 两者及所有画布图元共用同一个 `EntityId` 空间。
 - Flow 端点可以是 Model 中的 Stock 或 DiagramDefinition 中的 Cloud，端点合法性由 Document 聚合层校验。
 - 选中、悬停、拖动预览等临时状态只存在 UI。
 - 当前缩放和滚动位置属于工作区状态，不属于模型语义。
+
+核心公共头文件和实现按上述职责分解，避免 Document.h 成为所有值对象的集合：
+
+| 文件 | 职责 |
+| --- | --- |
+| `Element.h` | EntityId、ElementKind 和不携带其他语义的 DocumentElement 基类 |
+| `Model.h/.cpp` | ModelElement、Variable、Flow、ModelRange 和 Model 只读门面 |
+| `Diagram.h/.cpp` | Vec2、Route、FontStyle、ViewElement 及其派生类、ViewRange、DiagramDefinition |
+| `Dimension.h/.cpp` | Dimension、DimensionElement 及维度元素查找 |
+| `Macro.h` | MacroDefinition、MacroParameter 和参数个数规则 |
+| `Identifier.h/.cpp` | trimDisplayName、normalizeIdentifier 的共享名称规范 |
+| `ElementRange.h` | Document 元素存储上的通用只读过滤迭代器，不拥有对象 |
+| `Document.h/.cpp` | Document 聚合、Workspace、ElementData、编辑、级联删除和 Capture/Apply/Restore |
+
+Document.h 负责组合上述类型，但不再自行定义 Vec2、Route 或视图元素。Model.cpp 不实现 Dimension 或通用名称规范。此次分解只移动既有声明和实现，不改变模型语义、ID、持久化格式、公式 AST 或宏调用行为；验收以现有全部单元测试、Release 后 Debug 构建及应用/profile 目标构建为准，不增加无运行时变化的性能基线。
 
 ### 3.2 稳定标识
 

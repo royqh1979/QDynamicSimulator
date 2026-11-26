@@ -1,44 +1,13 @@
 #pragma once
 
+#include <core/Element.h>
+#include <core/ElementRange.h>
+
 #include <cstddef>
-#include <cstdint>
 #include <string>
 #include <vector>
 
 namespace qds::core {
-
-using EntityId = std::uint64_t;
-using PortId = std::uint32_t;
-
-enum class ElementKind {
-    Stock,
-    Flow,
-    Auxiliary,
-    Constant,
-    Data,
-    Connector,
-    Cloud,
-    Comment
-};
-
-class DocumentElement
-{
-public:
-    virtual ~DocumentElement() = default;
-    EntityId id() const { return m_id; }
-    ElementKind kind() const { return m_kind; }
-
-protected:
-    DocumentElement(EntityId id, ElementKind kind)
-        : m_id(id)
-        , m_kind(kind)
-    {
-    }
-
-private:
-    EntityId m_id;
-    ElementKind m_kind;
-};
 
 struct ArrayElementEquation {
     std::vector<std::size_t> indices;
@@ -94,93 +63,7 @@ public:
     FlowEndpoints endpoints;
 };
 
-class ViewElement : public DocumentElement
-{
-protected:
-    ViewElement(EntityId id, ElementKind kind)
-        : DocumentElement(id, kind)
-    {
-    }
-};
-
-class Connector final : public ViewElement
-{
-public:
-    explicit Connector(EntityId id)
-        : ViewElement(id, ElementKind::Connector)
-    {
-    }
-
-    EntityId from = 0;
-    EntityId to = 0;
-};
-
-class Cloud final : public ViewElement
-{
-public:
-    explicit Cloud(EntityId id)
-        : ViewElement(id, ElementKind::Cloud)
-    {
-    }
-};
-
-class Comment final : public ViewElement
-{
-public:
-    explicit Comment(EntityId id)
-        : ViewElement(id, ElementKind::Comment)
-    {
-    }
-
-    std::string content;
-};
-
-struct DimensionElement {
-    std::string displayName;
-    std::string nameKey;
-
-    bool operator==(const DimensionElement &other) const
-    {
-        return displayName == other.displayName && nameKey == other.nameKey;
-    }
-};
-
-struct Dimension {
-    std::string displayName;
-    std::string nameKey;
-    std::vector<DimensionElement> elements;
-
-    const DimensionElement *findElement(const std::string &name) const;
-    bool operator==(const Dimension &other) const
-    {
-        return displayName == other.displayName && nameKey == other.nameKey && elements == other.elements;
-    }
-};
-
-struct MacroParameter {
-    std::string displayName;
-    std::string nameKey;
-    std::string defaultEquation;
-};
-
-struct MacroDefinition {
-    std::string displayName;
-    std::string nameKey;
-    std::vector<MacroParameter> parameters;
-    std::string equation;
-
-    std::size_t requiredArguments() const
-    {
-        std::size_t count = parameters.size();
-        while (count > 0 && !parameters[count - 1].defaultEquation.empty())
-            --count;
-        return count;
-    }
-};
-
 class Document;
-template <typename T>
-class ElementRange;
 using ModelRange = ElementRange<ModelElement>;
 
 class Model
@@ -197,8 +80,5 @@ public:
 private:
     const Document &m_document;
 };
-
-std::string normalizeIdentifier(const std::string &name);
-std::string trimDisplayName(const std::string &name);
 
 } // namespace qds::core

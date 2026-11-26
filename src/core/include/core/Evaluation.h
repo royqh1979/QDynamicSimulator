@@ -1,5 +1,6 @@
 #pragma once
 
+#include <core/Dimension.h>
 #include <core/Formula.h>
 
 #include <functional>
