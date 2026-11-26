@@ -2,6 +2,8 @@
 
 #include <core/Identifier.h>
 
+#include <QSet>
+
 #include <algorithm>
 #include <cmath>
 #include <unordered_set>
@@ -134,7 +136,6 @@ Document::Document(Document &&other) noexcept
     , m_dimensions(std::move(other.m_dimensions))
     , m_dimensionIndex(std::move(other.m_dimensionIndex))
     , m_macros(std::move(other.m_macros))
-    , m_macroNames(std::move(other.m_macroNames))
     , m_nextNameSuffix(std::move(other.m_nextNameSuffix))
     , m_nextId(other.m_nextId)
     , m_model(*this)
@@ -155,7 +156,6 @@ Document &Document::operator=(Document &&other) noexcept
     m_dimensions = std::move(other.m_dimensions);
     m_dimensionIndex = std::move(other.m_dimensionIndex);
     m_macros = std::move(other.m_macros);
-    m_macroNames = std::move(other.m_macroNames);
     m_nextNameSuffix = std::move(other.m_nextNameSuffix);
     m_nextId = other.m_nextId;
     m_diagram.m_positions = std::move(other.m_diagram.m_positions);
@@ -221,7 +221,7 @@ bool Document::defineDimension(const QString &displayName, const QVector<QString
 bool Document::defineDimensionData(Dimension dimension)
 {
     if (dimension.nameKey.isEmpty() || dimension.elements.isEmpty() || m_nameIndex.count(dimension.nameKey)
-        || m_dimensionIndex.count(dimension.nameKey) || m_macroNames.contains(dimension.nameKey))
+        || m_dimensionIndex.count(dimension.nameKey) || hasMacroName(dimension.nameKey))
         return false;
     const bool numbered = dimension.elements.front().nameKey.isEmpty();
     QSet<QString> elementNames;
@@ -238,7 +238,7 @@ bool Document::defineDimensionData(Dimension dimension)
     return true;
 }
 
-bool Document::defineMacro(MacroDefinition macro)
+bool Document::prepareMacro(MacroDefinition &macro) const
 {
     macro.displayName = trimDisplayName(macro.displayName);
     macro.nameKey = normalizeIdentifier(macro.displayName);
@@ -260,24 +260,52 @@ bool Document::defineMacro(MacroDefinition macro)
             hasDefault = true;
         }
     }
-    const std::size_t required = macro.requiredArguments();
-    for (const MacroDefinition &existing : m_macros) {
-        if (existing.nameKey == macro.nameKey && required <= existing.parameters.size()
-            && existing.requiredArguments() <= macro.parameters.size())
-            return false;
-    }
-    m_macroNames.insert(macro.nameKey);
-    m_macros.push_back(std::move(macro));
     return true;
 }
 
-const MacroDefinition *Document::findMacro(const QString &name, std::size_t argumentCount) const
+bool Document::hasMacroName(const QString &nameKey) const
+{
+    const auto found = m_macros.lowerBound({normalizeIdentifier(nameKey), 0, 1});
+    return found != m_macros.end() && found.key().nameKey == normalizeIdentifier(nameKey);
+}
+
+bool Document::defineMacro(MacroDefinition macro)
+{
+    if (!prepareMacro(macro))
+        return false;
+    const int required = macro.requiredArguments();
+    auto existing = m_macros.lowerBound({macro.nameKey, 0, 1});
+    while (existing != m_macros.end() && existing.key().nameKey == macro.nameKey) {
+        const MacroDefinition &candidate = existing.value();
+        if (required <= candidate.parameters.size() && candidate.requiredArguments() <= macro.parameters.size())
+            return false;
+        ++existing;
+    }
+    m_macros.insert(macro.signature(), std::move(macro));
+    return true;
+}
+
+bool Document::setMacro(MacroDefinition macro)
+{
+    if (!prepareMacro(macro))
+        return false;
+    const auto found = m_macros.find(macro.signature());
+    if (found == m_macros.end())
+        return false;
+    found.value() = std::move(macro);
+    return true;
+}
+
+const MacroDefinition *Document::findMacro(const QString &name, int argumentCount, int outputCount) const
 {
     const QString key = normalizeIdentifier(name);
-    for (const MacroDefinition &macro : m_macros) {
-        if (macro.nameKey == key && argumentCount >= macro.requiredArguments()
+    auto found = m_macros.lowerBound({key, 0, outputCount});
+    while (found != m_macros.end() && found.key().nameKey == key) {
+        const MacroDefinition &macro = found.value();
+        if (macro.signature().outputCount == outputCount && argumentCount >= macro.requiredArguments()
             && argumentCount <= macro.parameters.size())
             return &macro;
+        ++found;
     }
     return nullptr;
 }
@@ -291,7 +319,7 @@ EntityId Document::insert(std::unique_ptr<T> element, Vec2 position)
         return 0;
     if (auto *model = dynamic_cast<ModelElement *>(element.get())) {
         if (model->nameKey().isEmpty() || m_nameIndex.count(model->nameKey()) || m_dimensionIndex.count(model->nameKey())
-            || m_macroNames.contains(model->nameKey()))
+            || hasMacroName(model->nameKey()))
             return 0;
         m_nameIndex[model->nameKey()] = id;
     }
@@ -436,7 +464,7 @@ bool Document::restore(const ElementData &data)
         return false;
     const QString normalized = normalizeIdentifier(data.displayName);
     if (data.kind <= ElementKind::Data && (normalized.isEmpty() || m_nameIndex.count(normalized)
-            || m_dimensionIndex.count(normalized) || m_macroNames.contains(normalized)
+            || m_dimensionIndex.count(normalized) || hasMacroName(normalized)
             || !validArrayData(data.dimensions, data.elementEquations, data.equation)))
         return false;
     if (!validFontData(data.kind, data.font))
@@ -546,7 +574,7 @@ bool Document::validRename(EntityId id, const QString &displayName) const
         return false;
     const auto existing = m_nameIndex.find(normalized);
     return (existing == m_nameIndex.end() || existing.value() == id) && !m_dimensionIndex.count(normalized)
-        && !m_macroNames.contains(normalized);
+        && !hasMacroName(normalized);
 }
 
 bool Document::rename(EntityId id, const QString &displayName)
@@ -712,7 +740,6 @@ void Document::clear()
     m_dimensions.clear();
     m_dimensionIndex.clear();
     m_macros.clear();
-    m_macroNames.clear();
     m_nextNameSuffix.clear();
     m_diagram.m_positions.clear();
     m_diagram.m_routes.clear();
@@ -816,7 +843,7 @@ QString Document::uniqueName(ElementKind kind)
     for (;;) {
         const QString candidate = base + QString::number(suffix++);
         if (!m_nameIndex.count(normalizeIdentifier(candidate)) && !m_dimensionIndex.count(normalizeIdentifier(candidate))
-            && !m_macroNames.contains(normalizeIdentifier(candidate)))
+            && !hasMacroName(normalizeIdentifier(candidate)))
             return candidate;
     }
 }

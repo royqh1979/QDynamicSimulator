@@ -8,7 +8,7 @@
 #include <memory>
 #include <optional>
 #include <QHash>
-#include <QSet>
+#include <QMap>
 #include <QString>
 #include <unordered_map>
 #include <unordered_set>
@@ -78,8 +78,9 @@ public:
     bool defineDimension(const QString &displayName, std::size_t size);
     bool defineDimension(const QString &displayName, const QVector<QString> &elements);
     bool defineMacro(MacroDefinition macro);
-    const MacroDefinition *findMacro(const QString &name, std::size_t argumentCount) const;
-    const QVector<MacroDefinition> &macros() const { return m_macros; }
+    bool setMacro(MacroDefinition macro);
+    const MacroDefinition *findMacro(const QString &name, int argumentCount, int outputCount = 1) const;
+    const QMap<MacroSignature, MacroDefinition> &macros() const { return m_macros; }
 
     DocumentRange elements() const { return DocumentRange(m_elements); }
     const Model &model() const { return m_model; }
@@ -129,6 +130,8 @@ private:
     bool validConnectorConnection(EntityId ignoredId, EntityId from, EntityId to) const;
     static bool validFontData(ElementKind kind, const FontStyle &font);
     static bool validRouteData(ElementKind kind, const Route &route);
+    bool prepareMacro(MacroDefinition &macro) const;
+    bool hasMacroName(const QString &nameKey) const;
     bool validArrayData(const QVector<QString> &dimensions,
         const QVector<ArrayElementEquation> &elementEquations, const QString &equation) const;
     QString uniqueName(ElementKind kind);
@@ -138,8 +141,7 @@ private:
     QHash<QString, EntityId> m_nameIndex;
     QVector<Dimension> m_dimensions;
     QHash<QString, int> m_dimensionIndex;
-    QVector<MacroDefinition> m_macros;
-    QSet<QString> m_macroNames;
+    QMap<MacroSignature, MacroDefinition> m_macros;
     std::unordered_map<ElementKind, std::uint64_t> m_nextNameSuffix;
     EntityId m_nextId = 1;
     Model m_model;

@@ -1,6 +1,9 @@
 #include <core/formula/Evaluation.h>
 
 #include <core/formula/Function.h>
+#include <core/Macro.h>
+
+#include <QHash>
 
 #include <algorithm>
 #include <cmath>
@@ -80,6 +83,22 @@ bool subscriptIndex(double value, std::size_t size, std::size_t &index)
     return true;
 }
 
+class MacroFrameGuard
+{
+public:
+    explicit MacroFrameGuard(QVector<QHash<QString, Value>> &frames)
+        : m_frames(frames)
+    {
+    }
+    ~MacroFrameGuard() { m_frames.pop_back(); }
+
+    MacroFrameGuard(const MacroFrameGuard &) = delete;
+    MacroFrameGuard &operator=(const MacroFrameGuard &) = delete;
+
+private:
+    QVector<QHash<QString, Value>> &m_frames;
+};
+
 class Evaluator
 {
 public:
@@ -149,8 +168,15 @@ private:
         return success(std::move(*value));
     }
 
+    bool hasLocal(const QString &nameKey) const
+    {
+        return !m_macroFrames.isEmpty() && m_macroFrames.back().contains(nameKey);
+    }
+
     EvaluationResult reference(const ReferenceNode &node)
     {
+        if (hasLocal(node.nameKey()))
+            return success(m_macroFrames.back().value(node.nameKey()));
         if (const FunctionSignature *signature = findFunctionSignature(node.nameKey());
             signature && signature->minArguments == 0 && signature->maxArguments == 0) {
             if (node.nameKey() == "self")
@@ -451,25 +477,36 @@ private:
                     dimensionName = m_context.scope.dimensions[dimensionPosition->position() - 1];
                     resolved = true;
                 } else if (const auto *referenceNode = dynamic_cast<const ReferenceNode *>(indexNode)) {
-                    const Dimension *dimension = m_context.readDimension
-                        ? m_context.readDimension(input->dimensions[position]) : nullptr;
-                    if (!dimension)
-                        return failure(indexNode, "Unknown array dimension: " + input->dimensions[position]);
-                    if (referenceNode->nameKey() == dimension->nameKey) {
-                        dimensionName = dimension->nameKey;
-                        resolved = true;
-                    } else if (const DimensionElement *element = dimension->findElement(referenceNode->nameKey())) {
-                        selection.begin = selection.end = static_cast<std::size_t>(element - dimension->elements.data());
-                        resolved = true;
-                    } else if (referenceNode->nameKey().contains(QChar('.'))) {
+                    if (hasLocal(referenceNode->nameKey())) {
                         EvaluationResult value = reference(*referenceNode);
                         if (!value.value)
                             return value;
-                        const double number = *std::get_if<double>(&*value.value);
-                        if (!subscriptIndex(number, input->shape[position], selection.begin))
+                        const auto *number = std::get_if<double>(&*value.value);
+                        if (!number || !subscriptIndex(*number, input->shape[position], selection.begin))
                             return success(0.0);
                         selection.end = selection.begin;
                         resolved = true;
+                    } else {
+                        const Dimension *dimension = m_context.readDimension
+                            ? m_context.readDimension(input->dimensions[position]) : nullptr;
+                        if (!dimension)
+                            return failure(indexNode, "Unknown array dimension: " + input->dimensions[position]);
+                        if (referenceNode->nameKey() == dimension->nameKey) {
+                            dimensionName = dimension->nameKey;
+                            resolved = true;
+                        } else if (const DimensionElement *element = dimension->findElement(referenceNode->nameKey())) {
+                            selection.begin = selection.end = static_cast<std::size_t>(element - dimension->elements.data());
+                            resolved = true;
+                        } else if (referenceNode->nameKey().contains(QChar('.'))) {
+                            EvaluationResult value = reference(*referenceNode);
+                            if (!value.value)
+                                return value;
+                            const double number = *std::get_if<double>(&*value.value);
+                            if (!subscriptIndex(number, input->shape[position], selection.begin))
+                                return success(0.0);
+                            selection.end = selection.begin;
+                            resolved = true;
+                        }
                     }
                 }
                 if (resolved && !dimensionName.isEmpty()) {
@@ -644,11 +681,50 @@ private:
         return success(static_cast<double>(order[rankIndex] + 1));
     }
 
+    EvaluationResult invokeMacro(const CallNode &node, const MacroEvaluation &macro)
+    {
+        if (!macro.definition || !macro.body || !macro.defaults)
+            return failure(&node, "Invalid macro definition");
+        if (m_macroFrames.size() >= 64)
+            return failure(&node, "Macro recursion depth limit exceeded");
+        if (macro.defaults->size() < static_cast<std::size_t>(macro.definition->parameters.size()))
+            return failure(&node, "Invalid macro default arguments");
+
+        QVector<Value> arguments;
+        arguments.reserve(node.argumentCount());
+        for (int position = 0; position < node.argumentCount(); ++position) {
+            EvaluationResult value = evaluate(node.argument(position));
+            if (!value.value)
+                return value;
+            arguments.push_back(std::move(*value.value));
+        }
+
+        m_macroFrames.push_back({});
+        MacroFrameGuard guard(m_macroFrames);
+        for (int index = 0; index < macro.definition->parameters.size(); ++index) {
+            Value value = index < arguments.size() ? std::move(arguments[index]) : Value();
+            if (index >= arguments.size()) {
+                EvaluationResult evaluated = evaluate(macro.defaults->at(index).root());
+                if (!evaluated.value)
+                    return evaluated;
+                value = std::move(*evaluated.value);
+            }
+            m_macroFrames.back().insert(macro.definition->parameters[index].nameKey, std::move(value));
+        }
+        return evaluate(macro.body);
+    }
+
     EvaluationResult call(const CallNode &node)
     {
         const FunctionSignature *signature = findFunctionSignature(node.nameKey());
-        if (!signature)
-            return failure(&node, "Function is not supported: " + node.nameKey());
+        if (!signature) {
+            if (!m_context.readMacro)
+                return failure(&node, "Unknown function: " + node.nameKey());
+            const auto macro = m_context.readMacro(node.nameKey(), node.argumentCount(), 1);
+            if (!macro)
+                return failure(&node, "Unknown function: " + node.nameKey());
+            return invokeMacro(node, *macro);
+        }
         if (node.argumentCount() < signature->minArguments || node.argumentCount() > signature->maxArguments)
             return failure(&node, "Invalid argument count for function: " + node.nameKey());
         if (signature->category == FunctionCategory::Time || node.nameKey() == "pi" || node.nameKey() == "inf")
@@ -702,6 +778,7 @@ private:
         });
     }
 
+    QVector<QHash<QString, Value>> m_macroFrames;
     const EvaluationContext &m_context;
 };
 

@@ -2,7 +2,7 @@
 
 创建时间：2026-11-26 11:30:29 +0800
 
-状态：不可变纯语法 AST 阶段已实现并通过 profile 与 Release/Debug 全量回归，等待审核
+状态：Document 封装与不可变 AST 阶段已完成并合并；后续 Formula/Analysis 归属由 2026-11-26-formula-analysis-restructure.md 继续记录
 
 ## 1. 背景与已经确定的约束
 

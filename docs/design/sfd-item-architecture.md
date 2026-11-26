@@ -63,7 +63,7 @@ Document
 | MacroDefinition | 是 | 否 | 否 | Document 级自定义函数定义，不分配 EntityId |
 | Workspace | 是 | 否 | 否 | 当前文档的视口状态，不是模型语义 |
 
-因此，“不属于 Model”不等于“不属于 Document”。Arrow、Cloud、Comment 都由 Document 持有，参与统一 ID、撤销/重做和持久化，但不进入仿真变量索引。Dimensions 和 Macros 同样属于 Document；XMILE 中 macro 与 model 是根级并列定义。宏体和默认参数的 AST 属于 ModelAnalysis，不属于 Document。
+因此，“不属于 Model”不等于“不属于 Document”。Arrow、Cloud、Comment 都由 Document 持有，参与统一 ID、撤销/重做和持久化，但不进入仿真变量索引。Dimensions 和 Macros 同样属于 Document；XMILE 中 macro 与 model 是根级并列定义。宏体、默认参数及其它定义的原始文本和不可变 AST 统一封装为 Formula，由对应 Document 定义持有；AnalysisReport 不复制这些 AST。
 
 - 当前 `core::Model` 只是模型变量集合的只读门面，不是脱离 Document 即可独立求值的完整语义模型；公式分析和求值使用 Document 级上下文，同时访问变量、Dimensions 和 Macros。
 - `DiagramDefinition` 描述 SFD 布局及视图对象。
@@ -195,7 +195,7 @@ XMILE 3.2.2 的完整等价规则由 I/O 导入适配器处理，包括 Unicode 
 Document 集中维护唯一的名称索引：
 
 ```cpp
-std::unordered_map<std::string, EntityId> m_nameIndex; // nameKey -> ModelElement
+QHash<QString, EntityId> m_nameIndex; // nameKey -> ModelElement
 ```
 
 由于 nameKey 在当前模型内唯一，索引值是单个 EntityId，不使用 multimap。`findByName` 先规范化输入再执行平均 O(1) 查找；自动命名也通过该索引检查候选名称，不遍历全部变量。该索引是语义命名和公式解析所需的基础索引，不属于“经过 profile 后才引入”的 Stock 流入/流出派生索引。
