@@ -116,15 +116,15 @@ void PropertyPanel::refresh()
     m_unitEdit->setEnabled(variable != nullptr);
     m_commentEdit->setEnabled(variable != nullptr || comment != nullptr);
     m_commentLabel->setText(comment ? tr("Content") : tr("Comment"));
-    m_nameEdit->setText(variable ? QString::fromStdString(variable->displayName) : QString());
-    m_equationEdit->setText(variable ? QString::fromStdString(variable->equation) : QString());
+    m_nameEdit->setText(variable ? QString::fromStdString(variable->displayName()) : QString());
+    m_equationEdit->setText(variable ? QString::fromStdString(variable->equation()) : QString());
     QStringList completionWords;
     for (const qds::core::ModelElement &entry : m_controller->document().model().elements())
-        completionWords.append(QString::fromStdString(entry.displayName));
+        completionWords.append(QString::fromStdString(entry.displayName()));
     m_equationEdit->setCompletionWords(completionWords);
-    m_unitEdit->setText(variable ? QString::fromStdString(variable->unit) : QString());
-    m_commentEdit->setText(variable ? QString::fromStdString(variable->comment)
-        : comment ? QString::fromStdString(comment->content) : QString());
+    m_unitEdit->setText(variable ? QString::fromStdString(variable->unit()) : QString());
+    m_commentEdit->setText(variable ? QString::fromStdString(variable->comment())
+        : comment ? QString::fromStdString(comment->content()) : QString());
     QFont font = QApplication::font();
     const std::vector<qds::core::EntityId> selection = m_scene->selectedElementIds();
     if (selection.size() == 1) {

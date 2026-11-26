@@ -3,6 +3,7 @@
 #include <core/Identifier.h>
 
 #include <algorithm>
+#include <cmath>
 #include <unordered_set>
 
 namespace qds::core {
@@ -164,7 +165,7 @@ Document &Document::operator=(Document &&other) noexcept
     return *this;
 }
 
-DocumentElement *Document::find(EntityId id)
+DocumentElement *Document::findMutable(EntityId id)
 {
     const auto it = m_elements.find(id);
     return it == m_elements.end() ? nullptr : it->second.get();
@@ -286,9 +287,10 @@ EntityId Document::insert(std::unique_ptr<T> element, Vec2 position)
     if (id == 0 || m_elements.count(id))
         return 0;
     if (auto *model = dynamic_cast<ModelElement *>(element.get())) {
-        if (model->nameKey.empty() || m_nameIndex.count(model->nameKey) || m_dimensionIndex.count(model->nameKey) || m_macroNames.count(model->nameKey))
+        if (model->nameKey().empty() || m_nameIndex.count(model->nameKey()) || m_dimensionIndex.count(model->nameKey())
+            || m_macroNames.count(model->nameKey()))
             return 0;
-        m_nameIndex[model->nameKey] = id;
+        m_nameIndex[model->nameKey()] = id;
     }
     m_elements.emplace(id, std::move(element));
     m_diagram.m_positions[id] = position;
@@ -307,26 +309,19 @@ EntityId Document::createVariable(ElementKind kind, Vec2 position)
         && kind != ElementKind::Data)
         return 0;
     auto variable = std::make_unique<Variable>(m_nextId++, kind);
-    variable->displayName = uniqueName(kind);
-    variable->nameKey = normalizeIdentifier(variable->displayName);
+    const std::string name = uniqueName(kind);
+    variable->setName(name, normalizeIdentifier(name));
     return insert(std::move(variable), position);
 }
 
 EntityId Document::createFlow(EntityId from, EntityId to)
 {
-    if (from == to || !validFlowEndpoint(from) || !validFlowEndpoint(to))
+    if (!validFlowConnection(0, from, to))
         return 0;
-    for (const DocumentElement &element : elements()) {
-        if (element.kind() == ElementKind::Flow) {
-            const Flow &flow = static_cast<const Flow &>(element);
-            if (flow.endpoints.from == from && flow.endpoints.to == to)
-                return 0;
-        }
-    }
     auto flow = std::make_unique<Flow>(m_nextId++);
-    flow->displayName = uniqueName(ElementKind::Flow);
-    flow->nameKey = normalizeIdentifier(flow->displayName);
-    flow->endpoints = {from, to};
+    const std::string name = uniqueName(ElementKind::Flow);
+    flow->setName(name, normalizeIdentifier(name));
+    flow->setEndpoints({from, to});
     const Vec2 source = diagram().position(from);
     const Vec2 target = diagram().position(to);
     return insert(std::move(flow), {(source.x + target.x) / 2.0, (source.y + target.y) / 2.0});
@@ -334,18 +329,10 @@ EntityId Document::createFlow(EntityId from, EntityId to)
 
 EntityId Document::createConnector(EntityId from, EntityId to)
 {
-    if (!validConnectorEndpoints(from, to))
+    if (!validConnectorConnection(0, from, to))
         return 0;
-    for (const DocumentElement &element : elements()) {
-        if (element.kind() == ElementKind::Connector) {
-            const Connector &connector = static_cast<const Connector &>(element);
-            if (connector.from == from && connector.to == to)
-                return 0;
-        }
-    }
     auto connector = std::make_unique<Connector>(m_nextId++);
-    connector->from = from;
-    connector->to = to;
+    connector->setEndpoints(from, to);
     const EntityId id = insert(std::move(connector), {});
     if (id != 0)
         m_diagram.m_routes[id] = defaultConnectorRoute();
@@ -360,7 +347,7 @@ EntityId Document::createCloud(Vec2 position)
 EntityId Document::createComment(const std::string &text, Vec2 position)
 {
     auto comment = std::make_unique<Comment>(m_nextId++);
-    comment->content = text;
+    comment->setContent(text);
     return insert(std::move(comment), position);
 }
 
@@ -377,11 +364,11 @@ std::vector<EntityId> Document::cascade(EntityId id) const
         for (const DocumentElement &element : elements()) {
             if (element.kind() == ElementKind::Flow) {
                 const Flow &flow = static_cast<const Flow &>(element);
-                if (flow.endpoints.from == current || flow.endpoints.to == current)
+                if (flow.endpoints().from == current || flow.endpoints().to == current)
                     pending.push_back(element.id());
             } else if (element.kind() == ElementKind::Connector) {
                 const Connector &connector = static_cast<const Connector &>(element);
-                if (connector.from == current || connector.to == current)
+                if (connector.from() == current || connector.to() == current)
                     pending.push_back(element.id());
             }
         }
@@ -399,8 +386,8 @@ std::vector<EntityId> Document::remove(EntityId id)
 {
     const std::vector<EntityId> removed = cascade(id);
     for (EntityId removedId : removed) {
-        if (auto *model = dynamic_cast<ModelElement *>(find(removedId)))
-            m_nameIndex.erase(model->nameKey);
+        if (auto *model = dynamic_cast<ModelElement *>(findMutable(removedId)))
+            m_nameIndex.erase(model->nameKey());
         m_elements.erase(removedId);
         m_diagram.m_positions.erase(removedId);
         m_diagram.m_routes.erase(removedId);
@@ -421,20 +408,20 @@ std::optional<ElementData> Document::capture(EntityId id) const
     data.route = diagram().route(id);
     data.font = diagram().fontStyle(id);
     if (auto *model = dynamic_cast<const ModelElement *>(element)) {
-        data.displayName = model->displayName;
-        data.equation = model->equation;
-        data.dimensions = model->dimensions;
-        data.elementEquations = model->elementEquations;
-        data.unit = model->unit;
-        data.comment = model->comment;
+        data.displayName = model->displayName();
+        data.equation = model->equation();
+        data.dimensions = model->dimensions();
+        data.elementEquations = model->elementEquations();
+        data.unit = model->unit();
+        data.comment = model->comment();
     }
     if (auto *comment = dynamic_cast<const Comment *>(element))
-        data.content = comment->content;
+        data.content = comment->content();
     if (auto *flow = dynamic_cast<const Flow *>(element))
-        data.flowEndpoints = flow->endpoints;
+        data.flowEndpoints = flow->endpoints();
     if (auto *connector = dynamic_cast<const Connector *>(element)) {
-        data.from = connector->from;
-        data.to = connector->to;
+        data.from = connector->from();
+        data.to = connector->to();
     }
     return data;
 }
@@ -449,23 +436,23 @@ bool Document::restore(const ElementData &data)
             || m_dimensionIndex.count(normalized) || m_macroNames.count(normalized)
             || !validArrayData(data.dimensions, data.elementEquations, data.equation)))
         return false;
-    const bool fontSupported = data.kind <= ElementKind::Data || data.kind == ElementKind::Comment;
-    if (data.font.pointSize < 0 || (!fontSupported && data.font != FontStyle {}))
+    if (!validFontData(data.kind, data.font))
+        return false;
+    if ((data.kind == ElementKind::Flow || data.kind == ElementKind::Connector)
+        && !validRouteData(data.kind, data.route))
         return false;
     std::unique_ptr<DocumentElement> element;
     if (data.kind == ElementKind::Flow) {
-        if (!validFlowEndpoint(data.flowEndpoints.from) || !validFlowEndpoint(data.flowEndpoints.to)
-            || data.flowEndpoints.from == data.flowEndpoints.to)
+        if (!validFlowConnection(id, data.flowEndpoints.from, data.flowEndpoints.to))
             return false;
         auto flow = std::make_unique<Flow>(id);
-        flow->endpoints = data.flowEndpoints;
+        flow->setEndpoints(data.flowEndpoints);
         element = std::move(flow);
     } else if (data.kind == ElementKind::Connector) {
-        if (!validConnectorEndpoints(data.from, data.to))
+        if (!validConnectorConnection(id, data.from, data.to))
             return false;
         auto connector = std::make_unique<Connector>(id);
-        connector->from = data.from;
-        connector->to = data.to;
+        connector->setEndpoints(data.from, data.to);
         element = std::move(connector);
     } else if (data.kind == ElementKind::Cloud) {
         element = std::make_unique<Cloud>(id);
@@ -477,21 +464,18 @@ bool Document::restore(const ElementData &data)
         return false;
     }
     if (auto *model = dynamic_cast<ModelElement *>(element.get())) {
-        model->displayName = trimDisplayName(data.displayName);
-        model->nameKey = normalizeIdentifier(model->displayName);
-        model->equation = data.equation;
-        model->dimensions = data.dimensions;
-        for (std::string &name : model->dimensions)
+        const std::string displayName = trimDisplayName(data.displayName);
+        model->setName(displayName, normalizeIdentifier(displayName));
+        std::vector<std::string> dimensions = data.dimensions;
+        for (std::string &name : dimensions)
             name = normalizeIdentifier(name);
-        model->elementEquations = data.elementEquations;
-        model->unit = data.unit;
-        model->comment = data.comment;
+        model->setFormulaData(data.equation, std::move(dimensions), data.elementEquations);
+        model->setUnit(data.unit);
+        model->setComment(data.comment);
     }
     if (auto *comment = dynamic_cast<Comment *>(element.get()))
-        comment->content = data.content;
+        comment->setContent(data.content);
     Route route = data.route;
-    if (data.kind == ElementKind::Flow && route.mode == RouteMode::Orthogonal)
-        return false;
     if (data.kind == ElementKind::Connector && !route.manual && route.mode == RouteMode::Bezier) {
         const bool locked = route.locked;
         route = defaultConnectorRoute();
@@ -507,98 +491,108 @@ bool Document::restore(const ElementData &data)
 
 bool Document::apply(const ElementData &data)
 {
-    DocumentElement *element = find(data.id);
+    DocumentElement *element = findMutable(data.id);
     if (!element)
         return restore(data);
-    if (element->kind() != data.kind)
+    if (element->kind() != data.kind || !validFontData(data.kind, data.font))
         return false;
+    if ((data.kind == ElementKind::Flow || data.kind == ElementKind::Connector)
+        && !validRouteData(data.kind, data.route))
+        return false;
+    if (dynamic_cast<ModelElement *>(element)
+        && (!validArrayData(data.dimensions, data.elementEquations, data.equation) || !validRename(data.id, data.displayName)))
+        return false;
+    if (dynamic_cast<Flow *>(element)
+        && !validFlowConnection(data.id, data.flowEndpoints.from, data.flowEndpoints.to))
+        return false;
+    if (dynamic_cast<Connector *>(element) && !validConnectorConnection(data.id, data.from, data.to))
+        return false;
+
     if (auto *model = dynamic_cast<ModelElement *>(element)) {
-        if (!validArrayData(data.dimensions, data.elementEquations, data.equation) || !rename(data.id, data.displayName))
-            return false;
-        model->equation = data.equation;
-        model->dimensions = data.dimensions;
-        for (std::string &name : model->dimensions)
+        rename(data.id, data.displayName);
+        std::vector<std::string> dimensions = data.dimensions;
+        for (std::string &name : dimensions)
             name = normalizeIdentifier(name);
-        model->elementEquations = data.elementEquations;
-        model->unit = data.unit;
-        model->comment = data.comment;
+        model->setFormulaData(data.equation, std::move(dimensions), data.elementEquations);
+        model->setUnit(data.unit);
+        model->setComment(data.comment);
     }
     if (auto *comment = dynamic_cast<Comment *>(element))
-        comment->content = data.content;
+        comment->setContent(data.content);
     if (auto *flow = dynamic_cast<Flow *>(element)) {
-        if (flow->endpoints != data.flowEndpoints
-            && !reconnectFlow(data.id, data.flowEndpoints.from, data.flowEndpoints.to))
-            return false;
+        if (flow->endpoints() != data.flowEndpoints)
+            reconnectFlow(data.id, data.flowEndpoints.from, data.flowEndpoints.to);
     }
     if (auto *connector = dynamic_cast<Connector *>(element)) {
-        if ((connector->from != data.from || connector->to != data.to)
-            && !reconnectConnector(data.id, data.from, data.to))
-            return false;
+        if (connector->from() != data.from || connector->to() != data.to)
+            reconnectConnector(data.id, data.from, data.to);
     }
     setPosition(data.id, data.position);
-    if (!setFontStyle(data.id, data.font))
-        return false;
+    setFontStyle(data.id, data.font);
     if (data.kind == ElementKind::Flow || data.kind == ElementKind::Connector)
-        return setRoute(data.id, data.route);
+        setRoute(data.id, data.route);
     return true;
+}
+
+bool Document::validRename(EntityId id, const std::string &displayName) const
+{
+    if (!dynamic_cast<const ModelElement *>(find(id)))
+        return false;
+    const std::string normalized = normalizeIdentifier(trimDisplayName(displayName));
+    if (normalized.empty())
+        return false;
+    const auto existing = m_nameIndex.find(normalized);
+    return (existing == m_nameIndex.end() || existing->second == id) && !m_dimensionIndex.count(normalized)
+        && !m_macroNames.count(normalized);
 }
 
 bool Document::rename(EntityId id, const std::string &displayName)
 {
-    auto *model = dynamic_cast<ModelElement *>(find(id));
-    if (!model)
+    if (!validRename(id, displayName))
         return false;
+    auto *model = dynamic_cast<ModelElement *>(findMutable(id));
     const std::string trimmed = trimDisplayName(displayName);
     const std::string normalized = normalizeIdentifier(trimmed);
-    if (normalized.empty())
-        return false;
-    const auto existing = m_nameIndex.find(normalized);
-    if ((existing != m_nameIndex.end() && existing->second != id) || m_dimensionIndex.count(normalized)
-        || m_macroNames.count(normalized))
-        return false;
-    if (model->displayName == trimmed)
+    if (model->displayName() == trimmed)
         return true;
-    const std::string oldName = model->displayName;
+    const std::string oldName = model->displayName();
     updateReferences(id, oldName, trimmed);
-    m_nameIndex.erase(model->nameKey);
-    model->displayName = trimmed;
-    model->nameKey = normalized;
+    m_nameIndex.erase(model->nameKey());
+    model->setName(trimmed, normalized);
     m_nameIndex[normalized] = id;
     return true;
 }
 
 bool Document::setEquation(EntityId id, const std::string &equation)
 {
-    auto *model = dynamic_cast<ModelElement *>(find(id));
+    auto *model = dynamic_cast<ModelElement *>(findMutable(id));
     if (!model)
         return false;
-    model->equation = equation;
-    model->elementEquations.clear();
+    model->setEquation(equation);
     return true;
 }
 
 bool Document::setDimensions(EntityId id, const std::vector<std::string> &dimensions)
 {
-    auto *model = dynamic_cast<ModelElement *>(find(id));
+    auto *model = dynamic_cast<ModelElement *>(findMutable(id));
     if (!model)
         return false;
     std::vector<std::string> keys;
     keys.reserve(dimensions.size());
     for (const std::string &name : dimensions)
         keys.push_back(normalizeIdentifier(name));
-    if (!validArrayData(keys, {}, model->equation))
+    if (!validArrayData(keys, {}, model->equation()))
         return false;
-    model->dimensions = std::move(keys);
-    model->elementEquations.clear();
+    model->setDimensions(std::move(keys));
     return true;
 }
 
 bool Document::setElementEquation(EntityId id, const std::vector<std::size_t> &indices, const std::string &equation)
 {
-    auto *model = dynamic_cast<ModelElement *>(find(id));
+    auto *model = dynamic_cast<ModelElement *>(findMutable(id));
     if (!model)
         return false;
-    std::vector<ArrayElementEquation> updated = model->elementEquations;
+    std::vector<ArrayElementEquation> updated = model->elementEquations();
     const auto found = std::find_if(updated.begin(), updated.end(), [&indices](const ArrayElementEquation &entry) {
         return entry.indices == indices;
     });
@@ -606,37 +600,36 @@ bool Document::setElementEquation(EntityId id, const std::vector<std::size_t> &i
         updated.push_back({indices, equation});
     else
         found->equation = equation;
-    if (!validArrayData(model->dimensions, updated, {}))
+    if (!validArrayData(model->dimensions(), updated, {}))
         return false;
-    model->equation.clear();
-    model->elementEquations = std::move(updated);
+    model->setElementEquations(std::move(updated));
     return true;
 }
 
 bool Document::setUnit(EntityId id, const std::string &unit)
 {
-    auto *model = dynamic_cast<ModelElement *>(find(id));
+    auto *model = dynamic_cast<ModelElement *>(findMutable(id));
     if (!model)
         return false;
-    model->unit = unit;
+    model->setUnit(unit);
     return true;
 }
 
 bool Document::setComment(EntityId id, const std::string &comment)
 {
-    auto *model = dynamic_cast<ModelElement *>(find(id));
+    auto *model = dynamic_cast<ModelElement *>(findMutable(id));
     if (!model)
         return false;
-    model->comment = comment;
+    model->setComment(comment);
     return true;
 }
 
 bool Document::setCommentContent(EntityId id, const std::string &content)
 {
-    auto *comment = dynamic_cast<Comment *>(find(id));
+    auto *comment = dynamic_cast<Comment *>(findMutable(id));
     if (!comment)
         return false;
-    comment->content = content;
+    comment->setContent(content);
     return true;
 }
 
@@ -649,10 +642,10 @@ bool Document::setPosition(EntityId id, Vec2 position)
         if (element.kind() != ElementKind::Flow)
             continue;
         const Flow &flow = static_cast<const Flow &>(element);
-        if (flow.endpoints.from != id && flow.endpoints.to != id)
+        if (flow.endpoints().from != id && flow.endpoints().to != id)
             continue;
-        const Vec2 source = diagram().position(flow.endpoints.from);
-        const Vec2 target = diagram().position(flow.endpoints.to);
+        const Vec2 source = diagram().position(flow.endpoints().from);
+        const Vec2 target = diagram().position(flow.endpoints().to);
         m_diagram.m_positions[element.id()] = {(source.x + target.x) / 2.0, (source.y + target.y) / 2.0};
     }
     return true;
@@ -661,11 +654,8 @@ bool Document::setPosition(EntityId id, Vec2 position)
 bool Document::setFontStyle(EntityId id, const FontStyle &font)
 {
     const DocumentElement *element = find(id);
-    if (!element || font.pointSize < 0)
+    if (!element || !validFontData(element->kind(), font))
         return false;
-    const bool supported = dynamic_cast<const ModelElement *>(element) || element->kind() == ElementKind::Comment;
-    if (!supported)
-        return font == FontStyle {};
     if (font == FontStyle {})
         m_diagram.m_fontStyles.erase(id);
     else
@@ -675,17 +665,10 @@ bool Document::setFontStyle(EntityId id, const FontStyle &font)
 
 bool Document::reconnectFlow(EntityId id, EntityId from, EntityId to)
 {
-    auto *flow = dynamic_cast<Flow *>(find(id));
-    if (!flow || from == to || !validFlowEndpoint(from) || !validFlowEndpoint(to))
+    auto *flow = dynamic_cast<Flow *>(findMutable(id));
+    if (!flow || !validFlowConnection(id, from, to))
         return false;
-    for (const DocumentElement &element : elements()) {
-        if (element.id() == id || element.kind() != ElementKind::Flow)
-            continue;
-        const Flow &other = static_cast<const Flow &>(element);
-        if (other.endpoints.from == from && other.endpoints.to == to)
-            return false;
-    }
-    flow->endpoints = {from, to};
+    flow->setEndpoints({from, to});
     const Vec2 source = diagram().position(from);
     const Vec2 target = diagram().position(to);
     m_diagram.m_positions[id] = {(source.x + target.x) / 2.0, (source.y + target.y) / 2.0};
@@ -694,28 +677,28 @@ bool Document::reconnectFlow(EntityId id, EntityId from, EntityId to)
 
 bool Document::reconnectConnector(EntityId id, EntityId from, EntityId to)
 {
-    auto *connector = dynamic_cast<Connector *>(find(id));
-    if (!connector || !validConnectorEndpoints(from, to))
+    auto *connector = dynamic_cast<Connector *>(findMutable(id));
+    if (!connector || !validConnectorConnection(id, from, to))
         return false;
-    for (const DocumentElement &element : elements()) {
-        if (element.id() == id || element.kind() != ElementKind::Connector)
-            continue;
-        const Connector &other = static_cast<const Connector &>(element);
-        if (other.from == from && other.to == to)
-            return false;
-    }
-    connector->from = from;
-    connector->to = to;
+    connector->setEndpoints(from, to);
     return true;
 }
 
 bool Document::setRoute(EntityId id, const Route &route)
 {
     const DocumentElement *element = find(id);
-    if (!element || (element->kind() != ElementKind::Flow && element->kind() != ElementKind::Connector)
-        || (element->kind() == ElementKind::Flow && route.mode == RouteMode::Orthogonal))
+    if (!element || !validRouteData(element->kind(), route))
         return false;
     m_diagram.m_routes[id] = route;
+    return true;
+}
+
+bool Document::setWorkspace(const Workspace &workspace)
+{
+    if (!std::isfinite(workspace.zoom) || workspace.zoom <= 0.0 || !std::isfinite(workspace.center.x)
+        || !std::isfinite(workspace.center.y))
+        return false;
+    m_workspace = workspace;
     return true;
 }
 
@@ -733,6 +716,19 @@ void Document::clear()
     m_diagram.m_fontStyles.clear();
     m_workspace = {};
     m_nextId = 1;
+}
+
+bool Document::validFontData(ElementKind kind, const FontStyle &font)
+{
+    if (font.pointSize < 0)
+        return false;
+    return kind <= ElementKind::Data || kind == ElementKind::Comment || font == FontStyle {};
+}
+
+bool Document::validRouteData(ElementKind kind, const Route &route)
+{
+    return (kind == ElementKind::Flow || kind == ElementKind::Connector)
+        && !(kind == ElementKind::Flow && route.mode == RouteMode::Orthogonal);
 }
 
 bool Document::validArrayData(const std::vector<std::string> &dimensions,
@@ -769,6 +765,20 @@ bool Document::validFlowEndpoint(EntityId id) const
     return element && (element->kind() == ElementKind::Stock || element->kind() == ElementKind::Cloud);
 }
 
+bool Document::validFlowConnection(EntityId ignoredId, EntityId from, EntityId to) const
+{
+    if (from == to || !validFlowEndpoint(from) || !validFlowEndpoint(to))
+        return false;
+    for (const DocumentElement &element : elements()) {
+        if (element.id() == ignoredId || element.kind() != ElementKind::Flow)
+            continue;
+        const Flow &flow = static_cast<const Flow &>(element);
+        if (flow.endpoints().from == from && flow.endpoints().to == to)
+            return false;
+    }
+    return true;
+}
+
 bool Document::validConnectorEndpoints(EntityId from, EntityId to) const
 {
     const DocumentElement *source = find(from);
@@ -777,6 +787,20 @@ bool Document::validConnectorEndpoints(EntityId from, EntityId to) const
         || source->kind() == ElementKind::Connector || target->kind() == ElementKind::Connector)
         return false;
     return source->kind() != ElementKind::Comment || target->kind() != ElementKind::Comment;
+}
+
+bool Document::validConnectorConnection(EntityId ignoredId, EntityId from, EntityId to) const
+{
+    if (!validConnectorEndpoints(from, to))
+        return false;
+    for (const DocumentElement &element : elements()) {
+        if (element.id() == ignoredId || element.kind() != ElementKind::Connector)
+            continue;
+        const Connector &connector = static_cast<const Connector &>(element);
+        if (connector.from() == from && connector.to() == to)
+            return false;
+    }
+    return true;
 }
 
 std::string Document::uniqueName(ElementKind kind)
@@ -797,9 +821,11 @@ void Document::updateReferences(EntityId, const std::string &oldName, const std:
 {
     for (auto &entry : m_elements) {
         if (auto *model = dynamic_cast<ModelElement *>(entry.second.get())) {
-            model->equation = replaceReference(model->equation, oldName, newName);
-            for (ArrayElementEquation &element : model->elementEquations)
+            std::string equation = replaceReference(model->equation(), oldName, newName);
+            std::vector<ArrayElementEquation> elementEquations = model->elementEquations();
+            for (ArrayElementEquation &element : elementEquations)
                 element.equation = replaceReference(element.equation, oldName, newName);
+            model->setFormulaData(std::move(equation), model->dimensions(), std::move(elementEquations));
         }
     }
 }

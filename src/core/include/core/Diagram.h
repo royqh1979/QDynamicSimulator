@@ -5,6 +5,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace qds::core {
@@ -72,8 +73,19 @@ public:
     {
     }
 
-    EntityId from = 0;
-    EntityId to = 0;
+    EntityId from() const { return m_from; }
+    EntityId to() const { return m_to; }
+
+private:
+    friend class Document;
+    void setEndpoints(EntityId from, EntityId to)
+    {
+        m_from = from;
+        m_to = to;
+    }
+
+    EntityId m_from = 0;
+    EntityId m_to = 0;
 };
 
 class Cloud final : public ViewElement
@@ -93,7 +105,13 @@ public:
     {
     }
 
-    std::string content;
+    const std::string &content() const { return m_content; }
+
+private:
+    friend class Document;
+    void setContent(std::string content) { m_content = std::move(content); }
+
+    std::string m_content;
 };
 
 class Document;

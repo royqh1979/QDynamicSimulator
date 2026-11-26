@@ -2,7 +2,7 @@
 
 ## 1. 目标与边界
 
-目标是在 `qds-core` 中提供不依赖 Qt 的公式词法、语法、符号和依赖分析，为方程检查、执行排序及后续仿真求值提供同一套权威表示。
+目标是在 `qds-core` 中提供独立于 UI 的公式词法、语法、符号和依赖分析，为方程检查、执行排序及后续仿真求值提供同一套权威表示。核心可以使用 QtCore，容器优先采用合适的 Qt 容器，但不得依赖 Qt Widgets 或画布对象。
 
 权威语法依据为 `docs/references/xmile-1.1.html` 第 3.2～3.6 节。首阶段覆盖标量表达式；数组、宏、厂商方言和求值分阶段实现，不把 Vensim 特有行为误写成 XMILE 要求。
 
@@ -95,6 +95,8 @@ struct SubscriptNode : FormulaNode {
     std::vector<std::unique_ptr<FormulaNode>> indices;
 };
 ```
+
+上述代码块只表达 AST 的逻辑结构，不表示公开字段接口。正式类型必须通过私有状态和只读访问接口保证创建后不可变；可变构造仅属于 Parser 内部，外部不能取得可修改的子节点指针。FormulaAnalysis 和独立保留的 ModelAnalysis 也是完成后不可变的派生结果，构建期可变与完成后只读相互分离。FormulaIssue、ModelIssue、ArrayValue 和 EvaluationResult 同样按逻辑结果语义提供不可变边界；输入 DTO、EvaluationContext 和内部 Builder 不被迫采用同一接口。
 
 `FormulaAnalysis` 保存 `unique_ptr<FormulaNode>`。`ModelAnalysis` 唯一拥有各元素公式 AST、每个宏的宏体/默认参数 AST、引用集合和诊断；同一宏体不得复制到调用方 AST。AST 不保存 Resolve 结果，`Formula.h` 也不为了实体绑定依赖 `Model.h`。DependencyGraph 作为独立分析结果可以保存 EntityId，因此 AST 或 Document 对象地址变化不会使图失效；EntityId 出现在依赖图中不属于 AST 语义绑定。
 
@@ -203,7 +205,7 @@ DependencyGraph 的边统一为 **dependency → dependent**，表示必须先�
 
 函数签名集中在 `Function.h/.cpp`，Analysis 和 Evaluator 都通过 `findFunctionSignature()` 查询同一份名称、参数个数和分类。无参数内置函数也由签名派生，不再维护独立名称集合。注册表只描述语义，不保存求值状态。
 
-`Evaluation.h/.cpp` 提供不依赖 Document/Qt 的同步标量求值：
+`Evaluation.h/.cpp` 提供不依赖 Document 或 Qt UI 的同步标量求值，可使用 QtCore 容器：
 
 ```cpp
 using VariableReader = std::function<std::optional<double>(const std::string &nameKey)>;

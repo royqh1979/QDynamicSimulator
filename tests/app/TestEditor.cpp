@@ -188,18 +188,18 @@ void TestEditor::renameAndEquationUndo()
     controller.setUnit(id, QStringLiteral("people"));
     controller.setComment(id, QStringLiteral("Population stock"));
     const auto *model = static_cast<const ModelElement *>(controller.document().find(id));
-    QCOMPARE(model->unit, std::string("people"));
-    QCOMPARE(model->comment, std::string("Population stock"));
+    QCOMPARE(model->unit(), std::string("people"));
+    QCOMPARE(model->comment(), std::string("Population stock"));
     controller.undoStack()->undo();
     controller.undoStack()->undo();
     QCOMPARE(dynamic_cast<VariableItem *>(scene.item(id))->name(), QStringLiteral("Population"));
     controller.undoStack()->undo();
-    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(id))->equation, std::string());
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(id))->equation(), std::string());
     controller.undoStack()->undo();
-    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(id))->displayName, std::string("Stock1"));
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(id))->displayName(), std::string("Stock1"));
     controller.undoStack()->redo();
     controller.undoStack()->redo();
-    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(id))->equation, std::string("100"));
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(id))->equation(), std::string("100"));
     QVERIFY(!controller.renameElement(id, QString()));
 }
 
@@ -231,12 +231,12 @@ void TestEditor::inlineRenameUndoRedo()
     editor->setText(QStringLiteral("Population"));
     QTest::keyClick(editor, Qt::Key_Return);
     QVERIFY(!inlineNameEditor(scene));
-    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName, std::string("Population"));
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName(), std::string("Population"));
     QCOMPARE(dynamic_cast<VariableItem *>(scene.item(stock))->name(), QStringLiteral("Population"));
     controller.undoStack()->undo();
-    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName, std::string("Stock1"));
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName(), std::string("Stock1"));
     controller.undoStack()->redo();
-    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName, std::string("Population"));
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName(), std::string("Population"));
 
     QTest::mouseDClick(view.viewport(), Qt::LeftButton, Qt::NoModifier, view.mapFromScene(scene.item(stock)->center()));
     editor = inlineNameEditor(scene);
@@ -246,11 +246,11 @@ void TestEditor::inlineRenameUndoRedo()
     QTest::keyClick(editor, Qt::Key_Return);
     QCOMPARE(inlineNameEditor(scene), editor);
     QCOMPARE(controller.undoStack()->count(), commands);
-    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName, std::string("Population"));
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName(), std::string("Population"));
     editor->setText(QStringLiteral("Cancelled"));
     QTest::keyClick(editor, Qt::Key_Escape);
     QVERIFY(!inlineNameEditor(scene));
-    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName, std::string("Population"));
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName(), std::string("Population"));
 
     QTest::mouseDClick(view.viewport(), Qt::LeftButton, Qt::NoModifier, view.mapFromScene(scene.item(flow)->center()));
     editor = inlineNameEditor(scene);
@@ -259,11 +259,11 @@ void TestEditor::inlineRenameUndoRedo()
     editor->setText(QStringLiteral("Infection"));
     QTest::keyClick(editor, Qt::Key_Return);
     QVERIFY(!inlineNameEditor(scene));
-    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(flow))->displayName, std::string("Infection"));
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(flow))->displayName(), std::string("Infection"));
     controller.undoStack()->undo();
-    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(flow))->displayName, std::string("Flow1"));
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(flow))->displayName(), std::string("Flow1"));
     controller.undoStack()->redo();
-    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(flow))->displayName, std::string("Infection"));
+    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(flow))->displayName(), std::string("Infection"));
 }
 
 void TestEditor::commentContentEditing()
@@ -272,13 +272,13 @@ void TestEditor::commentContentEditing()
     DiagramScene scene(&controller);
     const EntityId id = controller.createComment(QStringLiteral("Before"), QPointF());
     controller.setCommentContent(id, QStringLiteral("After"));
-    QCOMPARE(static_cast<const Comment *>(controller.document().find(id))->content, std::string("After"));
+    QCOMPARE(static_cast<const Comment *>(controller.document().find(id))->content(), std::string("After"));
     QCOMPARE(dynamic_cast<ViewObjectItem *>(scene.item(id))->text(), QStringLiteral("After"));
     controller.undoStack()->undo();
-    QCOMPARE(static_cast<const Comment *>(controller.document().find(id))->content, std::string("Before"));
+    QCOMPARE(static_cast<const Comment *>(controller.document().find(id))->content(), std::string("Before"));
     QCOMPARE(dynamic_cast<ViewObjectItem *>(scene.item(id))->text(), QStringLiteral("Before"));
     controller.undoStack()->redo();
-    QCOMPARE(static_cast<const Comment *>(controller.document().find(id))->content, std::string("After"));
+    QCOMPARE(static_cast<const Comment *>(controller.document().find(id))->content(), std::string("After"));
 
     PropertyPanel panel(&controller, &scene);
     const EntityId panelComment = controller.createComment(QStringLiteral("\u521D\u59CB\u6CE8\u91CA"), QPointF());
@@ -290,7 +290,7 @@ void TestEditor::commentContentEditing()
     QVERIFY(edit->isEnabled());
     edit->setText(QStringLiteral("\u4FEE\u6539\u540E\u7684\u6CE8\u91CA"));
     QTest::keyClick(edit, Qt::Key_Return);
-    QCOMPARE(static_cast<const Comment *>(controller.document().find(panelComment))->content,
+    QCOMPARE(static_cast<const Comment *>(controller.document().find(panelComment))->content(),
              std::string("\u4FEE\u6539\u540E\u7684\u6CE8\u91CA"));
     QCOMPARE(dynamic_cast<ViewObjectItem *>(scene.item(panelComment))->text(), QStringLiteral("\u4FEE\u6539\u540E\u7684\u6CE8\u91CA"));
     controller.undoStack()->undo();
@@ -316,27 +316,27 @@ void TestEditor::propertyPanelWidget()
     comment->setText(QStringLiteral("Population stock"));
     QVERIFY(panel.commit());
     const auto *model = static_cast<const ModelElement *>(controller.document().find(stock));
-    QCOMPARE(model->displayName, std::string("Population"));
-    QCOMPARE(model->equation, std::string("100"));
-    QCOMPARE(model->unit, std::string("people"));
-    QCOMPARE(model->comment, std::string("Population stock"));
+    QCOMPARE(model->displayName(), std::string("Population"));
+    QCOMPARE(model->equation(), std::string("100"));
+    QCOMPARE(model->unit(), std::string("people"));
+    QCOMPARE(model->comment(), std::string("Population stock"));
     QCOMPARE(controller.undoStack()->count(), 5);
     controller.undoStack()->undo();
-    QCOMPARE(model->comment, std::string());
+    QCOMPARE(model->comment(), std::string());
     controller.undoStack()->undo();
-    QCOMPARE(model->unit, std::string());
+    QCOMPARE(model->unit(), std::string());
     controller.undoStack()->undo();
-    QCOMPARE(model->equation, std::string());
+    QCOMPARE(model->equation(), std::string());
     controller.undoStack()->undo();
-    QCOMPARE(model->displayName, std::string("Stock1"));
+    QCOMPARE(model->displayName(), std::string("Stock1"));
     controller.undoStack()->redo();
-    QCOMPARE(model->displayName, std::string("Population"));
+    QCOMPARE(model->displayName(), std::string("Population"));
     controller.undoStack()->redo();
-    QCOMPARE(model->equation, std::string("100"));
+    QCOMPARE(model->equation(), std::string("100"));
     controller.undoStack()->redo();
-    QCOMPARE(model->unit, std::string("people"));
+    QCOMPARE(model->unit(), std::string("people"));
     controller.undoStack()->redo();
-    QCOMPARE(model->comment, std::string("Population stock"));
+    QCOMPARE(model->comment(), std::string("Population stock"));
     scene.clearSelection();
     QVERIFY(!name->isEnabled() && !equation->isEnabled() && !unit->isEnabled() && !comment->isEnabled());
 }
@@ -516,7 +516,7 @@ void TestEditor::multipleFlowConnectorsMoveUndoRepaint()
         if (element.kind() != ElementKind::Connector)
             continue;
         const auto &connector = static_cast<const Connector &>(element);
-        if (connector.from == contact->id() && connector.to == succumbing->id())
+        if (connector.from() == contact->id() && connector.to() == succumbing->id())
             contactArrow = dynamic_cast<ArrowItem *>(scene.item(connector.id()));
     }
     QVERIFY(contactArrow);
@@ -576,7 +576,7 @@ void TestEditor::flowAndCascadeRestore()
     controller.undoStack()->undo();
     QVERIFY(scene.item(stock));
     QVERIFY(dynamic_cast<FlowItem *>(scene.item(flow)));
-    QCOMPARE(static_cast<const Flow *>(controller.document().find(flow))->endpoints.from, stock);
+    QCOMPARE(static_cast<const Flow *>(controller.document().find(flow))->endpoints().from, stock);
     controller.undoStack()->redo();
     QVERIFY(scene.item(flow) == nullptr);
 }
@@ -636,7 +636,7 @@ void TestEditor::missingViewImportProjectsAllVariables()
     int modelCount = 0;
     for (const ModelElement &element : controller.document().model().elements()) {
         ++modelCount;
-        QVERIFY2(scene.item(element.id()), qPrintable(QString::fromStdString(element.displayName)));
+        QVERIFY2(scene.item(element.id()), qPrintable(QString::fromStdString(element.displayName())));
         if (element.kind() == ElementKind::Flow) {
             const auto *item = dynamic_cast<FlowItem *>(scene.item(element.id()));
             QVERIFY(item && item->from() && item->to());
@@ -815,8 +815,8 @@ void TestEditor::flowRoutesAndValveGeometry()
     const EntityId detached = controller.createFlow(0, 0, QPointF(0.0, 0.0), QPointF(200.0, 0.0));
     QVERIFY(detached != 0);
     const auto *blankFlow = static_cast<const Flow *>(controller.document().find(detached));
-    QCOMPARE(controller.document().find(blankFlow->endpoints.from)->kind(), ElementKind::Cloud);
-    QCOMPARE(controller.document().find(blankFlow->endpoints.to)->kind(), ElementKind::Cloud);
+    QCOMPARE(controller.document().find(blankFlow->endpoints().from)->kind(), ElementKind::Cloud);
+    QCOMPARE(controller.document().find(blankFlow->endpoints().to)->kind(), ElementKind::Cloud);
     scene.item(detached)->setSelected(true);
     int visibleEndpointHandles = 0;
     for (QGraphicsItem *item : scene.items()) {
@@ -1122,9 +1122,9 @@ void TestEditor::reconnectUndo()
     const EntityId cloud = controller.createCloud(QPointF(400.0, 0.0));
     const EntityId flow = controller.createFlow(first, cloud);
     QVERIFY(controller.reconnectFlow(flow, second, cloud));
-    QCOMPARE(static_cast<const Flow *>(controller.document().find(flow))->endpoints.from, second);
+    QCOMPARE(static_cast<const Flow *>(controller.document().find(flow))->endpoints().from, second);
     controller.undoStack()->undo();
-    QCOMPARE(static_cast<const Flow *>(controller.document().find(flow))->endpoints.from, first);
+    QCOMPARE(static_cast<const Flow *>(controller.document().find(flow))->endpoints().from, first);
 }
 
 void TestEditor::boundaryEndpoints()
@@ -1291,9 +1291,9 @@ void TestEditor::endpointHandleReconnect()
     const QImage reconnectedRepaint = view.grab().toImage();
     QCOMPARE(reconnected, reconnectedRepaint);
 
-    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, targetStock);
+    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to(), targetStock);
     controller.undoStack()->undo();
-    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, flow);
+    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to(), flow);
 
     view.centerOn(targetHandle);
     const QPoint invalidStart = view.mapFromScene(targetHandle->pos());
@@ -1310,7 +1310,7 @@ void TestEditor::endpointHandleReconnect()
     QVERIFY(!arrow->previewing());
     QVERIFY(!scene.item(targetStock)->isEndpointTargetHighlighted());
     QVERIFY(!scene.item(flow)->isEndpointTargetHighlighted());
-    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, flow);
+    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to(), flow);
     int restoredControlHandles = 0;
     for (QGraphicsItem *item : scene.items()) {
         const auto *handle = qgraphicsitem_cast<ControlPointHandle *>(item);
@@ -1326,7 +1326,7 @@ void TestEditor::endpointHandleReconnect()
     QCOMPARE(cancelled, cancelledRepaint);
 
     controller.undoStack()->redo();
-    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, targetStock);
+    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to(), targetStock);
     view.centerOn(targetHandle);
     const QPoint flowStart = view.mapFromScene(targetHandle->pos());
     const QPoint flowEnd = view.mapFromScene(scene.item(flow)->center());
@@ -1341,11 +1341,11 @@ void TestEditor::endpointHandleReconnect()
     QMouseEvent flowRelease(QEvent::MouseButtonRelease, flowEnd, view.viewport()->mapToGlobal(flowEnd), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &flowRelease);
     QVERIFY(!scene.item(flow)->isEndpointTargetHighlighted());
-    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, flow);
+    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to(), flow);
     controller.undoStack()->undo();
-    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, targetStock);
+    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to(), targetStock);
     controller.undoStack()->redo();
-    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, flow);
+    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to(), flow);
 }
 
 void TestEditor::flowEndpointPreviewDependentsRepaint()
@@ -1411,7 +1411,7 @@ void TestEditor::flowEndpointPreviewDependentsRepaint()
     QMouseEvent release(QEvent::MouseButtonRelease, end, view.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &release);
     QVERIFY(!flowItem->previewing());
-    QCOMPARE(static_cast<const Flow *>(controller.document().find(flow))->endpoints.to, newTarget);
+    QCOMPARE(static_cast<const Flow *>(controller.document().find(flow))->endpoints().to, newTarget);
     QTest::qWait(20);
     const QImage reconnected = view.grab().toImage();
     view.viewport()->repaint();
@@ -1457,7 +1457,7 @@ void TestEditor::connectorEndpointCrossingRepaint()
     QMouseEvent release(QEvent::MouseButtonRelease, end, view.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &release);
     QVERIFY(!arrow->previewing());
-    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, newTarget);
+    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to(), newTarget);
     QTest::qWait(20);
     QRectF invalidated;
     for (const auto &notification : changedSpy) {
@@ -1916,8 +1916,8 @@ void TestEditor::rubberConnectionAndSelection()
     QApplication::sendEvent(&scene, &release);
     const EntityId flow = controller.document().findByName("Flow1")->id();
     QCOMPARE(document.find(flow)->kind(), ElementKind::Flow);
-    QCOMPARE(static_cast<const Flow *>(document.find(flow))->endpoints.from, source);
-    QCOMPARE(static_cast<const Flow *>(document.find(flow))->endpoints.to, cloud);
+    QCOMPARE(static_cast<const Flow *>(document.find(flow))->endpoints().from, source);
+    QCOMPARE(static_cast<const Flow *>(document.find(flow))->endpoints().to, cloud);
 
     scene.setTool(DiagramScene::Tool::AddFlow);
     press.setScenePos(QPointF(600.0, 100.0));
@@ -1927,7 +1927,7 @@ void TestEditor::rubberConnectionAndSelection()
     release.setScenePos(QPointF(800.0, 100.0));
     QApplication::sendEvent(&scene, &release);
     const EntityId blankFlow = document.findByName("Flow2")->id();
-    const FlowEndpoints blankEndpoints = static_cast<const Flow *>(document.find(blankFlow))->endpoints;
+    const FlowEndpoints blankEndpoints = static_cast<const Flow *>(document.find(blankFlow))->endpoints();
     QCOMPARE(document.find(blankEndpoints.from)->kind(), ElementKind::Cloud);
     QCOMPARE(document.find(blankEndpoints.to)->kind(), ElementKind::Cloud);
     QCOMPARE(document.diagram().position(blankEndpoints.from), Vec2({600.0, 100.0}));
@@ -1937,7 +1937,7 @@ void TestEditor::rubberConnectionAndSelection()
     QVERIFY(!scene.item(blankFlow) && !scene.item(blankEndpoints.from) && !scene.item(blankEndpoints.to));
     controller.undoStack()->redo();
     QVERIFY(scene.item(blankFlow) && scene.item(blankEndpoints.from) && scene.item(blankEndpoints.to));
-    QCOMPARE(static_cast<const Flow *>(document.find(blankFlow))->endpoints, blankEndpoints);
+    QCOMPARE(static_cast<const Flow *>(document.find(blankFlow))->endpoints(), blankEndpoints);
 
     const auto beforeArrow = std::distance(document.elements().begin(), document.elements().end());
     scene.setTool(DiagramScene::Tool::Connect);
@@ -1986,8 +1986,8 @@ void TestEditor::connectToolTargetsFlow()
     const EntityId connector = selection.front();
     const auto *created = dynamic_cast<const Connector *>(controller.document().find(connector));
     QVERIFY(created);
-    QCOMPARE(created->from, source);
-    QCOMPARE(created->to, flow);
+    QCOMPARE(created->from(), source);
+    QCOMPARE(created->to(), flow);
     const auto *arrow = dynamic_cast<ArrowItem *>(scene.item(connector));
     QVERIFY(arrow);
     QCOMPARE(arrow->from(), scene.item(source));
@@ -1999,8 +1999,8 @@ void TestEditor::connectToolTargetsFlow()
     controller.undoStack()->redo();
     created = dynamic_cast<const Connector *>(controller.document().find(connector));
     QVERIFY(created);
-    QCOMPARE(created->from, source);
-    QCOMPARE(created->to, flow);
+    QCOMPARE(created->from(), source);
+    QCOMPARE(created->to(), flow);
 
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
@@ -2011,8 +2011,8 @@ void TestEditor::connectToolTargetsFlow()
     QVERIFY2(qds::io::DocumentFile::open(nativePath, nativeLoaded, &error), qPrintable(error));
     const auto *nativeConnector = dynamic_cast<const Connector *>(nativeLoaded.find(connector));
     QVERIFY(nativeConnector);
-    QCOMPARE(nativeConnector->from, source);
-    QCOMPARE(nativeConnector->to, flow);
+    QCOMPARE(nativeConnector->from(), source);
+    QCOMPARE(nativeConnector->to(), flow);
 
     const QString xmilePath = directory.filePath(QStringLiteral("connector-to-flow.xmile"));
     QVERIFY2(qds::io::XmileFile::exportFile(xmilePath, controller.document(), &error), qPrintable(error));
@@ -2026,7 +2026,7 @@ void TestEditor::connectToolTargetsFlow()
         if (element.kind() != ElementKind::Connector)
             continue;
         const auto &candidate = static_cast<const Connector &>(element);
-        if (candidate.from == xmileSource->id() && candidate.to == xmileFlow->id())
+        if (candidate.from() == xmileSource->id() && candidate.to() == xmileFlow->id())
             ++matchingConnectors;
     }
     QCOMPARE(matchingConnectors, 1);
@@ -2175,8 +2175,8 @@ void TestEditor::unifiedIdUndoRedo()
     QVERIFY(!scene.item(flow) && !scene.item(connector));
     controller.undoStack()->undo();
     QVERIFY(scene.item(stock) && scene.item(flow) && scene.item(connector));
-    QCOMPARE(static_cast<const Flow *>(controller.document().find(flow))->endpoints.from, stock);
-    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to, flow);
+    QCOMPARE(static_cast<const Flow *>(controller.document().find(flow))->endpoints().from, stock);
+    QCOMPARE(static_cast<const Connector *>(controller.document().find(connector))->to(), flow);
     controller.undoStack()->redo();
     QVERIFY(!scene.item(flow) && !scene.item(connector));
     controller.undoStack()->undo();

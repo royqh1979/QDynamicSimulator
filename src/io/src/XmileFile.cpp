@@ -113,9 +113,9 @@ QString variableTag(core::ElementKind kind)
 QString elementName(const core::DocumentElement &element)
 {
     if (const auto *model = dynamic_cast<const core::ModelElement *>(&element))
-        return QString::fromStdString(model->displayName);
+        return QString::fromStdString(model->displayName());
     if (const auto *comment = dynamic_cast<const core::Comment *>(&element))
-        return QString::fromStdString(comment->content);
+        return QString::fromStdString(comment->content());
     return {};
 }
 
@@ -165,20 +165,20 @@ void writeXmileMacros(QXmlStreamWriter &writer, const core::Document &document)
 
 void writeXmileArrayDefinition(QXmlStreamWriter &writer, const core::Document &document, const core::ModelElement &element)
 {
-    if (element.dimensions.empty())
+    if (element.dimensions().empty())
         return;
     writer.writeStartElement(QStringLiteral("dimensions"));
-    for (const std::string &name : element.dimensions) {
+    for (const std::string &name : element.dimensions()) {
         writer.writeStartElement(QStringLiteral("dim"));
         writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(document.findDimension(name)->displayName));
         writer.writeEndElement();
     }
     writer.writeEndElement();
-    for (const core::ArrayElementEquation &entry : element.elementEquations) {
+    for (const core::ArrayElementEquation &entry : element.elementEquations()) {
         writer.writeStartElement(QStringLiteral("element"));
         QStringList indices;
         for (std::size_t position = 0; position < entry.indices.size(); ++position) {
-            const core::Dimension *dimension = document.findDimension(element.dimensions[position]);
+            const core::Dimension *dimension = document.findDimension(element.dimensions()[position]);
             const core::DimensionElement &index = dimension->elements[entry.indices[position]];
             indices.append(index.nameKey.empty() ? QString::number(entry.indices[position] + 1) : quotedIdentifier(index.displayName));
         }
@@ -213,7 +213,7 @@ QByteArray writeXml(const core::Document &document)
         if (!document.dimensions().empty()) {
             std::size_t maximumDimensions = 0;
             for (const core::ModelElement &element : model.elements())
-                maximumDimensions = std::max(maximumDimensions, element.dimensions.size());
+                maximumDimensions = std::max(maximumDimensions, element.dimensions().size());
             writer.writeStartElement(QStringLiteral("uses_arrays"));
             writer.writeAttribute(QStringLiteral("maximum_dimensions"), QString::number(maximumDimensions));
             writer.writeEndElement();
@@ -235,27 +235,27 @@ QByteArray writeXml(const core::Document &document)
     writer.writeStartElement(QStringLiteral("model"));
     writer.writeStartElement(QStringLiteral("variables"));
     for (const core::ModelElement &variable : model.elements()) {
-        const QString name = QString::fromStdString(variable.displayName);
+        const QString name = QString::fromStdString(variable.displayName());
         writer.writeStartElement(variableTag(variable.kind()));
         writer.writeAttribute(QStringLiteral("name"), name);
         writeXmileArrayDefinition(writer, document, variable);
-        if (variable.elementEquations.empty())
+        if (variable.elementEquations().empty())
             writer.writeTextElement(
                 QStringLiteral("eqn"),
-                variable.equation.empty() ? QStringLiteral("0") : QString::fromStdString(variable.equation));
-        if (!variable.unit.empty())
-            writer.writeTextElement(QStringLiteral("units"), QString::fromStdString(variable.unit));
-        if (!variable.comment.empty())
-            writer.writeTextElement(QStringLiteral("doc"), QString::fromStdString(variable.comment));
+                variable.equation().empty() ? QStringLiteral("0") : QString::fromStdString(variable.equation()));
+        if (!variable.unit().empty())
+            writer.writeTextElement(QStringLiteral("units"), QString::fromStdString(variable.unit()));
+        if (!variable.comment().empty())
+            writer.writeTextElement(QStringLiteral("doc"), QString::fromStdString(variable.comment()));
         if (variable.kind() == core::ElementKind::Stock) {
             for (const core::ModelElement &candidate : model.elements()) {
                 if (candidate.kind() != core::ElementKind::Flow)
                     continue;
                 const auto &flow = static_cast<const core::Flow &>(candidate);
-                if (flow.endpoints.to == variable.id())
-                    writer.writeTextElement(QStringLiteral("inflow"), QString::fromStdString(flow.displayName));
-                if (flow.endpoints.from == variable.id())
-                    writer.writeTextElement(QStringLiteral("outflow"), QString::fromStdString(flow.displayName));
+                if (flow.endpoints().to == variable.id())
+                    writer.writeTextElement(QStringLiteral("inflow"), QString::fromStdString(flow.displayName()));
+                if (flow.endpoints().from == variable.id())
+                    writer.writeTextElement(QStringLiteral("outflow"), QString::fromStdString(flow.displayName()));
             }
         }
         writer.writeEndElement();
@@ -285,8 +285,8 @@ QByteArray writeXml(const core::Document &document)
                 writer.writeAttribute(QStringLiteral("y"), QString::number(point.y, 'g', 15));
                 writer.writeEndElement();
             };
-            writePoint(document.diagram().position(flow.endpoints.from));
-            writePoint(document.diagram().position(flow.endpoints.to));
+            writePoint(document.diagram().position(flow.endpoints().from));
+            writePoint(document.diagram().position(flow.endpoints().to));
             writer.writeEndElement();
         }
         if (element.kind() == core::ElementKind::Comment)
@@ -297,13 +297,13 @@ QByteArray writeXml(const core::Document &document)
         if (element.kind() != core::ElementKind::Connector)
             continue;
         const auto &connection = static_cast<const core::Connector &>(element);
-        const core::DocumentElement *from = document.find(connection.from);
-        const core::DocumentElement *to = document.find(connection.to);
+        const core::DocumentElement *from = document.find(connection.from());
+        const core::DocumentElement *to = document.find(connection.to());
         if (!from || !to || !dynamic_cast<const core::ModelElement *>(from)
             || !dynamic_cast<const core::ModelElement *>(to))
             continue;
-        const core::Vec2 fromPosition = document.diagram().position(connection.from);
-        const core::Vec2 toPosition = document.diagram().position(connection.to);
+        const core::Vec2 fromPosition = document.diagram().position(connection.from());
+        const core::Vec2 toPosition = document.diagram().position(connection.to());
         double angle = std::atan2(-(toPosition.y - fromPosition.y), toPosition.x - fromPosition.x) * 180.0 / 3.14159265358979323846;
         if (angle < 0.0)
             angle += 360.0;
@@ -927,7 +927,7 @@ bool parseXml(
                 if (element.kind() != core::ElementKind::Connector)
                     continue;
                 const auto &existing = static_cast<const core::Connector &>(element);
-                if (existing.from == from->id() && existing.to == to->id()) {
+                if (existing.from() == from->id() && existing.to() == to->id()) {
                     id = existing.id();
                     break;
                 }

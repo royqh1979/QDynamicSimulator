@@ -79,14 +79,14 @@ private slots:
             for (const DocumentElement &element : document.elements()) {
                 if (element.kind() == ElementKind::Flow) {
                     const auto &flow = static_cast<const Flow &>(element);
-                    if (flow.endpoints.from == 0 || flow.endpoints.to == 0
-                        || !document.find(flow.endpoints.from) || !document.find(flow.endpoints.to)) {
+                    if (flow.endpoints().from == 0 || flow.endpoints().to == 0
+                        || !document.find(flow.endpoints().from) || !document.find(flow.endpoints().to)) {
                         failures.append(path + ": invalid flow endpoints");
                         continue;
                     }
                     connected.insert(flow.id());
-                    connected.insert(flow.endpoints.from);
-                    connected.insert(flow.endpoints.to);
+                    connected.insert(flow.endpoints().from);
+                    connected.insert(flow.endpoints().to);
                 } else if (element.kind() == ElementKind::Connector) {
                     const auto &connector = static_cast<const Connector &>(element);
                     if (connector.from == 0 || connector.to == 0
@@ -122,8 +122,8 @@ private slots:
                 }
             };
             for (const ModelElement &element : document.model().elements()) {
-                checkFormula(element.equation);
-                for (const ArrayElementEquation &entry : element.elementEquations)
+                checkFormula(element.equation());
+                for (const ArrayElementEquation &entry : element.elementEquations())
                     checkFormula(entry.equation);
             }
             for (const auto &entry : document.diagram().routes()) {

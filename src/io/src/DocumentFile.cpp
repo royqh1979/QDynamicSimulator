@@ -405,16 +405,16 @@ void writeNativeMacros(QXmlStreamWriter &writer, const core::Document &document)
 
 void writeNativeArrayDefinition(QXmlStreamWriter &writer, const core::Document &document, const core::ModelElement &element)
 {
-    if (element.dimensions.empty())
+    if (element.dimensions().empty())
         return;
     writer.writeStartElement(QStringLiteral("dimensions"));
-    for (const std::string &name : element.dimensions) {
+    for (const std::string &name : element.dimensions()) {
         writer.writeStartElement(QStringLiteral("dim"));
         writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(document.findDimension(name)->displayName));
         writer.writeEndElement();
     }
     writer.writeEndElement();
-    for (const core::ArrayElementEquation &entry : element.elementEquations) {
+    for (const core::ArrayElementEquation &entry : element.elementEquations()) {
         writer.writeStartElement(QStringLiteral("element"));
         QStringList indices;
         for (std::size_t index : entry.indices)
@@ -439,24 +439,24 @@ QByteArray writeNativeXml(const core::Document &document)
     for (const core::ModelElement &element : document.model().elements()) {
         writer.writeStartElement(nativeKindTag(element.kind()));
         writer.writeAttribute(QStringLiteral("uid"), QString::number(element.id()));
-        writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(element.displayName));
+        writer.writeAttribute(QStringLiteral("name"), QString::fromStdString(element.displayName()));
         writeNativeFont(writer, document.diagram().fontStyle(element.id()));
         const core::Vec2 position = document.diagram().position(element.id());
         writer.writeAttribute(QStringLiteral("x"), QString::number(position.x, 'g', 15));
         writer.writeAttribute(QStringLiteral("y"), QString::number(position.y, 'g', 15));
         if (element.kind() == core::ElementKind::Flow) {
             const auto &flow = static_cast<const core::Flow &>(element);
-            writer.writeAttribute(QStringLiteral("from"), QString::number(flow.endpoints.from));
-            writer.writeAttribute(QStringLiteral("to"), QString::number(flow.endpoints.to));
+            writer.writeAttribute(QStringLiteral("from"), QString::number(flow.endpoints().from));
+            writer.writeAttribute(QStringLiteral("to"), QString::number(flow.endpoints().to));
             writeNativeRoute(writer, document.diagram().route(element.id()));
         }
         writeNativeArrayDefinition(writer, document, element);
-        if (element.elementEquations.empty())
-            writer.writeTextElement(QStringLiteral("eqn"), QString::fromStdString(element.equation));
-        if (!element.unit.empty())
-            writer.writeTextElement(QStringLiteral("units"), QString::fromStdString(element.unit));
-        if (!element.comment.empty())
-            writer.writeTextElement(QStringLiteral("doc"), QString::fromStdString(element.comment));
+        if (element.elementEquations().empty())
+            writer.writeTextElement(QStringLiteral("eqn"), QString::fromStdString(element.equation()));
+        if (!element.unit().empty())
+            writer.writeTextElement(QStringLiteral("units"), QString::fromStdString(element.unit()));
+        if (!element.comment().empty())
+            writer.writeTextElement(QStringLiteral("doc"), QString::fromStdString(element.comment()));
         writer.writeEndElement();
     }
     writer.writeEndElement();
@@ -471,11 +471,11 @@ QByteArray writeNativeXml(const core::Document &document)
         writer.writeAttribute(QStringLiteral("y"), QString::number(position.y, 'g', 15));
         if (element.kind() == core::ElementKind::Connector) {
             const auto &connector = static_cast<const core::Connector &>(element);
-            writer.writeAttribute(QStringLiteral("from"), QString::number(connector.from));
-            writer.writeAttribute(QStringLiteral("to"), QString::number(connector.to));
+            writer.writeAttribute(QStringLiteral("from"), QString::number(connector.from()));
+            writer.writeAttribute(QStringLiteral("to"), QString::number(connector.to()));
             writeNativeRoute(writer, document.diagram().route(element.id()));
         } else if (element.kind() == core::ElementKind::Comment) {
-            writer.writeCharacters(QString::fromStdString(static_cast<const core::Comment &>(element).content));
+            writer.writeCharacters(QString::fromStdString(static_cast<const core::Comment &>(element).content()));
         }
         writer.writeEndElement();
     }

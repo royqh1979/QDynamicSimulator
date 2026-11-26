@@ -17,7 +17,7 @@ namespace {
 QString viewObjectText(const qds::core::ViewElement &object)
 {
     if (const auto *comment = dynamic_cast<const qds::core::Comment *>(&object))
-        return QString::fromStdString(comment->content);
+        return QString::fromStdString(comment->content());
     return {};
 }
 
@@ -133,7 +133,7 @@ void DiagramItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 VariableItem::VariableItem(const qds::core::ModelElement &variable, const QPointF &position, QGraphicsItem *parent)
     : DiagramItem(parent)
     , m_id(variable.id())
-    , m_name(QString::fromStdString(variable.displayName))
+    , m_name(QString::fromStdString(variable.displayName()))
     , m_kind(variable.kind())
 {
     setFlags(ItemIsMovable | ItemIsSelectable | ItemSendsGeometryChanges);
@@ -215,7 +215,7 @@ QPointF VariableItem::boundaryPointToward(const QPointF &target) const
 
 void VariableItem::refresh(const qds::core::ModelElement &variable, const QPointF &position)
 {
-    m_name = QString::fromStdString(variable.displayName);
+    m_name = QString::fromStdString(variable.displayName());
     m_kind = variable.kind();
     if (pos() != position)
         setPos(position);
@@ -591,7 +591,7 @@ FlowItem::FlowItem(
     QGraphicsItem *parent)
     : RoutedItem(from, to, route, parent)
     , m_id(flow.id())
-    , m_name(QString::fromStdString(flow.displayName))
+    , m_name(QString::fromStdString(flow.displayName()))
 {
     m_fallbackPosition = fallbackPosition;
 }
@@ -681,7 +681,7 @@ void FlowItem::refresh(
     const QPointF &fallbackPosition)
 {
     prepareGeometryChange();
-    m_name = QString::fromStdString(flow.displayName);
+    m_name = QString::fromStdString(flow.displayName());
     m_from = from;
     m_to = to;
     m_fallbackPosition = fallbackPosition;

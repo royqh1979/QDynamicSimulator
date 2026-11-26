@@ -748,7 +748,7 @@ void MainWindow::refreshValidation()
     const auto issues = qds::core::validateDocument(m_controller->document());
     for (const auto &issue : issues) {
         const auto *variable = dynamic_cast<const qds::core::ModelElement *>(m_controller->document().find(issue.entityId));
-        const QString name = variable ? QString::fromStdString(variable->displayName) : tr("Model");
+        const QString name = variable ? QString::fromStdString(variable->displayName()) : tr("Model");
         const QString severity = issue.severity == qds::core::IssueSeverity::Error ? tr("Error") : tr("Warning");
         QListWidgetItem *item = new QListWidgetItem(
             tr("%1 [%2]: %3").arg(name, severity, QString::fromStdString(issue.message)), m_issueList);

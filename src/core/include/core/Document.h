@@ -69,7 +69,6 @@ public:
     Document(const Document &) = delete;
     Document &operator=(const Document &) = delete;
 
-    DocumentElement *find(EntityId id);
     const DocumentElement *find(EntityId id) const;
     const ModelElement *findByName(const std::string &name) const;
     const Dimension *findDimension(const std::string &name) const;
@@ -84,7 +83,7 @@ public:
     const Model &model() const { return m_model; }
     const DiagramDefinition &diagram() const { return m_diagram; }
     const Workspace &workspace() const { return m_workspace; }
-    void setWorkspace(const Workspace &workspace) { m_workspace = workspace; }
+    bool setWorkspace(const Workspace &workspace);
 
     EntityId createVariable(ElementKind kind, Vec2 position = {});
     EntityId createFlow(EntityId from, EntityId to);
@@ -116,11 +115,18 @@ private:
     friend class Model;
     friend class DiagramDefinition;
 
+    DocumentElement *findMutable(EntityId id);
+
     template <typename T>
     EntityId insert(std::unique_ptr<T> element, Vec2 position);
     bool defineDimensionData(Dimension dimension);
+    bool validRename(EntityId id, const std::string &displayName) const;
     bool validFlowEndpoint(EntityId id) const;
+    bool validFlowConnection(EntityId ignoredId, EntityId from, EntityId to) const;
     bool validConnectorEndpoints(EntityId from, EntityId to) const;
+    bool validConnectorConnection(EntityId ignoredId, EntityId from, EntityId to) const;
+    static bool validFontData(ElementKind kind, const FontStyle &font);
+    static bool validRouteData(ElementKind kind, const Route &route);
     bool validArrayData(const std::vector<std::string> &dimensions,
         const std::vector<ArrayElementEquation> &elementEquations, const std::string &equation) const;
     std::string uniqueName(ElementKind kind);

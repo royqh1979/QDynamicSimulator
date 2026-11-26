@@ -55,19 +55,19 @@ void TestArrays::dimensionDefinitions()
     QVERIFY(!document.defineDimension("Sales", 2));
     const auto *model = static_cast<const ModelElement *>(document.find(array));
     QVERIFY(document.setDimensions(array, {"Location", "N"}));
-    QCOMPARE(model->dimensions, (std::vector<std::string> {"location", "n"}));
+    QCOMPARE(model->dimensions(), (std::vector<std::string> {"location", "n"}));
     QVERIFY(!document.setDimensions(array, {"Missing"}));
-    QCOMPARE(model->dimensions.size(), std::size_t(2));
+    QCOMPARE(model->dimensions().size(), std::size_t(2));
 
     QVERIFY(document.setElementEquation(array, {0, 0}, "1"));
     QVERIFY(document.setElementEquation(array, {0, 0}, "2"));
-    QCOMPARE(model->elementEquations.size(), std::size_t(1));
-    QCOMPARE(model->elementEquations[0].equation, std::string("2"));
+    QCOMPARE(model->elementEquations().size(), std::size_t(1));
+    QCOMPARE(model->elementEquations()[0].equation, std::string("2"));
     QVERIFY(!document.setElementEquation(array, {0}, "3"));
     QVERIFY(!document.setElementEquation(array, {2, 0}, "3"));
     QVERIFY(!document.setElementEquation(array, {0, 3}, "3"));
     document.setEquation(array, "10");
-    QVERIFY(model->elementEquations.empty());
+    QVERIFY(model->elementEquations().empty());
     document.clear();
     QVERIFY(document.dimensions().empty());
 }
@@ -161,13 +161,13 @@ void TestArrays::captureAndRestore()
     restored.defineDimension("Location", {"Boston", "Chicago"});
     QVERIFY(restored.restore(captured));
     const auto *model = static_cast<const ModelElement *>(restored.find(captured.id));
-    QCOMPARE(model->dimensions, captured.dimensions);
-    QCOMPARE(model->elementEquations, captured.elementEquations);
+    QCOMPARE(model->dimensions(), captured.dimensions);
+    QCOMPARE(model->elementEquations(), captured.elementEquations);
 
     QVERIFY(document.rename(input, "Rate"));
     model = static_cast<const ModelElement *>(document.find(array));
-    QCOMPARE(model->elementEquations[0].equation, std::string("Rate"));
-    QCOMPARE(model->elementEquations[1].equation, std::string("Rate * 2"));
+    QCOMPARE(model->elementEquations()[0].equation, std::string("Rate"));
+    QCOMPARE(model->elementEquations()[1].equation, std::string("Rate * 2"));
 }
 
 } // namespace

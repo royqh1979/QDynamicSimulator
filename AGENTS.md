@@ -10,7 +10,7 @@
 
 ## 2. 架构边界
 
-- `src/core/` 是纯 C++ 模型、文档与仿真核心库，不依赖 Qt UI；新增功能默认不引入 Qt 依赖。
+- `src/core/` 是独立于 UI 的模型、文档与仿真核心库，可以使用 QtCore，不得依赖 Qt Widgets、QGraphicsItem 或其它 UI 类型；容器在语义合适时优先使用 Qt 容器，不因既有 STL 用法而继续扩大平行风格。
 - `src/io/` 是独立 QtCore I/O 库，负责 XMILE XML 与 ZIP 容器读写，不依赖 Widgets。
 - `src/app/` 是 Qt Widgets 桌面应用，通过 `QDS::Core` 和 `QDS::IO` 使用核心能力，不在 UI 层实现仿真算法。
 - 各模块源文件分别登记到各自的 `CMakeLists.txt`，构建目标保持分层。
@@ -23,6 +23,8 @@
 - `AGENTS.md` 只保存长期规则和顶层索引，不堆叠具体设计、profile 数据或本机命令。
 - 根目录保留需求、构建和项目入口文档；内部设计、性能和环境文档放入 `docs/` 子目录。
 - `docs/design/` 保存现状、约定、算法和实施方案，按模块组织。
+- `docs/history/` 保存重构和性能优化的带时间戳计划及其后续细化记录。开始此类工作前必须先建立计划，文件名以 `YYYY-MM-DD` 开头，文首记录完整本地创建时间；先写整体目标、范围、方法、步骤和验收边界，再随设计讨论逐步细化更新。
+- `docs/history/` 是计划与演进记录，不替代当前权威设计；形成或修改设计结论时必须同步更新 `docs/design/`。
 - `docs/profile/` 保存性能基线、报告、结果与配套工具，按模块组织。
 - `docs/env/template/` 不含机器专有路径；`docs/env/local/` 保存本机实际配置，默认不提交。
 - 设计文档描述现状和约定，具体修改记录写入 git 提交信息，不放进设计文档。
@@ -34,6 +36,7 @@
 
 - 使用 Qt 惯用法：signals/slots、用户可见字符串 `tr()`、QObject 父子所有权。
 - 新代码与所在文件现有命名、结构和行尾风格保持一致。
+- 容器优先使用语义合适的 Qt 容器（如 QVector、QHash、QMap、QSet）；std::unique_ptr、std::optional、std::variant 等非容器能力不作机械替换。既有 STL 容器只在相关重构中逐步迁移，不单独进行无收益的全量替换。
 - 源代码和测试源码不得直接包含中文字符；用户可见源字符串使用英文，中文兼容性测试数据使用 Unicode 转义，设计文档不受此限制。
 - `translations/` 保存 Qt Linguist TS 源文件，构建通过 `qt5_create_translation` 生成并内嵌 QM；中文翻译只修改 TS，不在 C++ 源码中直接写入中文界面文本。
 - 不提交密钥、凭据或本机专有配置；执行外部工具和不可信代码前必须进行参数与转义检查。
@@ -67,7 +70,7 @@
 - GUI 鼠标测试必须创建真实 View，并显式设置 button/buttons、localPos/screenPos 及需要的 scenePos/item pos；offscreen 下不得依赖 QCursor::pos()。坐标取整使用亚像素容差，控制句柄不得因加入选择集合而被同步逻辑隐藏。
 - 测试/profile 配套脚本和工具必须随对应资源入库，并在专门文档记录用途、依赖、输入输出和运行命令，不得只放临时目录或用完即弃。
 - 性能测量直接运行 Release 可执行文件，不在 gdb 下计时；优先使用扣除子阶段后的 self-time，不能把 inclusive 时间相加。
-- 性能优化逐项实施：独立分支→设计文档→KISS/范围审核→测试保护→严格范围编码→专项和全量回归→同场景 profile→审核迭代→结果总结与提交。多个方案分别建分支比较；合并到 `master` 和推送仍需明确授权。
+- 性能优化逐项实施：独立分支→在 `docs/history/` 建立带时间戳的整体计划并逐步细化→同步当前设计文档→KISS/范围审核→测试保护→严格范围编码→专项和全量回归→同场景 profile→审核迭代→结果总结与提交。多个方案分别建分支比较；合并到 `master` 和推送仍需明确授权。
 - 核心引擎实现时同步建立自动化验证，至少覆盖解析解基准、积分阶数、不变量与黄金文件回归。
 - 与 Vensim 比对时必须对齐积分方法和步长。
 
@@ -84,6 +87,7 @@
 - `docs/design/sfd-editor.md`：SFD 完整功能清单与实施计划。
 - `docs/design/sfd-item-architecture.md`：核心模型、Item 类体系和同步设计。
 - `docs/design/formula-analysis.md`：公式 AST、语法分析、符号与依赖图设计。
+- `docs/history/`：带时间戳的重构/性能优化整体计划与逐步细化记录；开始此类工作前必须先建立。
 - `docs/profile/README.md`：性能基线、报告、优化结果与工具索引；开始性能工作后建立。
 - `docs/references/README.md`：参考文献及 `3rdparty/test-models` 测试模型子模块的来源、许可证和使用约定。
 

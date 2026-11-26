@@ -3,6 +3,8 @@
 
 #include <QtTest>
 
+#include <limits>
+
 using namespace qds::core;
 
 class TestDocument : public QObject
@@ -22,6 +24,8 @@ private slots:
     void entityAndConnectorTypes();
     void reconnectRoutes();
     void metadata();
+    void applyFailureIsAtomic();
+    void workspaceValidation();
     void validation();
 };
 
@@ -44,7 +48,7 @@ void TestDocument::createAndLookup()
     QCOMPARE(document.model().findByName("population")->id(), stock);
     QCOMPARE(document.model().findByName("POPULATION")->id(), stock);
     QVERIFY(document.setEquation(stock, "100"));
-    QCOMPARE(static_cast<const ModelElement *>(document.find(stock))->equation, std::string("100"));
+    QCOMPARE(static_cast<const ModelElement *>(document.find(stock))->equation(), std::string("100"));
     std::size_t modelCount = 0;
     for (const ModelElement &element : document.model().elements()) {
         Q_UNUSED(element)
@@ -72,14 +76,14 @@ void TestDocument::namingNormalization()
     QVERIFY(!document.rename(second, "birth_rate"));
     QVERIFY(document.setEquation(auxiliary, "\"\u6D41\u5165 \u901F\u7387\" * 2"));
     QVERIFY(document.rename(flow, "\u6D41\u5165_\u901F\u7387"));
-    QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->equation,
+    QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->equation(),
              std::string("\u6D41\u5165_\u901F\u7387 * 2"));
     QVERIFY(document.rename(auxiliary, "BIRTH RATE"));
-    QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->displayName, std::string("BIRTH RATE"));
+    QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->displayName(), std::string("BIRTH RATE"));
     const EntityId comment = document.createComment("\u5E93\u5B58");
     QVERIFY(document.find(comment));
     QVERIFY(document.rename(stock, "Population"));
-    QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->equation,
+    QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->equation(),
              std::string("\u6D41\u5165_\u901F\u7387 * 2"));
 }
 
@@ -89,14 +93,14 @@ void TestDocument::generatedNamesUseNameKeyIndex()
     const EntityId firstStock = document.createVariable(ElementKind::Stock);
     const EntityId secondStock = document.createVariable(ElementKind::Stock);
     const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
-    QCOMPARE(static_cast<const ModelElement *>(document.find(firstStock))->displayName, std::string("Stock1"));
-    QCOMPARE(static_cast<const ModelElement *>(document.find(secondStock))->displayName, std::string("Stock2"));
-    QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->displayName, std::string("Auxiliary1"));
-    QCOMPARE(static_cast<const ModelElement *>(document.find(firstStock))->nameKey, std::string("stock1"));
+    QCOMPARE(static_cast<const ModelElement *>(document.find(firstStock))->displayName(), std::string("Stock1"));
+    QCOMPARE(static_cast<const ModelElement *>(document.find(secondStock))->displayName(), std::string("Stock2"));
+    QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->displayName(), std::string("Auxiliary1"));
+    QCOMPARE(static_cast<const ModelElement *>(document.find(firstStock))->nameKey(), std::string("stock1"));
 
     QVERIFY(document.rename(auxiliary, "Stock3"));
     const EntityId thirdStock = document.createVariable(ElementKind::Stock);
-    QCOMPARE(static_cast<const ModelElement *>(document.find(thirdStock))->displayName, std::string("Stock4"));
+    QCOMPARE(static_cast<const ModelElement *>(document.find(thirdStock))->displayName(), std::string("Stock4"));
     QVERIFY(document.model().findByName("stock4"));
     QCOMPARE(document.model().findByName("stock3")->id(), auxiliary);
 
@@ -164,8 +168,8 @@ void TestDocument::restoreWithStableIds()
     for (auto it = removed.rbegin(); it != removed.rend(); ++it)
         QVERIFY(document.restore(records[*it]));
     QCOMPARE(document.find(flow)->id(), flow);
-    QCOMPARE(static_cast<const Flow *>(document.find(flow))->endpoints.from, stock);
-    QCOMPARE(static_cast<const Connector *>(document.find(connector))->to, flow);
+    QCOMPARE(static_cast<const Flow *>(document.find(flow))->endpoints().from, stock);
+    QCOMPARE(static_cast<const Connector *>(document.find(connector))->to(), flow);
     QCOMPARE(document.diagram().route(flow), route);
     const EntityId next = document.createVariable(ElementKind::Stock);
     QVERIFY(next > connector);
@@ -247,16 +251,16 @@ void TestDocument::entityAndConnectorTypes()
     const EntityId secondCloud = document.createCloud();
     const EntityId comment = document.createComment("Note");
     QVERIFY(constant && data && cloud && secondCloud && comment);
-    QCOMPARE(static_cast<const Comment *>(document.find(comment))->content, std::string("Note"));
+    QCOMPARE(static_cast<const Comment *>(document.find(comment))->content(), std::string("Note"));
     const EntityId secondComment = document.createComment("Note");
     QVERIFY(secondComment != 0);
-    QCOMPARE(static_cast<const Comment *>(document.find(secondComment))->content, std::string("Note"));
+    QCOMPARE(static_cast<const Comment *>(document.find(secondComment))->content(), std::string("Note"));
     QVERIFY(document.setCommentContent(secondComment, "Updated note"));
-    QCOMPARE(static_cast<const Comment *>(document.find(secondComment))->content, std::string("Updated note"));
+    QCOMPARE(static_cast<const Comment *>(document.find(secondComment))->content(), std::string("Updated note"));
     QVERIFY(!document.setCommentContent(stock, "Invalid"));
     const EntityId flow = document.createFlow(stock, cloud);
     QVERIFY(flow != 0);
-    QCOMPARE(static_cast<const Flow *>(document.find(flow))->endpoints.from, stock);
+    QCOMPARE(static_cast<const Flow *>(document.find(flow))->endpoints().from, stock);
     const EntityId arrow = document.createConnector(stock, auxiliary);
     QVERIFY(arrow != 0);
     QCOMPARE(document.createConnector(stock, auxiliary), EntityId(0));
@@ -279,11 +283,11 @@ void TestDocument::reconnectRoutes()
     const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
     const EntityId connector = document.createConnector(first, auxiliary);
     QVERIFY(document.reconnectConnector(connector, second, auxiliary));
-    QCOMPARE(static_cast<const Connector *>(document.find(connector))->from, second);
+    QCOMPARE(static_cast<const Connector *>(document.find(connector))->from(), second);
     QVERIFY(!document.reconnectConnector(connector, 9999, auxiliary));
     const EntityId flow = document.createFlow(first, cloud);
     QVERIFY(document.reconnectFlow(flow, second, cloud));
-    QCOMPARE(static_cast<const Flow *>(document.find(flow))->endpoints.from, second);
+    QCOMPARE(static_cast<const Flow *>(document.find(flow))->endpoints().from, second);
     QVERIFY(!document.reconnectFlow(flow, auxiliary, cloud));
 }
 
@@ -294,10 +298,106 @@ void TestDocument::metadata()
     QVERIFY(document.setUnit(id, "people"));
     QVERIFY(document.setComment(id, "Population stock"));
     const auto *model = static_cast<const ModelElement *>(document.find(id));
-    QCOMPARE(model->unit, std::string("people"));
-    QCOMPARE(model->comment, std::string("Population stock"));
+    QCOMPARE(model->unit(), std::string("people"));
+    QCOMPARE(model->comment(), std::string("Population stock"));
     QVERIFY(!document.setUnit(9999, "x"));
     QVERIFY(!document.setComment(9999, "x"));
+}
+
+void TestDocument::applyFailureIsAtomic()
+{
+    Document document;
+    const EntityId stock = document.createVariable(ElementKind::Stock);
+    const EntityId otherStock = document.createVariable(ElementKind::Stock);
+    const EntityId cloud = document.createCloud();
+    const EntityId flow = document.createFlow(stock, cloud);
+    QVERIFY(document.rename(stock, "Population"));
+    QVERIFY(document.setEquation(stock, "100"));
+    QVERIFY(document.setUnit(stock, "people"));
+    QVERIFY(document.setComment(stock, "Initial"));
+    QVERIFY(document.setFontStyle(stock, {"Arial", 18}));
+
+    const ElementData original = *document.capture(stock);
+    ElementData edit = original;
+    edit.displayName = "Stock2";
+    edit.equation = "200";
+    edit.unit = "invalid";
+    QVERIFY(!document.apply(edit));
+    QCOMPARE(*document.capture(stock), original);
+
+    edit = original;
+    edit.font = {"Arial", -1};
+    edit.equation = "300";
+    QVERIFY(!document.apply(edit));
+    QCOMPARE(*document.capture(stock), original);
+
+    edit = original;
+    edit.equation = "400";
+    edit.displayName = "Updated";
+    edit.position = {50.0, 75.0};
+    QVERIFY(document.apply(edit));
+    QCOMPARE(*document.capture(stock), edit);
+    QVERIFY(document.model().findByName("updated"));
+
+    const ElementData originalFlow = *document.capture(flow);
+    ElementData flowEdit = originalFlow;
+    flowEdit.flowEndpoints = {otherStock, cloud};
+    flowEdit.route.mode = RouteMode::Orthogonal;
+    QVERIFY(!document.apply(flowEdit));
+    QCOMPARE(*document.capture(flow), originalFlow);
+
+    const EntityId otherFlow = document.createFlow(otherStock, cloud);
+    QVERIFY(otherFlow != 0);
+    const ElementData originalOtherFlow = *document.capture(otherFlow);
+    flowEdit.route.mode = RouteMode::Straight;
+    QVERIFY(!document.apply(flowEdit));
+    QCOMPARE(*document.capture(flow), originalFlow);
+    QCOMPARE(*document.capture(otherFlow), originalOtherFlow);
+
+    const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
+    const EntityId connector = document.createConnector(stock, auxiliary);
+    const ElementData originalConnector = *document.capture(connector);
+    ElementData connectorEdit = originalConnector;
+    connectorEdit.from = 0;
+    connectorEdit.position = {500.0, 500.0};
+    QVERIFY(!document.apply(connectorEdit));
+    QCOMPARE(*document.capture(connector), originalConnector);
+
+    QVERIFY(document.defineDimension("Dim", 2));
+    QVERIFY(document.setDimensions(stock, {"dim"}));
+    QVERIFY(document.setElementEquation(stock, {0}, "1"));
+    QVERIFY(document.setElementEquation(stock, {1}, "2"));
+    const ElementData originalArray = *document.capture(stock);
+    edit = originalArray;
+    edit.equation = "1";
+    QVERIFY(!document.apply(edit));
+    QCOMPARE(*document.capture(stock), originalArray);
+}
+
+void TestDocument::workspaceValidation()
+{
+    Document document;
+    Workspace workspace;
+    workspace.hasViewport = true;
+    workspace.zoom = 1.5;
+    workspace.center = {10.0, 20.0};
+    workspace.hasScrollValues = true;
+    workspace.scrollX = 30;
+    workspace.scrollY = 40;
+    QVERIFY(document.setWorkspace(workspace));
+    QCOMPARE(document.workspace(), workspace);
+
+    const Workspace original = document.workspace();
+    for (double zoom : {0.0, -1.0, std::numeric_limits<double>::infinity(), std::numeric_limits<double>::quiet_NaN()}) {
+        Workspace invalid = original;
+        invalid.zoom = zoom;
+        QVERIFY(!document.setWorkspace(invalid));
+        QCOMPARE(document.workspace(), original);
+    }
+    Workspace invalid = original;
+    invalid.center.x = std::numeric_limits<double>::infinity();
+    QVERIFY(!document.setWorkspace(invalid));
+    QCOMPARE(document.workspace(), original);
 }
 
 void TestDocument::validation()

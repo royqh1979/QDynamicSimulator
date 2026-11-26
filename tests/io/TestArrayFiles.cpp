@@ -33,15 +33,15 @@ void verifyArrayDefinitions(const Document &document)
     const auto *apply = document.model().findByName("Apply");
     const auto *individual = document.model().findByName("Individual");
     QVERIFY(apply && individual);
-    QCOMPARE(apply->dimensions, (std::vector<std::string> {"location", "n"}));
-    QCOMPARE(apply->equation, std::string("1"));
-    QVERIFY(apply->elementEquations.empty());
-    QCOMPARE(individual->dimensions, std::vector<std::string> {"location"});
-    QCOMPARE(individual->elementEquations.size(), std::size_t(2));
-    QCOMPARE(individual->elementEquations[0].indices, std::vector<std::size_t> {0});
-    QCOMPARE(individual->elementEquations[0].equation, std::string("10"));
-    QCOMPARE(individual->elementEquations[1].indices, std::vector<std::size_t> {1});
-    QCOMPARE(individual->elementEquations[1].equation, std::string("20"));
+    QCOMPARE(apply->dimensions(), (std::vector<std::string> {"location", "n"}));
+    QCOMPARE(apply->equation(), std::string("1"));
+    QVERIFY(apply->elementEquations().empty());
+    QCOMPARE(individual->dimensions(), std::vector<std::string> {"location"});
+    QCOMPARE(individual->elementEquations().size(), std::size_t(2));
+    QCOMPARE(individual->elementEquations()[0].indices, std::vector<std::size_t> {0});
+    QCOMPARE(individual->elementEquations()[0].equation, std::string("10"));
+    QCOMPARE(individual->elementEquations()[1].indices, std::vector<std::size_t> {1});
+    QCOMPARE(individual->elementEquations()[1].equation, std::string("20"));
 }
 
 void TestArrayFiles::arrayRoundTrips()
@@ -93,9 +93,9 @@ void TestArrayFiles::realArrayImports()
     QCOMPARE(dimension->elements.size(), std::size_t(3));
     const auto *array = apply.model().findByName("var1");
     QVERIFY(array);
-    QCOMPARE(array->dimensions, std::vector<std::string> {"dim1"});
-    QCOMPARE(array->equation, std::string("1, 2, 3"));
-    const FormulaAnalysis literal = analyzeFormula(array->equation);
+    QCOMPARE(array->dimensions(), std::vector<std::string> {"dim1"});
+    QCOMPARE(array->equation(), std::string("1, 2, 3"));
+    const FormulaAnalysis literal = analyzeFormula(array->equation());
     QVERIFY(literal.issues.empty());
     QVERIFY(dynamic_cast<const ArrayLiteralNode *>(literal.ast.get()));
     EvaluationContext context;
@@ -110,9 +110,9 @@ void TestArrayFiles::realArrayImports()
     QVERIFY2(qds::io::XmileFile::importFile(QStringLiteral(QDS_ARRAY_INDIVIDUAL_XMILE_PATH), individual, &error), qPrintable(error));
     const auto *rate = individual.model().findByName("Rate A");
     QVERIFY(rate);
-    QCOMPARE(rate->elementEquations.size(), std::size_t(3));
-    QCOMPARE(rate->elementEquations[1].indices, std::vector<std::size_t> {1});
-    QCOMPARE(rate->elementEquations[2].equation, std::string("0.3"));
+    QCOMPARE(rate->elementEquations().size(), std::size_t(3));
+    QCOMPARE(rate->elementEquations()[1].indices, std::vector<std::size_t> {1});
+    QCOMPARE(rate->elementEquations()[2].equation, std::string("0.3"));
 
     QTemporaryDir directory;
     const QString path = directory.filePath(QStringLiteral("individual.xmile"));
@@ -121,8 +121,8 @@ void TestArrayFiles::realArrayImports()
     QVERIFY2(qds::io::XmileFile::importFile(path, reimported, &error), qPrintable(error));
     rate = reimported.model().findByName("Rate A");
     QVERIFY(rate);
-    QCOMPARE(rate->elementEquations.size(), std::size_t(3));
-    QCOMPARE(rate->elementEquations[0].equation, std::string("0.01"));
+    QCOMPARE(rate->elementEquations().size(), std::size_t(3));
+    QCOMPARE(rate->elementEquations()[0].equation, std::string("0.01"));
 }
 
 } // namespace

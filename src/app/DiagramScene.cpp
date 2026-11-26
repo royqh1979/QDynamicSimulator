@@ -64,9 +64,9 @@ DiagramItem *connectionEndpointAt(QGraphicsScene &scene, const QPointF &position
 QString documentElementName(const DocumentElement &element)
 {
     if (const auto *model = dynamic_cast<const ModelElement *>(&element))
-        return QString::fromStdString(model->displayName);
+        return QString::fromStdString(model->displayName());
     if (const auto *comment = dynamic_cast<const Comment *>(&element))
-        return QString::fromStdString(comment->content);
+        return QString::fromStdString(comment->content());
     return {};
 }
 
@@ -646,11 +646,11 @@ void DiagramScene::applyChangeNotification(const ChangeNotification &notificatio
             m_obstacles.upsert(id, view->sceneBoundingRect().adjusted(-12.0, -12.0, 12.0, 12.0));
         } else if (auto *flow = dynamic_cast<FlowItem *>(item)) {
             const auto &value = static_cast<const Flow &>(*element);
-            flow->refresh(value, m_items.value(value.endpoints.from), m_items.value(value.endpoints.to), position);
+            flow->refresh(value, m_items.value(value.endpoints().from), m_items.value(value.endpoints().to), position);
             flow->setRoute(m_controller->document().diagram().route(id));
         } else if (auto *arrow = dynamic_cast<ArrowItem *>(item)) {
             const auto &value = static_cast<const Connector &>(*element);
-            arrow->rebind(m_items.value(value.from), m_items.value(value.to));
+            arrow->rebind(m_items.value(value.from()), m_items.value(value.to()));
             arrow->setRoute(m_controller->document().diagram().route(id));
             updateAutomaticRoute(arrow);
         }
@@ -671,11 +671,11 @@ DiagramItem *DiagramScene::createCanvasItem(EntityId id)
     DiagramItem *item = nullptr;
     if (element->kind() == ElementKind::Flow) {
         const auto &flow = static_cast<const Flow &>(*element);
-        item = new FlowItem(flow, m_items.value(flow.endpoints.from), m_items.value(flow.endpoints.to),
+        item = new FlowItem(flow, m_items.value(flow.endpoints().from), m_items.value(flow.endpoints().to),
                             m_controller->document().diagram().route(id), position);
     } else if (element->kind() == ElementKind::Connector) {
         const auto &connector = static_cast<const Connector &>(*element);
-        item = new ArrowItem(id, m_items.value(connector.from), m_items.value(connector.to),
+        item = new ArrowItem(id, m_items.value(connector.from()), m_items.value(connector.to()),
                              m_controller->document().diagram().route(id));
     } else if (const auto *model = dynamic_cast<const ModelElement *>(element)) {
         item = new VariableItem(*model, position);
@@ -832,13 +832,13 @@ void DiagramScene::finishControlPoint(EntityId id, int index, const QPointF &pos
     bool restored = false;
     if (element->kind() == ElementKind::Flow) {
         const auto &flow = static_cast<const Flow &>(*element);
-        const EntityId from = index == -1 ? target->id() : flow.endpoints.from;
-        const EntityId to = index == -2 ? target->id() : flow.endpoints.to;
+        const EntityId from = index == -1 ? target->id() : flow.endpoints().from;
+        const EntityId to = index == -2 ? target->id() : flow.endpoints().to;
         restored = m_controller->reconnectFlow(id, from, to);
     } else {
         const auto &connector = static_cast<const Connector &>(*element);
-        const EntityId from = index == -1 ? target->id() : connector.from;
-        const EntityId to = index == -2 ? target->id() : connector.to;
+        const EntityId from = index == -1 ? target->id() : connector.from();
+        const EntityId to = index == -2 ? target->id() : connector.to();
         restored = m_controller->reconnectConnector(id, from, to);
     }
     if (!restored)
@@ -913,7 +913,7 @@ void DiagramScene::beginInlineRename(DiagramItem *item)
     editor->setFont(item->labelFont());
     editor->setStyleSheet(QStringLiteral("QLineEdit { border: 2px solid %1; border-radius: 4px; padding: 2px 4px; background: %2; color: %3; }")
         .arg(diagram_palette::SelectionColor.name(), diagram_palette::EntityFillColor.name(), diagram_palette::EntityTextColor.name()));
-    editor->setText(QString::fromStdString(model->displayName));
+    editor->setText(QString::fromStdString(model->displayName()));
     editor->resize(editorRect.size().toSize());
     proxy->setWidget(editor);
     proxy->setPos(editorRect.topLeft());

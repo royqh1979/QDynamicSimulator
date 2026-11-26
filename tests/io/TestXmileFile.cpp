@@ -69,20 +69,20 @@ void verifyConnectedDocument(const Document &document, std::size_t expectedModel
         if (element.kind() == ElementKind::Flow) {
             QCOMPARE(document.diagram().route(element.id()).mode, RouteMode::Straight);
             const auto &flow = static_cast<const Flow &>(element);
-            QVERIFY(flow.endpoints.from != 0 && flow.endpoints.to != 0);
-            QVERIFY(document.find(flow.endpoints.from) && document.find(flow.endpoints.to));
+            QVERIFY(flow.endpoints().from != 0 && flow.endpoints().to != 0);
+            QVERIFY(document.find(flow.endpoints().from) && document.find(flow.endpoints().to));
             connected.insert(flow.id());
-            connected.insert(flow.endpoints.from);
-            connected.insert(flow.endpoints.to);
+            connected.insert(flow.endpoints().from);
+            connected.insert(flow.endpoints().to);
         } else if (element.kind() == ElementKind::Connector) {
             QCOMPARE(document.diagram().route(element.id()).mode, RouteMode::Bezier);
             ++connectorCount;
             const auto &connector = static_cast<const Connector &>(element);
-            QVERIFY(connector.from != 0 && connector.to != 0);
-            QVERIFY(document.find(connector.from) && document.find(connector.to));
+            QVERIFY(connector.from() != 0 && connector.to() != 0);
+            QVERIFY(document.find(connector.from()) && document.find(connector.to()));
             connected.insert(connector.id());
-            connected.insert(connector.from);
-            connected.insert(connector.to);
+            connected.insert(connector.from());
+            connected.insert(connector.to());
         }
     }
     QCOMPARE(connectorCount, expectedConnectorCount);
@@ -198,9 +198,9 @@ void TestXmileFile::nativeRoundTrip()
     QCOMPARE(connectorCount, std::size_t(4));
     const auto *loadedStock = dynamic_cast<const ModelElement *>(loaded.findByName("\u5E93\u5B58 & Population"));
     QVERIFY(loadedStock);
-    QCOMPARE(loadedStock->equation, std::string("100"));
-    QCOMPARE(loadedStock->unit, std::string("people"));
-    QCOMPARE(loadedStock->comment, std::string("Population stock"));
+    QCOMPARE(loadedStock->equation(), std::string("100"));
+    QCOMPARE(loadedStock->unit(), std::string("people"));
+    QCOMPARE(loadedStock->comment(), std::string("Population stock"));
     QCOMPARE(loaded.diagram().position(loadedStock->id()), Vec2({120.5, 80.25}));
     QCOMPARE(loaded.diagram().fontStyle(loadedStock->id()), (FontStyle {"Arial", 18}));
     QCOMPARE(loaded.findByName("\u5E38\u91CF")->kind(), ElementKind::Constant);
@@ -209,15 +209,15 @@ void TestXmileFile::nativeRoundTrip()
     const auto *loadedFlow = dynamic_cast<const Flow *>(loaded.findByName("Flow1"));
     QVERIFY(loadedFlow);
     QCOMPARE(loaded.diagram().fontStyle(loadedFlow->id()), (FontStyle {"Times New Roman", 16}));
-    QCOMPARE(loadedFlow->equation, std::string("\u8F85\u52A9\u53D8\u91CF * 0.5"));
-    QCOMPARE(loadedFlow->endpoints.from, loadedStock->id());
-    QVERIFY(loadedFlow->endpoints.to != 0);
-    QCOMPARE(loaded.find(loadedFlow->endpoints.to)->kind(), ElementKind::Cloud);
+    QCOMPARE(loadedFlow->equation(), std::string("\u8F85\u52A9\u53D8\u91CF * 0.5"));
+    QCOMPARE(loadedFlow->endpoints().from, loadedStock->id());
+    QVERIFY(loadedFlow->endpoints().to != 0);
+    QCOMPARE(loaded.find(loadedFlow->endpoints().to)->kind(), ElementKind::Cloud);
     const Route loadedRoute = loaded.diagram().route(loadedFlow->id());
     QVERIFY(loadedRoute.controlPoints == std::vector<RoutePoint>({{0.25, 100.0}, {0.75, 120.0}}));
     QCOMPARE(loadedRoute.mode, RouteMode::Bezier);
     QVERIFY(loadedRoute.locked);
-    QCOMPARE(loaded.diagram().position(loadedFlow->endpoints.to), Vec2({450.0, 80.25}));
+    QCOMPARE(loaded.diagram().position(loadedFlow->endpoints().to), Vec2({450.0, 80.25}));
 
     int commentCount = 0;
     int commentConnectorCount = 0;
@@ -233,7 +233,7 @@ void TestXmileFile::nativeRoundTrip()
             const bool first = loaded.diagram().position(element.id()) == Vec2({100.0, 300.0});
             if (first)
                 QCOMPARE(loaded.diagram().fontStyle(element.id()), (FontStyle {"", 14}));
-            QCOMPARE(static_cast<const Comment &>(element).content,
+            QCOMPARE(static_cast<const Comment &>(element).content(),
                      first ? std::string("\u66F4\u65B0\u540E\u7684\u6CE8\u91CA") : std::string("\u6CE8\u91CA"));
         } else if (element.kind() == ElementKind::Connector) {
             const Route loadedConnectorRoute = loaded.diagram().route(element.id());
@@ -250,15 +250,15 @@ void TestXmileFile::nativeRoundTrip()
                 QVERIFY(qAbs(actualPoint.relative.y - expectedPoint.relative.y) < 1e-12);
             }
             const auto &connector = static_cast<const Connector &>(element);
-            const DocumentElement *from = loaded.find(connector.from);
+            const DocumentElement *from = loaded.find(connector.from());
             if (from->kind() != ElementKind::Comment)
                 continue;
             ++commentConnectorCount;
             if (loaded.diagram().position(from->id()) == Vec2({100.0, 300.0}))
-                QCOMPARE(connector.to, loadedFlow->id());
+                QCOMPARE(connector.to(), loadedFlow->id());
             else {
                 QCOMPARE(loaded.diagram().position(from->id()), Vec2({500.0, 300.0}));
-                QCOMPARE(connector.to, loaded.findByName("\u8F85\u52A9\u53D8\u91CF")->id());
+                QCOMPARE(connector.to(), loaded.findByName("\u8F85\u52A9\u53D8\u91CF")->id());
             }
         }
     }
@@ -289,13 +289,13 @@ void TestXmileFile::plainXmlOpen()
     QCOMPARE(document.findByName("A")->kind(), ElementKind::Auxiliary);
     const auto *flow = dynamic_cast<const Flow *>(document.findByName("F"));
     QVERIFY(flow);
-    QVERIFY(flow->endpoints.from != 0 && flow->endpoints.to != 0);
-    QVERIFY(flow->endpoints.from != flow->endpoints.to);
-    QCOMPARE(document.find(flow->endpoints.from)->kind(), ElementKind::Cloud);
-    QCOMPARE(document.find(flow->endpoints.to)->kind(), ElementKind::Cloud);
-    QVERIFY(document.diagram().position(flow->endpoints.from).x > 0.0);
-    QVERIFY(document.diagram().position(flow->endpoints.to).x
-            > document.diagram().position(flow->endpoints.from).x);
+    QVERIFY(flow->endpoints().from != 0 && flow->endpoints().to != 0);
+    QVERIFY(flow->endpoints().from != flow->endpoints().to);
+    QCOMPARE(document.find(flow->endpoints().from)->kind(), ElementKind::Cloud);
+    QCOMPARE(document.find(flow->endpoints().to)->kind(), ElementKind::Cloud);
+    QVERIFY(document.diagram().position(flow->endpoints().from).x > 0.0);
+    QVERIFY(document.diagram().position(flow->endpoints().to).x
+            > document.diagram().position(flow->endpoints().from).x);
     QVERIFY(document.diagram().position(document.findByName("S")->id()).x > 0.0);
 }
 
@@ -308,10 +308,10 @@ void TestXmileFile::sirModelImport()
     const auto *succumbing = dynamic_cast<const Flow *>(document.findByName("succumbing"));
     const auto *recovering = dynamic_cast<const Flow *>(document.findByName("recovering"));
     QVERIFY(succumbing && recovering);
-    QCOMPARE(succumbing->endpoints.from, document.findByName("susceptible")->id());
-    QCOMPARE(succumbing->endpoints.to, document.findByName("infectious")->id());
-    QCOMPARE(recovering->endpoints.from, document.findByName("infectious")->id());
-    QCOMPARE(recovering->endpoints.to, document.findByName("recovered")->id());
+    QCOMPARE(succumbing->endpoints().from, document.findByName("susceptible")->id());
+    QCOMPARE(succumbing->endpoints().to, document.findByName("infectious")->id());
+    QCOMPARE(recovering->endpoints().from, document.findByName("infectious")->id());
+    QCOMPARE(recovering->endpoints().to, document.findByName("recovered")->id());
 
     QTemporaryDir directory;
     const QString path = directory.filePath(QStringLiteral("sir-export.xmile"));
@@ -346,10 +346,10 @@ void TestXmileFile::xmileExport()
     QVERIFY2(qds::io::XmileFile::importFile(path, imported, &error), qPrintable(error));
     const auto *importedFlow = dynamic_cast<const Flow *>(imported.findByName("Flow1"));
     QVERIFY(importedFlow);
-    QCOMPARE(imported.find(importedFlow->endpoints.from)->kind(), ElementKind::Stock);
-    QCOMPARE(imported.find(importedFlow->endpoints.to)->kind(), ElementKind::Cloud);
+    QCOMPARE(imported.find(importedFlow->endpoints().from)->kind(), ElementKind::Stock);
+    QCOMPARE(imported.find(importedFlow->endpoints().to)->kind(), ElementKind::Cloud);
     QCOMPARE(imported.findByName("Constant1")->kind(), ElementKind::Auxiliary);
-    QCOMPARE(imported.model().findByName("Stock1")->id(), importedFlow->endpoints.from);
+    QCOMPARE(imported.model().findByName("Stock1")->id(), importedFlow->endpoints().from);
 }
 
 void TestXmileFile::xmileRejectsZip()
@@ -388,22 +388,22 @@ void TestXmileFile::missingViewsAreCompleted()
     QVERIFY2(qds::io::DocumentFile::open(path, document, &error), qPrintable(error));
     const auto *flow = dynamic_cast<const Flow *>(document.findByName("F"));
     QVERIFY(flow);
-    QCOMPARE(document.find(flow->endpoints.from)->kind(), ElementKind::Stock);
-    QCOMPARE(document.find(flow->endpoints.to)->kind(), ElementKind::Stock);
-    QCOMPARE(flow->endpoints.to, document.findByName("Target")->id());
-    QCOMPARE(document.diagram().position(flow->endpoints.from), Vec2({300.0, 200.0}));
-    QVERIFY(document.diagram().position(flow->endpoints.to).x > 0.0);
+    QCOMPARE(document.find(flow->endpoints().from)->kind(), ElementKind::Stock);
+    QCOMPARE(document.find(flow->endpoints().to)->kind(), ElementKind::Stock);
+    QCOMPARE(flow->endpoints().to, document.findByName("Target")->id());
+    QCOMPARE(document.diagram().position(flow->endpoints().from), Vec2({300.0, 200.0}));
+    QVERIFY(document.diagram().position(flow->endpoints().to).x > 0.0);
 
     const auto *independent = dynamic_cast<const Flow *>(document.findByName("Independent"));
     QVERIFY(independent);
-    QCOMPARE(document.find(independent->endpoints.from)->kind(), ElementKind::Cloud);
-    QCOMPARE(document.find(independent->endpoints.to)->kind(), ElementKind::Cloud);
-    QVERIFY(independent->endpoints.from != independent->endpoints.to);
+    QCOMPARE(document.find(independent->endpoints().from)->kind(), ElementKind::Cloud);
+    QCOMPARE(document.find(independent->endpoints().to)->kind(), ElementKind::Cloud);
+    QVERIFY(independent->endpoints().from != independent->endpoints().to);
     for (const ModelElement &element : document.model().elements()) {
         QVERIFY(element.id() != 0);
         if (element.kind() == ElementKind::Flow) {
             const auto &routed = static_cast<const Flow &>(element);
-            QVERIFY(routed.endpoints.from != 0 && routed.endpoints.to != 0);
+            QVERIFY(routed.endpoints().from != 0 && routed.endpoints().to != 0);
         }
     }
 }

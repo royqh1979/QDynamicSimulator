@@ -271,7 +271,7 @@ void DocumentController::setComment(EntityId id, const QString &comment)
 void DocumentController::setCommentContent(EntityId id, const QString &content)
 {
     const auto *comment = dynamic_cast<const Comment *>(m_document.find(id));
-    if (!comment || comment->content == content.toStdString())
+    if (!comment || comment->content() == content.toStdString())
         return;
     ChangeRecord record;
     record.id = id;
@@ -326,7 +326,7 @@ bool DocumentController::reconnectFlow(EntityId id, EntityId from, EntityId to)
     const Flow *flow = dynamic_cast<const Flow *>(m_document.find(id));
     if (!flow)
         return false;
-    if (flow->endpoints.from == from && flow->endpoints.to == to)
+    if (flow->endpoints().from == from && flow->endpoints().to == to)
         return true;
     ChangeRecord record;
     record.id = id;
@@ -344,7 +344,7 @@ bool DocumentController::reconnectConnector(EntityId id, EntityId from, EntityId
     const Connector *connector = dynamic_cast<const Connector *>(m_document.find(id));
     if (!connector)
         return false;
-    if (connector->from == from && connector->to == to)
+    if (connector->from() == from && connector->to() == to)
         return true;
     ChangeRecord record;
     record.id = id;
@@ -390,12 +390,12 @@ ClipboardData DocumentController::copyElements(const std::vector<EntityId> &ids)
             continue;
         if (element->kind() == ElementKind::Flow) {
             const Flow &flow = static_cast<const Flow &>(*element);
-            if (!selected.count(flow.endpoints.from) || !selected.count(flow.endpoints.to))
+            if (!selected.count(flow.endpoints().from) || !selected.count(flow.endpoints().to))
                 continue;
         }
         if (element->kind() == ElementKind::Connector) {
             const Connector &connector = static_cast<const Connector &>(*element);
-            if (!selected.count(connector.from) || !selected.count(connector.to))
+            if (!selected.count(connector.from()) || !selected.count(connector.to()))
                 continue;
         }
         clipboard.elements.push_back(*m_document.capture(id));

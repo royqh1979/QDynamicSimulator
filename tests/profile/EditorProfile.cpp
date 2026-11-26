@@ -281,7 +281,7 @@ int main(int argc, char **argv)
         QApplication::sendEvent(editor, &enterPress);
         inlineRenameNs += timer.nsecsElapsed();
         const auto *model = dynamic_cast<const ModelElement *>(renameController.document().find(renameStock));
-        if (!model || model->displayName != "Population" || inlineNameEditor(renameScene))
+        if (!model || model->displayName() != "Population" || inlineNameEditor(renameScene))
             return 23;
         ++inlineRenameCount;
         renameController.undoStack()->undo();
@@ -450,7 +450,7 @@ int main(int argc, char **argv)
         const auto *flow = dynamic_cast<const Flow *>(previewFlowController.document().find(previewFlow));
         const QPainterPath arrowPath = previewFlowArrow->geometryPath();
         const QPointF expectedEnd = previewFlowItem->boundaryPointToward(arrowPath.elementAt(arrowPath.elementCount() - 2));
-        if (!flow || flow->endpoints.to != target || previewFlowItem->previewing()
+        if (!flow || flow->endpoints().to != target || previewFlowItem->previewing()
             || QLineF(arrowPath.pointAtPercent(1.0), expectedEnd).length() > 0.75)
             return 21;
         ++flowEndpointPreviewCount;
@@ -484,7 +484,7 @@ int main(int argc, char **argv)
             return 17;
         const auto *connector = dynamic_cast<const Connector *>(flowTargetController.document().find(selection.front()));
         const auto *arrow = dynamic_cast<const ArrowItem *>(flowTargetScene.item(selection.front()));
-        if (!connector || !arrow || connector->from != flowTargetSource || connector->to != flowTargetFlow
+        if (!connector || !arrow || connector->from() != flowTargetSource || connector->to() != flowTargetFlow
             || arrow->to() != flowTargetScene.item(flowTargetFlow))
             return 18;
         ++connectorToFlowCount;
@@ -598,7 +598,7 @@ int main(int argc, char **argv)
         const EntityId id = blankController.createFlow(0, 0, from, from + QPointF(160.0, 0.0));
         if (id == 0)
             return 7;
-        const FlowEndpoints endpoints = static_cast<const Flow *>(blankController.document().find(id))->endpoints;
+        const FlowEndpoints endpoints = static_cast<const Flow *>(blankController.document().find(id))->endpoints();
         blankController.undoStack()->undo();
         if (blankController.document().find(id) || blankController.document().find(endpoints.from)
             || blankController.document().find(endpoints.to))
@@ -867,7 +867,7 @@ int main(int argc, char **argv)
     std::size_t originalModelCount = 0;
     for (const ModelElement &element : controller.document().model().elements()) {
         ++originalModelCount;
-        const ModelElement *loadedElement = loaded.findByName(element.displayName);
+        const ModelElement *loadedElement = loaded.findByName(element.displayName());
         variableKindsMatch = variableKindsMatch && loadedElement && loadedElement->kind() == element.kind();
     }
 

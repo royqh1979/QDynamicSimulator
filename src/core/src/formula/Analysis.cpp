@@ -195,8 +195,8 @@ void resolveNode(const Document &document, ModelAnalysis &result, ElementAnalysi
         for (std::size_t position = 0; position < subscript->indices.size(); ++position) {
             const auto &index = subscript->indices[position];
             const auto *name = dynamic_cast<const ReferenceNode *>(index.get());
-            if (name && target && position < target->dimensions.size()) {
-                const Dimension *dimension = document.findDimension(target->dimensions[position]);
+            if (name && target && position < target->dimensions().size()) {
+                const Dimension *dimension = document.findDimension(target->dimensions()[position]);
                 if (dimension && (name->nameKey == dimension->nameKey || dimension->findElement(name->nameKey)))
                     continue;
             }
@@ -221,7 +221,7 @@ void reportCycles(const Document &document, ModelAnalysis &result)
     std::unordered_set<EntityId> reported;
     std::function<void(EntityId)> visit = [&](EntityId id) {
         const auto *model = dynamic_cast<const ModelElement *>(document.find(id));
-        if (model && !model->dimensions.empty()) {
+        if (model && !model->dimensions().empty()) {
             state[id] = 2;
             return;
         }
@@ -266,15 +266,15 @@ ModelAnalysis analyzeDocument(const Document &document)
     for (const ViewElement &element : document.diagram().elements()) {
         if (element.kind() == ElementKind::Connector) {
             const Connector &connector = static_cast<const Connector &>(element);
-            result.structurallyUsed.insert(connector.from);
-            result.structurallyUsed.insert(connector.to);
+            result.structurallyUsed.insert(connector.from());
+            result.structurallyUsed.insert(connector.to());
         }
     }
     for (const ModelElement &element : document.model().elements()) {
         if (element.kind() == ElementKind::Flow) {
             const Flow &flow = static_cast<const Flow &>(element);
-            result.structurallyUsed.insert(flow.endpoints.from);
-            result.structurallyUsed.insert(flow.endpoints.to);
+            result.structurallyUsed.insert(flow.endpoints().from);
+            result.structurallyUsed.insert(flow.endpoints().to);
             result.structurallyUsed.insert(flow.id());
         }
         ElementAnalysis owner;
@@ -286,20 +286,20 @@ ModelAnalysis analyzeDocument(const Document &document)
             formula.ast = expandFormula(document, result, owner, formula.ast.get(), {}, macroStack);
             resolveNode(document, result, owner, formula.ast.get());
         };
-        owner.formula = analyzeFormula(element.equation);
+        owner.formula = analyzeFormula(element.equation());
         analyzeOwned(owner.formula);
-        for (const ArrayElementEquation &entry : element.elementEquations) {
+        for (const ArrayElementEquation &entry : element.elementEquations()) {
             ArrayElementAnalysis item;
             item.indices = entry.indices;
             item.formula = analyzeFormula(entry.equation);
             analyzeOwned(item.formula);
             owner.elementFormulas.push_back(std::move(item));
         }
-        if (!element.elementEquations.empty()) {
+        if (!element.elementEquations().empty()) {
             std::size_t expected = 1;
-            for (const std::string &name : element.dimensions)
+            for (const std::string &name : element.dimensions())
                 expected *= document.findDimension(name)->elements.size();
-            if (element.elementEquations.size() != expected)
+            if (element.elementEquations().size() != expected)
                 addIssue(result, element.id(), IssueSeverity::Error, "Array element equations are incomplete",
                     "incomplete-array-elements", {});
         }
