@@ -1,4 +1,4 @@
-#include <core/Formula.h>
+#include <core/formula/Formula.h>
 
 #include <core/Identifier.h>
 

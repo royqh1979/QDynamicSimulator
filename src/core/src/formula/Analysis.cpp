@@ -1,6 +1,6 @@
-#include <core/Analysis.h>
+#include <core/formula/Analysis.h>
 
-#include <core/Function.h>
+#include <core/formula/Function.h>
 #include <core/Identifier.h>
 
 #include <algorithm>

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/Document.h>
-#include <core/Formula.h>
+#include <core/formula/Formula.h>
 
 #include <string>
 #include <vector>

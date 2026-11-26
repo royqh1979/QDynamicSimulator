@@ -82,8 +82,9 @@ Document
 | `Identifier.h/.cpp` | trimDisplayName、normalizeIdentifier 的共享名称规范 |
 | `ElementRange.h` | Document 元素存储上的通用只读过滤迭代器，不拥有对象 |
 | `Document.h/.cpp` | Document 聚合、Workspace、ElementData、编辑、级联删除和 Capture/Apply/Restore |
+| `formula/Formula.h/.cpp`、`formula/Function.h/.cpp`、`formula/Analysis.h/.cpp`、`formula/Evaluation.h/.cpp` | 公式 AST、内置函数、符号与依赖分析、求值组成的公式子系统 |
 
-Document.h 负责组合上述类型，但不再自行定义 Vec2、Route 或视图元素。Model.cpp 不实现 Dimension 或通用名称规范。此次分解只移动既有声明和实现，不改变模型语义、ID、持久化格式、公式 AST 或宏调用行为；验收以现有全部单元测试、Release 后 Debug 构建及应用/profile 目标构建为准，不增加无运行时变化的性能基线。
+Document.h 负责组合上述类型，但不再自行定义 Vec2、Route 或视图元素。Model.cpp 不实现 Dimension 或通用名称规范。Validation 仍位于 core 根层，因为它提供 Document 级 ModelIssue 和 validateDocument()，不只是公式语法检查。formula 子目录只组织源码，不增加子命名空间或独立 CMake 库。此次分解只移动既有声明和实现，不改变模型语义、ID、持久化格式、公式 AST 或宏调用行为；验收以现有全部单元测试、Release 后 Debug 构建及应用/profile 目标构建为准，不增加无运行时变化的性能基线。
 
 ### 3.2 稳定标识
 

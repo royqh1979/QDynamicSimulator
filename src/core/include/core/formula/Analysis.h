@@ -1,6 +1,6 @@
 #pragma once
 
-#include <core/Formula.h>
+#include <core/formula/Formula.h>
 #include <core/Macro.h>
 #include <core/Validation.h>
 

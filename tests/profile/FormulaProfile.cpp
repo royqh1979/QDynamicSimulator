@@ -1,6 +1,6 @@
-#include <core/Analysis.h>
-#include <core/Evaluation.h>
-#include <core/Formula.h>
+#include <core/formula/Analysis.h>
+#include <core/formula/Evaluation.h>
+#include <core/formula/Formula.h>
 
 #include <cmath>
 #include <numeric>

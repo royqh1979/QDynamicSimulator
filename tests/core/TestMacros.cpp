@@ -1,5 +1,5 @@
-#include <core/Analysis.h>
-#include <core/Evaluation.h>
+#include <core/formula/Analysis.h>
+#include <core/formula/Evaluation.h>
 #include <core/Identifier.h>
 
 #include <algorithm>

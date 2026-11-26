@@ -1,4 +1,4 @@
-#include <core/Analysis.h>
+#include <core/formula/Analysis.h>
 
 #include <algorithm>
 #include <string>

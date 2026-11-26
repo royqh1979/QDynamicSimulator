@@ -1,7 +1,7 @@
 #pragma once
 
 #include <core/Dimension.h>
-#include <core/Formula.h>
+#include <core/formula/Formula.h>
 
 #include <functional>
 #include <optional>
