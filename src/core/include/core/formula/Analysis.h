@@ -5,66 +5,49 @@
 #include <core/Macro.h>
 #include <core/Validation.h>
 
+#include <QHash>
 #include <QSet>
+#include <QVector>
 
-#include <map>
-#include <unordered_map>
-#include <unordered_set>
+#include <utility>
 
 namespace qds::core {
 
-struct MacroCall {
-    MacroSignature signature;
-    int argumentCount = 0;
+class AnalysisBuilder;
 
-    bool operator==(const MacroCall &other) const
-    {
-        return signature == other.signature && argumentCount == other.argumentCount;
-    }
-};
-
-inline uint qHash(const MacroCall &call, uint seed = 0) noexcept
+class DependencyGraph
 {
-    return ::qHash(call.signature.nameKey, seed) ^ ::qHash(call.signature.parameterCount, seed)
-        ^ ::qHash(call.signature.outputCount, seed) ^ ::qHash(call.argumentCount, seed);
-}
+public:
+    const QHash<EntityId, QVector<EntityId>> &edges() const { return m_edges; }
 
-struct ArrayElementAnalysis {
-    QVector<std::size_t> indices;
-    FormulaAnalysis formula;
+private:
+    friend class AnalysisBuilder;
+    QHash<EntityId, QVector<EntityId>> m_edges;
 };
 
-struct ElementAnalysis {
-    EntityId id = 0;
-    FormulaAnalysis formula;
-    std::vector<ArrayElementAnalysis> elementFormulas;
-    std::unordered_set<EntityId> references;
-    QSet<MacroCall> macroCalls;
+class AnalysisReport
+{
+public:
+    const DependencyGraph &dependencies() const { return m_dependencies; }
+    const QSet<EntityId> &structurallyUsed() const { return m_structurallyUsed; }
+    const QVector<ModelIssue> &issues() const { return m_issues; }
+    QSet<EntityId> references(EntityId dependent) const;
+
+private:
+    friend class AnalysisBuilder;
+    AnalysisReport(DependencyGraph dependencies, QSet<EntityId> structurallyUsed, QVector<ModelIssue> issues)
+        : m_dependencies(std::move(dependencies))
+        , m_structurallyUsed(std::move(structurallyUsed))
+        , m_issues(std::move(issues))
+    {
+    }
+
+    DependencyGraph m_dependencies;
+    QSet<EntityId> m_structurallyUsed;
+    QVector<ModelIssue> m_issues;
 };
 
-struct MacroAnalysis {
-    const MacroDefinition *definition = nullptr;
-    FormulaAnalysis formula;
-    std::vector<FormulaAnalysis> defaults;
-    QSet<EntityId> references;
-    QSet<MacroCall> calls;
-    QVector<QSet<EntityId>> defaultReferences;
-    QVector<QSet<MacroCall>> defaultCalls;
-};
-
-struct DependencyGraph {
-    std::unordered_map<EntityId, QVector<EntityId>> edges;
-};
-
-struct ModelAnalysis {
-    std::vector<ElementAnalysis> elements;
-    std::map<MacroSignature, MacroAnalysis> macros;
-    DependencyGraph dependencies;
-    std::unordered_set<EntityId> structurallyUsed;
-    QVector<ModelIssue> issues;
-};
-
-ModelAnalysis analyzeDocument(const Document &document);
-MacroReader makeMacroReader(const ModelAnalysis &analysis);
+AnalysisReport analyzeDocument(const Document &document);
+MacroReader makeMacroReader(const Document &document);
 
 } // namespace qds::core

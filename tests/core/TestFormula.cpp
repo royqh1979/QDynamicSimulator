@@ -7,19 +7,19 @@
 
 using namespace qds::core;
 
-static_assert(std::is_same_v<decltype(std::declval<const FormulaAnalysis &>().root()), const FormulaNode *>);
+static_assert(std::is_same_v<decltype(std::declval<const Formula &>().root()), const FormulaNode *>);
 static_assert(std::is_same_v<decltype(std::declval<const CallNode &>().argument(0)), const FormulaNode *>);
 static_assert(std::is_same_v<decltype(std::declval<const SubscriptNode &>().index(0)), const FormulaNode *>);
 
 namespace {
 
-const BinaryNode *binary(const FormulaAnalysis &analysis, BinaryOperator op)
+const BinaryNode *binary(const Formula &analysis, BinaryOperator op)
 {
     const auto *node = dynamic_cast<const BinaryNode *>(analysis.root());
     return node && node->op() == op ? node : nullptr;
 }
 
-const UnaryNode *unary(const FormulaAnalysis &analysis, UnaryOperator op)
+const UnaryNode *unary(const Formula &analysis, UnaryOperator op)
 {
     const auto *node = dynamic_cast<const UnaryNode *>(analysis.root());
     return node && node->op() == op ? node : nullptr;
@@ -159,7 +159,10 @@ void TestFormula::identifiersCommentsAndSubscripts()
 
 void TestFormula::diagnostics()
 {
-    QVERIFY(!analyzeFormula("(a+b").issues().empty());
+    const Formula incomplete = analyzeFormula("(a+b");
+    QCOMPARE(incomplete.source(), QString("(a+b"));
+    QVERIFY(!incomplete.issues().empty());
+    QVERIFY(incomplete.root());
     QVERIFY(!analyzeFormula("a + * b").issues().empty());
     QVERIFY(!analyzeFormula("a{comment").issues().empty());
     QVERIFY(!analyzeFormula("\"abc").issues().empty());

@@ -3,28 +3,37 @@
 #include <core/formula/Function.h>
 #include <core/Identifier.h>
 
+#include <QMap>
+
 #include <algorithm>
 #include <functional>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 
 namespace qds::core {
 namespace {
 
-void addIssue(ModelAnalysis &result, EntityId id, IssueSeverity severity, QString message, QString code, SourceSpan span)
+struct MacroCall {
+    MacroSignature signature;
+    int argumentCount = 0;
+
+    bool operator==(const MacroCall &other) const
+    {
+        return signature == other.signature && argumentCount == other.argumentCount;
+    }
+};
+
+uint qHash(const MacroCall &call, uint seed = 0) noexcept
 {
-    result.issues.push_back({id, severity, std::move(message), std::move(code), span});
+    return ::qHash(call.signature.nameKey, seed) ^ ::qHash(call.signature.parameterCount, seed)
+        ^ ::qHash(call.signature.outputCount, seed) ^ ::qHash(call.argumentCount, seed);
 }
 
-void addReference(ModelAnalysis &result, ElementAnalysis &owner, EntityId dependency)
-{
-    owner.references.insert(dependency);
-    result.structurallyUsed.insert(dependency);
-    auto &edges = result.dependencies.edges[dependency];
-    if (std::find(edges.begin(), edges.end(), owner.id) == edges.end())
-        edges.push_back(owner.id);
-}
+struct MacroDependencies {
+    QSet<EntityId> references;
+    QSet<MacroCall> calls;
+    QVector<QSet<EntityId>> defaultReferences;
+    QVector<QSet<MacroCall>> defaultCalls;
+};
 
 struct ResolutionTarget {
     EntityId ownerId = 0;
@@ -42,7 +51,58 @@ bool isDimensionElement(const Document &document, const QString &nameKey)
     return dimension && dimension->findElement(nameKey.mid(separator + 1));
 }
 
-void resolveNode(const Document &document, ModelAnalysis &result, ResolutionTarget &target, const FormulaNode *node)
+} // namespace
+
+class AnalysisBuilder
+{
+public:
+    void addIssue(EntityId id, IssueSeverity severity, QString message, QString code, SourceSpan span)
+    {
+        m_issues.push_back({id, severity, std::move(message), std::move(code), span});
+    }
+
+    void addStructuralUse(EntityId id)
+    {
+        m_structurallyUsed.insert(id);
+    }
+
+    void addReference(EntityId owner, EntityId dependency)
+    {
+        m_structurallyUsed.insert(dependency);
+        auto &edges = m_dependencies.m_edges[dependency];
+        if (std::find(edges.begin(), edges.end(), owner) == edges.end())
+            edges.push_back(owner);
+    }
+
+    void addMacroCall(EntityId owner, const MacroCall &call)
+    {
+        m_macroCalls[owner].insert(call);
+    }
+
+    void setMacroDependencies(const MacroSignature &signature, MacroDependencies dependencies)
+    {
+        m_macroDependencies.insert(signature, std::move(dependencies));
+    }
+
+    void commit(EntityId owner, const ResolutionTarget &target);
+    const DependencyGraph &dependencies() const { return m_dependencies; }
+    const QSet<EntityId> &structurallyUsed() const { return m_structurallyUsed; }
+    void resolveMacroDependencies();
+    AnalysisReport finish();
+
+private:
+    void collectMacroDependencies(const MacroCall &call, QSet<MacroCall> &visited, QSet<EntityId> &references) const;
+
+    DependencyGraph m_dependencies;
+    QSet<EntityId> m_structurallyUsed;
+    QVector<ModelIssue> m_issues;
+    QHash<EntityId, QSet<MacroCall>> m_macroCalls;
+    QMap<MacroSignature, MacroDependencies> m_macroDependencies;
+};
+
+namespace {
+
+void resolveNode(const Document &document, AnalysisBuilder &result, ResolutionTarget &target, const FormulaNode *node)
 {
     if (!node)
         return;
@@ -57,7 +117,7 @@ void resolveNode(const Document &document, ModelAnalysis &result, ResolutionTarg
         if (const ModelElement *model = document.model().findByName(reference->nameKey())) {
             target.references.insert(model->id());
         } else {
-            addIssue(result, target.ownerId, IssueSeverity::Error, "Undefined variable: " + reference->nameKey(),
+            result.addIssue(target.ownerId, IssueSeverity::Error, "Undefined variable: " + reference->nameKey(),
                 "undefined-variable", reference->span());
         }
         return;
@@ -75,15 +135,15 @@ void resolveNode(const Document &document, ModelAnalysis &result, ResolutionTarg
         const FunctionSignature *signature = findFunctionSignature(call->nameKey());
         if (signature) {
             if (call->argumentCount() < signature->minArguments || call->argumentCount() > signature->maxArguments) {
-                addIssue(result, target.ownerId, IssueSeverity::Error,
+                result.addIssue(target.ownerId, IssueSeverity::Error,
                     "Invalid argument count for function: " + call->nameKey(), "invalid-arity", call->span());
             }
         } else if (const MacroDefinition *macro = document.findMacro(call->nameKey(), call->argumentCount(), 1)) {
-            target.macroCalls.insert({macro->signature(), static_cast<int>(call->argumentCount())});
+            target.macroCalls.insert({macro->signature(), int(call->argumentCount())});
         } else if (const ModelElement *model = document.model().findByName(call->nameKey())) {
             target.references.insert(model->id());
         } else {
-            addIssue(result, target.ownerId, IssueSeverity::Error, "Unknown function: " + call->nameKey(),
+            result.addIssue(target.ownerId, IssueSeverity::Error, "Unknown function: " + call->nameKey(),
                 "unknown-function", call->span());
         }
         for (int position = 0; position < call->argumentCount(); ++position)
@@ -124,11 +184,11 @@ void resolveNode(const Document &document, ModelAnalysis &result, ResolutionTarg
     }
 }
 
-ResolutionTarget resolveFormula(const Document &document, ModelAnalysis &result, EntityId ownerId,
-    const FormulaAnalysis &formula, const QSet<QString> &locals = {})
+ResolutionTarget resolveFormula(const Document &document, AnalysisBuilder &result, EntityId ownerId,
+    const Formula &formula, const QSet<QString> &locals = {})
 {
     for (const FormulaIssue &issue : formula.issues())
-        addIssue(result, ownerId, IssueSeverity::Error, issue.message, "parse", issue.span);
+        result.addIssue(ownerId, IssueSeverity::Error, issue.message, "parse", issue.span);
     ResolutionTarget target;
     target.ownerId = ownerId;
     target.locals = locals;
@@ -136,51 +196,18 @@ ResolutionTarget resolveFormula(const Document &document, ModelAnalysis &result,
     return target;
 }
 
-void commitTarget(ModelAnalysis &result, ElementAnalysis &owner, const ResolutionTarget &target)
+void commitTarget(AnalysisBuilder &result, EntityId owner, const ResolutionTarget &target)
 {
     for (EntityId reference : target.references)
-        addReference(result, owner, reference);
+        result.addReference(owner, reference);
     for (const MacroCall &call : target.macroCalls)
-        owner.macroCalls.insert(call);
+        result.addMacroCall(owner, call);
 }
 
-void collectMacroDependencies(const ModelAnalysis &analysis, const MacroCall &call,
-    QSet<MacroCall> &visited, QSet<EntityId> &references)
+void reportCycles(const Document &document, AnalysisBuilder &result)
 {
-    if (visited.contains(call))
-        return;
-    visited.insert(call);
-    const auto found = analysis.macros.find(call.signature);
-    if (found == analysis.macros.end())
-        return;
-    const MacroAnalysis &macro = found->second;
-    references.unite(macro.references);
-    for (const MacroCall &nested : macro.calls)
-        collectMacroDependencies(analysis, nested, visited, references);
-    for (int index = call.argumentCount; index < macro.definition->parameters.size(); ++index) {
-        references.unite(macro.defaultReferences[index]);
-        for (const MacroCall &nested : macro.defaultCalls[index])
-            collectMacroDependencies(analysis, nested, visited, references);
-    }
-}
-
-void resolveMacroDependencies(ModelAnalysis &result)
-{
-    for (ElementAnalysis &owner : result.elements) {
-        for (const MacroCall &call : owner.macroCalls) {
-            QSet<MacroCall> visited;
-            QSet<EntityId> references;
-            collectMacroDependencies(result, call, visited, references);
-            for (EntityId reference : references)
-                addReference(result, owner, reference);
-        }
-    }
-}
-
-void reportCycles(const Document &document, ModelAnalysis &result)
-{
-    std::unordered_map<EntityId, int> state;
-    std::unordered_set<EntityId> reported;
+    QHash<EntityId, int> state;
+    QSet<EntityId> reported;
     std::function<void(EntityId)> visit = [&](EntityId id) {
         const auto *model = dynamic_cast<const ModelElement *>(document.find(id));
         if (model && !model->dimensions().isEmpty()) {
@@ -188,12 +215,15 @@ void reportCycles(const Document &document, ModelAnalysis &result)
             return;
         }
         state[id] = 1;
-        const auto found = result.dependencies.edges.find(id);
-        if (found != result.dependencies.edges.end()) {
-            for (EntityId next : found->second) {
+        const auto &edges = result.dependencies().edges();
+        const auto found = edges.constFind(id);
+        if (found != edges.constEnd()) {
+            for (EntityId next : found.value()) {
                 if (state[next] == 1) {
-                    if (reported.insert(next).second)
-                        addIssue(result, next, IssueSeverity::Error, "Algebraic dependency cycle", "algebraic-cycle", {});
+                    if (!reported.contains(next)) {
+                        reported.insert(next);
+                        result.addIssue(next, IssueSeverity::Error, "Algebraic dependency cycle", "algebraic-cycle", {});
+                    }
                 } else if (state[next] == 0) {
                     visit(next);
                 }
@@ -209,92 +239,136 @@ void reportCycles(const Document &document, ModelAnalysis &result)
 
 } // namespace
 
-ModelAnalysis analyzeDocument(const Document &document)
+void AnalysisBuilder::commit(EntityId owner, const ResolutionTarget &target)
 {
-    ModelAnalysis result;
+    commitTarget(*this, owner, target);
+}
+
+void AnalysisBuilder::collectMacroDependencies(const MacroCall &call, QSet<MacroCall> &visited,
+    QSet<EntityId> &references) const
+{
+    if (visited.contains(call))
+        return;
+    visited.insert(call);
+    const auto found = m_macroDependencies.constFind(call.signature);
+    if (found == m_macroDependencies.constEnd())
+        return;
+    const MacroDependencies &macro = found.value();
+    references.unite(macro.references);
+    for (const MacroCall &nested : macro.calls)
+        collectMacroDependencies(nested, visited, references);
+    for (int index = call.argumentCount; index < macro.defaultReferences.size(); ++index) {
+        references.unite(macro.defaultReferences[index]);
+        for (const MacroCall &nested : macro.defaultCalls[index])
+            collectMacroDependencies(nested, visited, references);
+    }
+}
+
+void AnalysisBuilder::resolveMacroDependencies()
+{
+    for (auto owner = m_macroCalls.constBegin(); owner != m_macroCalls.constEnd(); ++owner) {
+        for (const MacroCall &call : owner.value()) {
+            QSet<MacroCall> visited;
+            QSet<EntityId> references;
+            collectMacroDependencies(call, visited, references);
+            for (EntityId reference : references)
+                addReference(owner.key(), reference);
+        }
+    }
+}
+
+AnalysisReport AnalysisBuilder::finish()
+{
+    resolveMacroDependencies();
+    std::sort(m_issues.begin(), m_issues.end(), [](const ModelIssue &left, const ModelIssue &right) {
+        if (left.entityId != right.entityId)
+            return left.entityId < right.entityId;
+        if (left.code != right.code)
+            return left.code < right.code;
+        if (left.span.begin != right.span.begin)
+            return left.span.begin < right.span.begin;
+        if (left.span.end != right.span.end)
+            return left.span.end < right.span.end;
+        return left.message < right.message;
+    });
+    return AnalysisReport(std::move(m_dependencies), std::move(m_structurallyUsed), std::move(m_issues));
+}
+
+QSet<EntityId> AnalysisReport::references(EntityId dependent) const
+{
+    QSet<EntityId> result;
+    const auto &edges = dependencies().edges();
+    for (auto edge = edges.constBegin(); edge != edges.constEnd(); ++edge) {
+        if (edge.value().contains(dependent))
+            result.insert(edge.key());
+    }
+    return result;
+}
+
+AnalysisReport analyzeDocument(const Document &document)
+{
+    AnalysisBuilder result;
     for (const MacroDefinition &definition : document.macros()) {
-        MacroAnalysis macro;
-        macro.definition = &definition;
-        macro.formula = analyzeFormula(definition.equation);
         QSet<QString> locals;
-        for (const MacroParameter &parameter : definition.parameters)
-            locals.insert(parameter.nameKey);
-        const ResolutionTarget body = resolveFormula(document, result, 0, macro.formula, locals);
-        macro.references = body.references;
-        macro.calls = body.macroCalls;
-        for (int index = 0; index < definition.parameters.size(); ++index) {
-            macro.defaults.push_back(analyzeFormula(definition.parameters[index].defaultEquation));
+        for (const MacroParameter &parameter : definition.parameters())
+            locals.insert(parameter.nameKey());
+        const ResolutionTarget body = resolveFormula(document, result, 0, definition.formula(), locals);
+        MacroDependencies dependencies;
+        dependencies.references = body.references;
+        dependencies.calls = body.macroCalls;
+        for (int index = 0; index < definition.parameters().size(); ++index) {
             QSet<QString> defaultLocals;
             for (int previous = 0; previous < index; ++previous)
-                defaultLocals.insert(definition.parameters[previous].nameKey);
-            const ResolutionTarget value = resolveFormula(document, result, 0, macro.defaults.back(), defaultLocals);
-            macro.defaultReferences.push_back(value.references);
-            macro.defaultCalls.push_back(value.macroCalls);
+                defaultLocals.insert(definition.parameters()[previous].nameKey());
+            const ResolutionTarget value = resolveFormula(document, result, 0,
+                definition.parameters()[index].defaultFormula(), defaultLocals);
+            dependencies.defaultReferences.push_back(value.references);
+            dependencies.defaultCalls.push_back(value.macroCalls);
         }
-        result.macros.emplace(definition.signature(), std::move(macro));
+        result.setMacroDependencies(definition.signature(), std::move(dependencies));
     }
     for (const ViewElement &element : document.diagram().elements()) {
         if (element.kind() == ElementKind::Connector) {
             const Connector &connector = static_cast<const Connector &>(element);
-            result.structurallyUsed.insert(connector.from());
-            result.structurallyUsed.insert(connector.to());
+            result.addStructuralUse(connector.from());
+            result.addStructuralUse(connector.to());
         }
     }
     for (const ModelElement &element : document.model().elements()) {
         if (element.kind() == ElementKind::Flow) {
             const Flow &flow = static_cast<const Flow &>(element);
-            result.structurallyUsed.insert(flow.endpoints().from);
-            result.structurallyUsed.insert(flow.endpoints().to);
-            result.structurallyUsed.insert(flow.id());
+            result.addStructuralUse(flow.endpoints().from);
+            result.addStructuralUse(flow.endpoints().to);
+            result.addStructuralUse(flow.id());
         }
-        ElementAnalysis owner;
-        owner.id = element.id();
-        const auto analyzeOwned = [&](const FormulaAnalysis &formula) {
-            commitTarget(result, owner, resolveFormula(document, result, element.id(), formula));
-        };
-        owner.formula = analyzeFormula(element.equation());
-        analyzeOwned(owner.formula);
-        for (const ArrayElementEquation &entry : element.elementEquations()) {
-            ArrayElementAnalysis item;
-            item.indices = entry.indices;
-            item.formula = analyzeFormula(entry.equation);
-            analyzeOwned(item.formula);
-            owner.elementFormulas.push_back(std::move(item));
-        }
-        if (!element.elementEquations().isEmpty()) {
+        result.commit(element.id(), resolveFormula(document, result, element.id(), element.formula()));
+        for (const ArrayElementFormula &entry : element.elementEquations())
+            result.commit(element.id(), resolveFormula(document, result, element.id(), entry.formula()));
+        if (!element.elementEquations().empty()) {
             std::size_t expected = 1;
             for (const QString &name : element.dimensions())
                 expected *= document.findDimension(name)->elements.size();
-            if (element.elementEquations().size() != expected)
-                addIssue(result, element.id(), IssueSeverity::Error, "Array element equations are incomplete",
+            if (element.elementEquations().size() != expected) {
+                result.addIssue(element.id(), IssueSeverity::Error, "Array element equations are incomplete",
                     "incomplete-array-elements", {});
+            }
         }
-        result.elements.push_back(std::move(owner));
     }
-    resolveMacroDependencies(result);
     for (const ModelElement &element : document.model().elements()) {
-        if (!result.structurallyUsed.count(element.id()))
-            addIssue(result, element.id(), IssueSeverity::Warning, "Variable is not connected or referenced", "unused-variable", {});
+        if (!result.structurallyUsed().contains(element.id()))
+            result.addIssue(element.id(), IssueSeverity::Warning, "Variable is not connected or referenced", "unused-variable", {});
     }
     reportCycles(document, result);
-    return result;
+    return result.finish();
 }
 
-MacroReader makeMacroReader(const ModelAnalysis &analysis)
+MacroReader makeMacroReader(const Document &document)
 {
-    return [&analysis](const QString &name, int argumentCount, int outputCount) -> std::optional<MacroEvaluation> {
-        const QString key = normalizeIdentifier(name);
-        auto found = analysis.macros.lower_bound({key, 0, outputCount});
-        while (found != analysis.macros.end() && found->first.nameKey == key) {
-            const MacroAnalysis &macro = found->second;
-            if (macro.definition && macro.definition->signature().outputCount == outputCount
-                && argumentCount >= macro.definition->requiredArguments()
-                && argumentCount <= macro.definition->parameters.size()) {
-                return MacroEvaluation {macro.definition, macro.formula.root(), &macro.defaults};
-            }
-            ++found;
-        }
-        return std::nullopt;
+    return [&document](const QString &name, int argumentCount, int outputCount) -> std::optional<MacroEvaluation> {
+        const MacroDefinition *macro = document.findMacro(name, argumentCount, outputCount);
+        if (!macro)
+            return std::nullopt;
+        return MacroEvaluation {macro};
     };
 }
 

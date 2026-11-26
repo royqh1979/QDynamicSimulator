@@ -77,11 +77,8 @@ void TestArrayEvaluation::setArray(const QString &name, QVector<QString> dimensi
 EvaluationResult TestArrayEvaluation::evaluate(const QString &equation)
 {
     document.setEquation(result, equation);
-    const ModelAnalysis analysis = analyzeDocument(document);
-    const auto found = std::find_if(analysis.elements.begin(), analysis.elements.end(), [this](const ElementAnalysis &entry) {
-        return entry.id == result;
-    });
-    return evaluateFormula(found->formula.root(), context);
+    const auto *model = static_cast<const ModelElement *>(document.find(result));
+    return evaluateFormula(model->formula().root(), context);
 }
 
 void expectScalar(const EvaluationResult &result, double expected)

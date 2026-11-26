@@ -11,26 +11,18 @@ using namespace qds::core;
 
 namespace {
 
-bool hasIssue(const ModelAnalysis &analysis, const QString &code)
+bool hasIssue(const AnalysisReport &analysis, const QString &code)
 {
-    return std::any_of(analysis.issues.begin(), analysis.issues.end(), [&code](const ModelIssue &issue) {
+    return std::any_of(analysis.issues().begin(), analysis.issues().end(), [&code](const ModelIssue &issue) {
         return issue.code == code;
     });
 }
 
-bool hasWarning(const ModelAnalysis &analysis, EntityId id)
+bool hasWarning(const AnalysisReport &analysis, EntityId id)
 {
-    return std::any_of(analysis.issues.begin(), analysis.issues.end(), [id](const ModelIssue &issue) {
+    return std::any_of(analysis.issues().begin(), analysis.issues().end(), [id](const ModelIssue &issue) {
         return issue.entityId == id && issue.severity == IssueSeverity::Warning;
     });
-}
-
-const ElementAnalysis &element(const ModelAnalysis &analysis, EntityId id)
-{
-    const auto found = std::find_if(analysis.elements.begin(), analysis.elements.end(), [id](const ElementAnalysis &element) {
-        return element.id == id;
-    });
-    return *found;
 }
 
 class TestAnalysis : public QObject
@@ -54,10 +46,10 @@ void TestAnalysis::symbolResolution()
     document.setEquation(first, "Stock1 + MAX(1, 2) + TIME + PI");
     document.setEquation(second, "Auxiliary1 + ABS(Stock1) + Stock1");
     document.setEquation(third, "Auxiliary1(3) + UnknownFn(Stock1) + Missing + ABS(1, 2)");
-    const ModelAnalysis analysis = analyzeDocument(document);
-    QCOMPARE(element(analysis, first).references, std::unordered_set<EntityId> {stock});
-    QCOMPARE(element(analysis, second).references, (std::unordered_set<EntityId> {first, stock}));
-    QCOMPARE(element(analysis, third).references, (std::unordered_set<EntityId> {first, stock}));
+    const AnalysisReport analysis = analyzeDocument(document);
+    QCOMPARE(analysis.references(first), QSet<EntityId> {stock});
+    QCOMPARE(analysis.references(second), (QSet<EntityId> {first, stock}));
+    QCOMPARE(analysis.references(third), (QSet<EntityId> {first, stock}));
     QVERIFY(hasIssue(analysis, "unknown-function"));
     QVERIFY(hasIssue(analysis, "undefined-variable"));
     QVERIFY(hasIssue(analysis, "invalid-arity"));
@@ -77,7 +69,7 @@ void TestAnalysis::functionSignatures()
         " + ARCCOS(1) + ARCSIN(1) + ARCTAN(1) + COS(1) + EXP(1) + INT(1) + LN(1) + LOG10(1)"
         " + MIN(1, 2) + SIN(1) + SQRT(1) + TAN(1) + DELAY(Auxiliary1, 1) + DELAY1(Auxiliary1, 1)"
         " + DELAY3(Auxiliary1, 1) + SMTH1(Auxiliary1, 1) + SMTH3(Auxiliary1, 1) + DT + STARTTIME + STOPTIME");
-    const ModelAnalysis analysis = analyzeDocument(document);
+    const AnalysisReport analysis = analyzeDocument(document);
     QVERIFY(!hasIssue(analysis, "unknown-function"));
     QVERIFY(!hasIssue(analysis, "invalid-arity"));
     QVERIFY(!hasIssue(analysis, "undefined-variable"));
@@ -102,10 +94,10 @@ void TestAnalysis::dependencyCycles()
     const EntityId second = document.createVariable(ElementKind::Auxiliary);
     document.setEquation(first, "Auxiliary2");
     document.setEquation(second, "Auxiliary1");
-    const ModelAnalysis analysis = analyzeDocument(document);
+    const AnalysisReport analysis = analyzeDocument(document);
     QVERIFY(hasIssue(analysis, "algebraic-cycle"));
-    QCOMPARE(analysis.dependencies.edges.at(first), QVector<EntityId> {second});
-    QCOMPARE(analysis.dependencies.edges.at(second), QVector<EntityId> {first});
+    QCOMPARE(analysis.dependencies().edges().value(first), QVector<EntityId> {second});
+    QCOMPARE(analysis.dependencies().edges().value(second), QVector<EntityId> {first});
 
     Document connectors;
     const EntityId source = connectors.createVariable(ElementKind::Auxiliary);
@@ -126,7 +118,7 @@ void TestAnalysis::structuralUse()
     const EntityId flowedStock = document.createVariable(ElementKind::Stock);
     const EntityId cloud = document.createCloud();
     const EntityId flow = document.createFlow(flowedStock, cloud);
-    const ModelAnalysis analysis = analyzeDocument(document);
+    const AnalysisReport analysis = analyzeDocument(document);
     QVERIFY(!hasWarning(analysis, stock));
     QVERIFY(!hasWarning(analysis, first));
     QVERIFY(hasWarning(analysis, second));

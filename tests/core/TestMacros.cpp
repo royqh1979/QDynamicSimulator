@@ -12,45 +12,39 @@ using namespace qds::core;
 
 namespace {
 
-MacroParameter parameter(const QString &name, const QString &defaultEquation = {})
+MacroParameterData parameter(const QString &name, const QString &defaultEquation = {})
 {
-    return {name, normalizeIdentifier(name), defaultEquation};
+    return {name, defaultEquation};
 }
 
-const ElementAnalysis &element(const ModelAnalysis &analysis, EntityId id)
+bool hasIssue(const AnalysisReport &analysis, const QString &code)
 {
-    const auto found = std::find_if(analysis.elements.begin(), analysis.elements.end(), [id](const ElementAnalysis &entry) {
-        return entry.id == id;
-    });
-    return *found;
-}
-
-bool hasIssue(const ModelAnalysis &analysis, const QString &code)
-{
-    return std::any_of(analysis.issues.begin(), analysis.issues.end(), [&code](const ModelIssue &issue) {
+    return std::any_of(analysis.issues().begin(), analysis.issues().end(), [&code](const ModelIssue &issue) {
         return issue.code == code;
     });
 }
 
-EvaluationResult evaluate(const ModelAnalysis &analysis, EntityId id, const EvaluationContext &context = {})
+EvaluationResult evaluate(const Document &document, EntityId id, const EvaluationContext &context = {})
 {
     EvaluationContext actual = context;
-    actual.readMacro = makeMacroReader(analysis);
-    return evaluateFormula(element(analysis, id).formula.root(), actual);
+    actual.readMacro = makeMacroReader(document);
+    const auto *model = dynamic_cast<const ModelElement *>(document.find(id));
+    Q_ASSERT(model);
+    return evaluateFormula(model->formula().root(), actual);
 }
 
-void expectScalar(const ModelAnalysis &analysis, EntityId id, const EvaluationContext &context, double expected)
+void expectScalar(const Document &document, EntityId id, const EvaluationContext &context, double expected)
 {
-    const EvaluationResult result = evaluate(analysis, id, context);
+    const EvaluationResult result = evaluate(document, id, context);
     QVERIFY2(result.value.has_value(), qPrintable(result.error));
     const auto *scalar = std::get_if<double>(&*result.value);
     QVERIFY(scalar);
     QCOMPARE(*scalar, expected);
 }
 
-void expectScalar(const ModelAnalysis &analysis, EntityId id, double expected)
+void expectScalar(const Document &document, EntityId id, double expected)
 {
-    expectScalar(analysis, id, EvaluationContext {}, expected);
+    expectScalar(document, id, EvaluationContext {}, expected);
 }
 
 class TestMacros : public QObject
@@ -69,25 +63,25 @@ private slots:
 void TestMacros::definitionsAndOverloads()
 {
     Document document;
-    MacroDefinition scale;
+    MacroDefinitionData scale;
     scale.displayName = "Scale";
     scale.parameters = {parameter("x"), parameter("factor", "2")};
     scale.equation = "x * factor";
     QVERIFY(document.defineMacro(scale));
     QVERIFY(!document.defineMacro(scale));
 
-    MacroDefinition three = scale;
+    MacroDefinitionData three = scale;
     three.parameters.push_back(parameter("offset", "1"));
     QVERIFY(!document.defineMacro(three));
     three.parameters = {parameter("x"), parameter("factor"), parameter("offset")};
     QVERIFY(document.defineMacro(three));
     QVERIFY(document.findMacro("SCALE", 1));
     QVERIFY(document.findMacro("scale", 2));
-    QCOMPARE(document.findMacro("scale", 1)->parameters.size(), 2);
-    QCOMPARE(document.findMacro("scale", 3)->parameters.size(), 3);
+    QCOMPARE(document.findMacro("scale", 1)->parameters().size(), 2);
+    QCOMPARE(document.findMacro("scale", 3)->parameters().size(), 3);
     QVERIFY(!document.findMacro("scale", 0));
 
-    MacroDefinition invalid = scale;
+    MacroDefinitionData invalid = scale;
     invalid.displayName = "Invalid";
     invalid.parameters = {parameter("x", "1"), parameter("y")};
     QVERIFY(!document.defineMacro(invalid));
@@ -96,7 +90,7 @@ void TestMacros::definitionsAndOverloads()
 
     const EntityId variable = document.createVariable(ElementKind::Constant);
     document.rename(variable, "Variable");
-    MacroDefinition conflict = scale;
+    MacroDefinitionData conflict = scale;
     conflict.displayName = "Variable";
     QVERIFY(!document.defineMacro(conflict));
     QVERIFY(!document.rename(variable, "Scale"));
@@ -112,54 +106,54 @@ void TestMacros::expansionAndEvaluation()
     document.rename(offset, "Offset");
     document.rename(output, "Output");
 
-    MacroDefinition scale;
+    MacroDefinitionData scale;
     scale.displayName = "Scale";
     scale.parameters = {parameter("x"), parameter("factor", "2")};
     scale.equation = "x * factor + Offset";
     QVERIFY(document.defineMacro(scale));
-    MacroDefinition three = scale;
+    MacroDefinitionData three = scale;
     three.parameters = {parameter("x"), parameter("factor"), parameter("offset")};
     three.equation = "x * factor + offset";
     QVERIFY(document.defineMacro(three));
-    MacroDefinition twice;
+    MacroDefinitionData twice;
     twice.displayName = "Twice";
     twice.parameters = {parameter("x")};
     twice.equation = "Scale(x, 2)";
     QVERIFY(document.defineMacro(twice));
-    MacroDefinition addScaled;
+    MacroDefinitionData addScaled;
     addScaled.displayName = "AddScaled";
     addScaled.parameters = {parameter("x"), parameter("y", "x * 2")};
     addScaled.equation = "x + y";
     QVERIFY(document.defineMacro(addScaled));
 
     document.setEquation(output, "Scale(5) + Scale(2, 3) + Scale(1, 2, 3) + Twice(1) + AddScaled(4)");
-    const ModelAnalysis analysis = analyzeDocument(document);
+    const AnalysisReport analysis = analyzeDocument(document);
     QVERIFY(!hasIssue(analysis, "unknown-function"));
     QVERIFY(!hasIssue(analysis, "parse"));
     QVERIFY(!hasIssue(analysis, "recursive-macro"));
-    QCOMPARE(element(analysis, output).references, std::unordered_set<EntityId> {offset});
-    QCOMPARE(analysis.macros.size(), std::size_t(4));
+    QCOMPARE(analysis.references(output), QSet<EntityId> {offset});
+    QCOMPARE(document.macros().size(), std::size_t(4));
     EvaluationContext context;
     context.readVariable = [](const QString &name) -> std::optional<Value> {
         return name == "offset" ? std::optional<Value>(10.0) : std::nullopt;
     };
-    expectScalar(analysis, output, context, 65.0);
+    expectScalar(document, output, context, 65.0);
 }
 
 void TestMacros::recursionAndErrors()
 {
     Document document;
     const EntityId output = document.createVariable(ElementKind::Auxiliary);
-    MacroDefinition factorial;
+    MacroDefinitionData factorial;
     factorial.displayName = "Fact";
     factorial.parameters = {parameter("x")};
     factorial.equation = "IF x <= 1 THEN 1 ELSE x * Fact(x - 1)";
     document.defineMacro(factorial);
     document.setEquation(output, "Fact(3)");
-    const ModelAnalysis analysis = analyzeDocument(document);
+    const AnalysisReport analysis = analyzeDocument(document);
     QVERIFY(!hasIssue(analysis, "recursive-macro"));
     QVERIFY(!hasIssue(analysis, "unknown-function"));
-    expectScalar(analysis, output, 6.0);
+    expectScalar(document, output, 6.0);
 
     document.setEquation(output, "MissingMacro(1)");
     QVERIFY(hasIssue(analyzeDocument(document), "unknown-function"));
@@ -178,30 +172,30 @@ void TestMacros::runtimeScopesAndRecursion()
     document.rename(values, "Values");
     const EntityId output = document.createVariable(ElementKind::Auxiliary);
 
-    MacroDefinition fact {"Fact", {}, {parameter("x")}, "IF x <= 1 THEN 1 ELSE x * Fact(x - 1)"};
-    MacroDefinition even {"Even", {}, {parameter("x")}, "IF x <= 0 THEN 1 ELSE Odd(x - 1)"};
-    MacroDefinition odd {"Odd", {}, {parameter("x")}, "IF x <= 0 THEN 0 ELSE Even(x - 1)"};
-    MacroDefinition twice {"Twice", {}, {parameter("x")}, "x + x"};
-    MacroDefinition addScaled {"AddScaled", {}, {parameter("x"), parameter("y", "x * 2")}, "x + y"};
-    MacroDefinition shadow {"Shadow", {}, {parameter("Offset")}, "Offset * 2"};
-    MacroDefinition callee {"Callee", {}, {parameter("x"), parameter("y", "A")}, "y"};
-    MacroDefinition caller {"Caller", {}, {parameter("a")}, "Callee(1)"};
-    MacroDefinition total {"Total", {}, {parameter("x")}, "SUM(x)"};
-    MacroDefinition overloadedOne {"Overloaded", {}, {parameter("x")}, "Overloaded(x, 2)"};
-    MacroDefinition overloadedTwo {"Overloaded", {}, {parameter("x"), parameter("y")},
+    MacroDefinitionData fact {"Fact", {parameter("x")}, "IF x <= 1 THEN 1 ELSE x * Fact(x - 1)"};
+    MacroDefinitionData even {"Even", {parameter("x")}, "IF x <= 0 THEN 1 ELSE Odd(x - 1)"};
+    MacroDefinitionData odd {"Odd", {parameter("x")}, "IF x <= 0 THEN 0 ELSE Even(x - 1)"};
+    MacroDefinitionData twice {"Twice", {parameter("x")}, "x + x"};
+    MacroDefinitionData addScaled {"AddScaled", {parameter("x"), parameter("y", "x * 2")}, "x + y"};
+    MacroDefinitionData shadow {"Shadow", {parameter("Offset")}, "Offset * 2"};
+    MacroDefinitionData callee {"Callee", {parameter("x"), parameter("y", "A")}, "y"};
+    MacroDefinitionData caller {"Caller", {parameter("a")}, "Callee(1)"};
+    MacroDefinitionData total {"Total", {parameter("x")}, "SUM(x)"};
+    MacroDefinitionData overloadedOne {"Overloaded", {parameter("x")}, "Overloaded(x, 2)"};
+    MacroDefinitionData overloadedTwo {"Overloaded", {parameter("x"), parameter("y")},
         "IF y <= 1 THEN x ELSE Overloaded(x, y - 1)"};
-    for (const MacroDefinition &macro : {fact, even, odd, twice, addScaled, shadow, callee, caller, total,
+    for (const MacroDefinitionData &macro : {fact, even, odd, twice, addScaled, shadow, callee, caller, total,
              overloadedOne, overloadedTwo})
         QVERIFY(document.defineMacro(macro));
 
     document.setEquation(output, "Fact(5)");
-    expectScalar(analyzeDocument(document), output, 120.0);
+    expectScalar(document, output, 120.0);
     document.setEquation(output, "Even(10) + Odd(9)");
-    expectScalar(analyzeDocument(document), output, 2.0);
+    expectScalar(document, output, 2.0);
     document.setEquation(output, "AddScaled(4)");
-    expectScalar(analyzeDocument(document), output, 12.0);
+    expectScalar(document, output, 12.0);
     document.setEquation(output, "Overloaded(3)");
-    expectScalar(analyzeDocument(document), output, 3.0);
+    expectScalar(document, output, 3.0);
 
     int inputReads = 0;
     EvaluationContext context;
@@ -219,14 +213,14 @@ void TestMacros::runtimeScopesAndRecursion()
         return std::nullopt;
     };
     document.setEquation(output, "Twice(Input)");
-    expectScalar(analyzeDocument(document), output, context, 10.0);
+    expectScalar(document, output, context, 10.0);
     QCOMPARE(inputReads, 1);
     document.setEquation(output, "Shadow(3)");
-    expectScalar(analyzeDocument(document), output, context, 6.0);
+    expectScalar(document, output, context, 6.0);
     document.setEquation(output, "Caller(5)");
-    expectScalar(analyzeDocument(document), output, context, 100.0);
+    expectScalar(document, output, context, 100.0);
     document.setEquation(output, "Total(Values)");
-    expectScalar(analyzeDocument(document), output, context, 6.0);
+    expectScalar(document, output, context, 6.0);
 }
 
 void TestMacros::dependencyClosure()
@@ -239,15 +233,15 @@ void TestMacros::dependencyClosure()
     const EntityId withDefault = document.createVariable(ElementKind::Auxiliary);
     const EntityId explicitArgument = document.createVariable(ElementKind::Auxiliary);
 
-    MacroDefinition inner {"Inner", {}, {parameter("x")}, "x + A"};
-    MacroDefinition outer {"Outer", {}, {parameter("x"), parameter("y", "Inner(x)")}, "y + B"};
+    MacroDefinitionData inner {"Inner", {parameter("x")}, "x + A"};
+    MacroDefinitionData outer {"Outer", {parameter("x"), parameter("y", "Inner(x)")}, "y + B"};
     QVERIFY(document.defineMacro(inner));
     QVERIFY(document.defineMacro(outer));
     document.setEquation(withDefault, "Outer(2)");
     document.setEquation(explicitArgument, "Outer(2, 0)");
-    const ModelAnalysis analysis = analyzeDocument(document);
-    QCOMPARE(element(analysis, withDefault).references, std::unordered_set<EntityId>({a, b}));
-    QCOMPARE(element(analysis, explicitArgument).references, std::unordered_set<EntityId>({b}));
+    const AnalysisReport analysis = analyzeDocument(document);
+    QCOMPARE(analysis.references(withDefault), QSet<EntityId>({a, b}));
+    QCOMPARE(analysis.references(explicitArgument), QSet<EntityId>({b}));
 
     EvaluationContext context;
     context.readVariable = [](const QString &name) -> std::optional<Value> {
@@ -257,34 +251,34 @@ void TestMacros::dependencyClosure()
             return 2.0;
         return std::nullopt;
     };
-    expectScalar(analysis, withDefault, context, 5.0);
-    expectScalar(analysis, explicitArgument, context, 2.0);
+    expectScalar(document, withDefault, context, 5.0);
+    expectScalar(document, explicitArgument, context, 2.0);
 }
 
 void TestMacros::depthAndModification()
 {
     Document document;
     const EntityId output = document.createVariable(ElementKind::Auxiliary);
-    MacroDefinition down {"Down", {}, {parameter("x")}, "IF x <= 0 THEN 0 ELSE Down(x - 1)"};
-    MacroDefinition scale {"Scale", {}, {parameter("x"), parameter("factor", "2")}, "x * factor"};
+    MacroDefinitionData down {"Down", {parameter("x")}, "IF x <= 0 THEN 0 ELSE Down(x - 1)"};
+    MacroDefinitionData scale {"Scale", {parameter("x"), parameter("factor", "2")}, "x * factor"};
     QVERIFY(document.defineMacro(down));
     QVERIFY(document.defineMacro(scale));
 
     document.setEquation(output, "Down(63)");
-    expectScalar(analyzeDocument(document), output, 0.0);
+    expectScalar(document, output, 0.0);
     document.setEquation(output, "Down(64)");
-    const EvaluationResult exceeded = evaluate(analyzeDocument(document), output);
+    const EvaluationResult exceeded = evaluate(document, output);
     QVERIFY(!exceeded.value);
     QVERIFY(exceeded.error.contains("depth limit"));
 
     document.setEquation(output, "Scale(3)");
-    expectScalar(analyzeDocument(document), output, 6.0);
-    MacroDefinition updated = *document.findMacro("Scale", 1);
+    expectScalar(document, output, 6.0);
+    MacroDefinitionData updated = document.findMacro("Scale", 1)->data();
     updated.parameters[1].defaultEquation = "5";
     updated.equation = "x + factor";
     QVERIFY(document.setMacro(updated));
-    expectScalar(analyzeDocument(document), output, 8.0);
-    MacroDefinition missing = updated;
+    expectScalar(document, output, 8.0);
+    MacroDefinitionData missing = updated;
     missing.displayName = "Missing";
     QVERIFY(!document.setMacro(missing));
 }

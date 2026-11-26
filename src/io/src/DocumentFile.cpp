@@ -389,15 +389,15 @@ void writeNativeMacros(QXmlStreamWriter &writer, const core::Document &document)
     writer.writeStartElement(QStringLiteral("macros"));
     for (const core::MacroDefinition &macro : document.macros()) {
         writer.writeStartElement(QStringLiteral("macro"));
-        writer.writeAttribute(QStringLiteral("name"), (macro.displayName));
-        for (const core::MacroParameter &parameter : macro.parameters) {
+        writer.writeAttribute(QStringLiteral("name"), macro.displayName());
+        for (const core::MacroParameter &parameter : macro.parameters()) {
             writer.writeStartElement(QStringLiteral("parm"));
-            writer.writeAttribute(QStringLiteral("name"), (parameter.displayName));
-            if (!parameter.defaultEquation.isEmpty())
-                writer.writeAttribute(QStringLiteral("default"), (parameter.defaultEquation));
+            writer.writeAttribute(QStringLiteral("name"), parameter.displayName());
+            if (!parameter.defaultEquation().isEmpty())
+                writer.writeAttribute(QStringLiteral("default"), parameter.defaultEquation());
             writer.writeEndElement();
         }
-        writer.writeTextElement(QStringLiteral("eqn"), (macro.equation));
+        writer.writeTextElement(QStringLiteral("eqn"), macro.equation());
         writer.writeEndElement();
     }
     writer.writeEndElement();
@@ -414,13 +414,13 @@ void writeNativeArrayDefinition(QXmlStreamWriter &writer, const core::Document &
         writer.writeEndElement();
     }
     writer.writeEndElement();
-    for (const core::ArrayElementEquation &entry : element.elementEquations()) {
+    for (const core::ArrayElementFormula &entry : element.elementEquations()) {
         writer.writeStartElement(QStringLiteral("element"));
         QStringList indices;
-        for (std::size_t index : entry.indices)
+        for (std::size_t index : entry.indices())
             indices.append(QString::number(index + 1));
         writer.writeAttribute(QStringLiteral("subscript"), indices.join(','));
-        writer.writeTextElement(QStringLiteral("eqn"), (entry.equation));
+        writer.writeTextElement(QStringLiteral("eqn"), entry.equation());
         writer.writeEndElement();
     }
 }
@@ -451,7 +451,7 @@ QByteArray writeNativeXml(const core::Document &document)
             writeNativeRoute(writer, document.diagram().route(element.id()));
         }
         writeNativeArrayDefinition(writer, document, element);
-        if (element.elementEquations().isEmpty())
+        if (element.elementEquations().empty())
             writer.writeTextElement(QStringLiteral("eqn"), (element.equation()));
         if (!element.unit().isEmpty())
             writer.writeTextElement(QStringLiteral("units"), (element.unit()));
@@ -549,7 +549,7 @@ bool parseNativeMacros(QXmlStreamReader &reader, core::Document &document)
             return true;
         if (!reader.isStartElement() || reader.name() != QStringLiteral("macro"))
             continue;
-        core::MacroDefinition macro;
+        core::MacroDefinitionData macro;
         macro.displayName = reader.attributes().value(QStringLiteral("name")).toString();
         while (reader.readNext() != QXmlStreamReader::Invalid) {
             if (reader.isEndElement() && reader.name() == QStringLiteral("macro"))
@@ -557,7 +557,7 @@ bool parseNativeMacros(QXmlStreamReader &reader, core::Document &document)
             if (!reader.isStartElement())
                 continue;
             if (reader.name() == QStringLiteral("parm")) {
-                core::MacroParameter parameter;
+                core::MacroParameterData parameter;
                 parameter.displayName = reader.attributes().value(QStringLiteral("name")).toString();
                 parameter.defaultEquation = reader.attributes().value(QStringLiteral("default")).toString();
                 macro.parameters.push_back(std::move(parameter));

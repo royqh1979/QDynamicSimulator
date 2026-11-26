@@ -12,14 +12,14 @@ using namespace qds::core;
 
 namespace {
 
-EvaluationResult evaluate(const FormulaAnalysis &analysis, const EvaluationContext &context = {})
+EvaluationResult evaluate(const Formula &analysis, const EvaluationContext &context = {})
 {
     return evaluateFormula(analysis.root(), context);
 }
 
 void expectValue(const QString &equation, double expected, const EvaluationContext &context = {})
 {
-    const FormulaAnalysis analysis = analyzeFormula(equation);
+    const Formula analysis = analyzeFormula(equation);
     QVERIFY2(analysis.issues().empty(), qPrintable(equation));
     const EvaluationResult result = evaluate(analysis, context);
     QVERIFY2(result.value.has_value(), qPrintable(result.error));
@@ -30,19 +30,11 @@ void expectValue(const QString &equation, double expected, const EvaluationConte
 
 void expectError(const QString &equation, const EvaluationContext &context = {})
 {
-    const FormulaAnalysis analysis = analyzeFormula(equation);
+    const Formula analysis = analyzeFormula(equation);
     QVERIFY2(analysis.issues().empty(), qPrintable(equation));
     const EvaluationResult result = evaluate(analysis, context);
     QVERIFY(!result.value);
     QVERIFY(!result.error.isEmpty());
-}
-
-const ElementAnalysis &element(const ModelAnalysis &analysis, EntityId id)
-{
-    const auto found = std::find_if(analysis.elements.begin(), analysis.elements.end(), [id](const ElementAnalysis &entry) {
-        return entry.id == id;
-    });
-    return *found;
 }
 
 class TestEvaluation : public QObject
@@ -67,8 +59,7 @@ void TestEvaluation::resolvedReferences()
     document.rename(input, "Input");
     document.rename(offset, "Offset");
     document.setEquation(result, "Input * 2 + Offset");
-    const ModelAnalysis analysis = analyzeDocument(document);
-    const ElementAnalysis &entry = element(analysis, result);
+    const Formula &entry = static_cast<const ModelElement *>(document.find(result))->formula();
 
     EvaluationContext context;
     context.readVariable = [](const QString &name) -> std::optional<Value> {
@@ -78,14 +69,14 @@ void TestEvaluation::resolvedReferences()
             return 1.5;
         return std::nullopt;
     };
-    EvaluationResult evaluated = evaluateFormula(entry.formula.root(), context);
+    EvaluationResult evaluated = evaluateFormula(entry.root(), context);
     QVERIFY2(evaluated.value.has_value(), qPrintable(evaluated.error));
     const auto *scalar = std::get_if<double>(&*evaluated.value);
     QVERIFY(scalar);
     QCOMPARE(*scalar, 8.5);
 
-    const std::size_t originalNodes = formulaNodeCount(entry.formula.root());
-    const SourceSpan originalSpan = entry.formula.root()->span();
+    const std::size_t originalNodes = formulaNodeCount(entry.root());
+    const SourceSpan originalSpan = entry.root()->span();
     EvaluationContext otherContext;
     otherContext.readVariable = [](const QString &name) -> std::optional<Value> {
         if (name == "input")
@@ -94,26 +85,26 @@ void TestEvaluation::resolvedReferences()
             return 2.0;
         return std::nullopt;
     };
-    evaluated = evaluateFormula(entry.formula.root(), otherContext);
+    evaluated = evaluateFormula(entry.root(), otherContext);
     QVERIFY2(evaluated.value.has_value(), qPrintable(evaluated.error));
     QCOMPARE(*std::get_if<double>(&*evaluated.value), 12.0);
-    QCOMPARE(formulaNodeCount(entry.formula.root()), originalNodes);
-    QCOMPARE(entry.formula.root()->span(), originalSpan);
+    QCOMPARE(formulaNodeCount(entry.root()), originalNodes);
+    QCOMPARE(entry.root()->span(), originalSpan);
 
     document.rename(input, "Input.Value");
     document.setEquation(result, "\"Input.Value\" * 2 + Offset");
-    const ModelAnalysis qualifiedAnalysis = analyzeDocument(document);
-    const ElementAnalysis &qualifiedEntry = element(qualifiedAnalysis, result);
-    evaluated = evaluateFormula(qualifiedEntry.formula.root(), context);
+    const Formula &qualifiedEntry = static_cast<const ModelElement *>(document.find(result))->formula();
+    evaluated = evaluateFormula(qualifiedEntry.root(), context);
     QVERIFY2(evaluated.value.has_value(), qPrintable(evaluated.error));
     scalar = std::get_if<double>(&*evaluated.value);
     QVERIFY(scalar);
     QCOMPARE(*scalar, 8.5);
 
+    const Formula &updatedEntry = static_cast<const ModelElement *>(document.find(result))->formula();
     context.readVariable = {};
-    QVERIFY(!evaluateFormula(entry.formula.root(), context).value);
+    QVERIFY(!evaluateFormula(updatedEntry.root(), context).value);
     context.readVariable = [](const QString &) -> std::optional<Value> { return std::nullopt; };
-    QVERIFY(!evaluateFormula(entry.formula.root(), context).value);
+    QVERIFY(!evaluateFormula(updatedEntry.root(), context).value);
 }
 
 void TestEvaluation::arithmeticAndLogic_data()

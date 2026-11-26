@@ -27,7 +27,7 @@ int main(int argc, char **argv)
         const QString equation = "a" + QString::number(index) + "*b" + QString::number(index)
             + "+ABS(c" + QString::number(index) + ")-IF d" + QString::number(index)
             + " THEN e" + QString::number(index) + " ELSE f" + QString::number(index);
-        FormulaAnalysis analysis = analyzeFormula(equation);
+        Formula analysis = analyzeFormula(equation);
         if (!analysis.root() || !analysis.issues().empty()) {
             QTextStream(stderr) << "Formula analysis failed at index " << index << "\n";
             return 1;
@@ -58,15 +58,15 @@ int main(int argc, char **argv)
         previousName = currentName;
     }
     timer.restart();
-    ModelAnalysis modelAnalysis = analyzeDocument(document);
+    AnalysisReport analysis = analyzeDocument(document);
     const qint64 documentNs = timer.nsecsElapsed();
     std::size_t dependencyCount = 0;
-    for (const auto &entry : modelAnalysis.dependencies.edges)
-        dependencyCount += entry.second.size();
+    for (const auto &entry : analysis.dependencies().edges())
+        dependencyCount += entry.size();
     std::size_t referenceCount = 0;
-    for (const ElementAnalysis &entry : modelAnalysis.elements)
-        referenceCount += entry.references.size();
-    for (const ModelIssue &issue : modelAnalysis.issues) {
+    for (const ModelElement &entry : document.model().elements())
+        referenceCount += analysis.references(entry.id()).size();
+    for (const ModelIssue &issue : analysis.issues()) {
         if (issue.severity == IssueSeverity::Error) {
             QTextStream(stderr) << "Model analysis failed: " << (issue.message) << "\n";
             return 5;
@@ -88,10 +88,10 @@ int main(int argc, char **argv)
     timer.restart();
     double evaluationChecksum = 0.0;
     int evaluationCount = 0;
-    for (const ElementAnalysis &entry : modelAnalysis.elements) {
-        if (!entry.formula.root())
+    for (const ModelElement &entry : document.model().elements()) {
+        if (!entry.formula().root())
             continue;
-        const EvaluationResult evaluated = evaluateFormula(entry.formula.root(), context);
+        const EvaluationResult evaluated = evaluateFormula(entry.formula().root(), context);
         if (!evaluated.value) {
             QTextStream(stderr) << "Formula evaluation failed: " << (evaluated.error) << "\n";
             return 7;
@@ -119,15 +119,15 @@ int main(int argc, char **argv)
         }
     }
     timer.restart();
-    const ModelAnalysis arrayAnalysis = analyzeDocument(arrays);
+    const AnalysisReport arrayAnalysis = analyzeDocument(arrays);
     const qint64 arrayNs = timer.nsecsElapsed();
     std::size_t arrayFormulaCount = 0;
     std::size_t arrayReferenceCount = 0;
-    for (const ElementAnalysis &entry : arrayAnalysis.elements) {
-        arrayFormulaCount += entry.elementFormulas.size();
-        arrayReferenceCount += entry.references.size();
+    for (const ModelElement &entry : arrays.model().elements()) {
+        arrayFormulaCount += entry.elementEquations().size();
+        arrayReferenceCount += arrayAnalysis.references(entry.id()).size();
     }
-    for (const ModelIssue &issue : arrayAnalysis.issues) {
+    for (const ModelIssue &issue : arrayAnalysis.issues()) {
         if (issue.severity == IssueSeverity::Error) {
             QTextStream(stderr) << "Array analysis failed: " << (issue.message) << "\n";
             return 10;
@@ -155,10 +155,9 @@ int main(int argc, char **argv)
         arrayValues["array" + QString::number(index)] = ArrayValue {{"location", "n"}, {2, 3}, {1, 2, 3, 4, 5, 6}};
         evaluatedArrayIds.push_back(array);
     }
-    const ModelAnalysis evaluatedArrayAnalysis = analyzeDocument(evaluatedArrays);
     std::unordered_map<EntityId, const FormulaNode *> arrayFormulas;
-    for (const ElementAnalysis &entry : evaluatedArrayAnalysis.elements)
-        arrayFormulas[entry.id] = entry.formula.root();
+    for (const ModelElement &entry : evaluatedArrays.model().elements())
+        arrayFormulas[entry.id()] = entry.formula().root();
     EvaluationContext arrayContext;
     arrayContext.readDimension = [&evaluatedArrays](const QString &name) {
         return evaluatedArrays.findDimension(name);
@@ -185,14 +184,14 @@ int main(int argc, char **argv)
     if (evaluatedValueCount != static_cast<std::size_t>(count) * 6 || !std::isfinite(arrayChecksum))
         return 14;
 
-    std::vector<FormulaAnalysis> literals;
+    std::vector<Formula> literals;
     literals.reserve(count);
     for (int index = 0; index < count; ++index)
         literals.push_back(analyzeFormula("1, 2, 3, 4, 5, 6"));
     timer.restart();
     double literalChecksum = 0.0;
     std::size_t literalValueCount = 0;
-    for (const FormulaAnalysis &literal : literals) {
+    for (const Formula &literal : literals) {
         const EvaluationResult evaluated = evaluateFormula(literal.root(), arrayContext);
         const ArrayValue *value = evaluated.value ? std::get_if<ArrayValue>(&*evaluated.value) : nullptr;
         if (!value) {
@@ -209,9 +208,9 @@ int main(int argc, char **argv)
     Document macros;
     const EntityId macroGlobal = macros.createVariable(ElementKind::Constant);
     macros.rename(macroGlobal, "Global");
-    MacroDefinition macro;
+    MacroDefinitionData macro;
     macro.displayName = "Scale";
-    macro.parameters = {{"x", "x", {}}, {"factor", "factor", "2"}};
+    macro.parameters = {{"x", {}}, {"factor", "2"}};
     macro.equation = "x * factor + Global";
     if (!macros.defineMacro(std::move(macro)))
         return 17;
@@ -228,19 +227,19 @@ int main(int argc, char **argv)
         macroOutputs.push_back(output);
     }
     timer.restart();
-    const ModelAnalysis macroAnalysis = analyzeDocument(macros);
+    const AnalysisReport macroAnalysis = analyzeDocument(macros);
     const qint64 macroNs = timer.nsecsElapsed();
-    for (const ModelIssue &issue : macroAnalysis.issues) {
+    for (const ModelIssue &issue : macroAnalysis.issues()) {
         if (issue.severity == IssueSeverity::Error) {
             QTextStream(stderr) << "Macro analysis failed: " << (issue.message) << "\n";
             return 18;
         }
     }
     std::unordered_map<EntityId, const FormulaNode *> macroFormulas;
-    for (const ElementAnalysis &entry : macroAnalysis.elements)
-        macroFormulas[entry.id] = entry.formula.root();
+    for (const ModelElement &entry : macros.model().elements())
+        macroFormulas[entry.id()] = entry.formula().root();
     EvaluationContext macroContext;
-    macroContext.readMacro = makeMacroReader(macroAnalysis);
+    macroContext.readMacro = makeMacroReader(macros);
     macroContext.readVariable = [&macroValues](const QString &name) -> std::optional<Value> {
         const auto found = macroValues.find(name);
         return found == macroValues.end() ? std::nullopt : std::optional<Value>(found.value());
@@ -261,9 +260,9 @@ int main(int argc, char **argv)
         return 20;
 
     Document recursiveMacros;
-    MacroDefinition recursive;
+    MacroDefinitionData recursive;
     recursive.displayName = "Down";
-    recursive.parameters = {{"x", "x", {}}};
+    recursive.parameters = {{"x", {}}};
     recursive.equation = "IF x <= 0 THEN 0 ELSE Down(x - 1)";
     if (!recursiveMacros.defineMacro(recursive))
         return 21;
@@ -274,17 +273,17 @@ int main(int argc, char **argv)
         recursiveOutputs.push_back(output);
     }
     timer.restart();
-    const ModelAnalysis recursiveAnalysis = analyzeDocument(recursiveMacros);
+    const AnalysisReport recursiveAnalysis = analyzeDocument(recursiveMacros);
     const qint64 recursiveAnalysisNs = timer.nsecsElapsed();
     EvaluationContext recursiveContext;
-    recursiveContext.readMacro = makeMacroReader(recursiveAnalysis);
+    recursiveContext.readMacro = makeMacroReader(recursiveMacros);
     std::size_t recursiveNodes = 0;
     std::unordered_map<EntityId, const FormulaNode *> recursiveFormulas;
     double recursiveChecksum = 0.0;
     timer.restart();
-    for (const ElementAnalysis &entry : recursiveAnalysis.elements) {
-        recursiveNodes += formulaNodeCount(entry.formula.root());
-        recursiveFormulas[entry.id] = entry.formula.root();
+    for (const ModelElement &entry : recursiveMacros.model().elements()) {
+        recursiveNodes += formulaNodeCount(entry.formula().root());
+        recursiveFormulas[entry.id()] = entry.formula().root();
     }
     for (const EntityId output : recursiveOutputs) {
         const EvaluationResult evaluated = evaluateFormula(recursiveFormulas.at(output), recursiveContext);

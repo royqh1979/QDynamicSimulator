@@ -39,10 +39,10 @@ void verifyArrayDefinitions(const Document &document)
     QVERIFY(apply->elementEquations().empty());
     QCOMPARE(individual->dimensions(), QVector<QString> {"location"});
     QCOMPARE(individual->elementEquations().size(), std::size_t(2));
-    QCOMPARE(individual->elementEquations()[0].indices, QVector<std::size_t> {0});
-    QCOMPARE(individual->elementEquations()[0].equation, QString("10"));
-    QCOMPARE(individual->elementEquations()[1].indices, QVector<std::size_t> {1});
-    QCOMPARE(individual->elementEquations()[1].equation, QString("20"));
+    QCOMPARE(individual->elementEquations()[0].indices(), QVector<std::size_t> {0});
+    QCOMPARE(individual->elementEquations()[0].equation(), QString("10"));
+    QCOMPARE(individual->elementEquations()[1].indices(), QVector<std::size_t> {1});
+    QCOMPARE(individual->elementEquations()[1].equation(), QString("20"));
 }
 
 void TestArrayFiles::arrayRoundTrips()
@@ -96,7 +96,7 @@ void TestArrayFiles::realArrayImports()
     QVERIFY(array);
     QCOMPARE(array->dimensions(), QVector<QString> {"dim1"});
     QCOMPARE(array->equation(), QString("1, 2, 3"));
-    const FormulaAnalysis literal = analyzeFormula(array->equation());
+    const Formula literal = analyzeFormula(array->equation());
     QVERIFY(literal.issues().empty());
     QVERIFY(dynamic_cast<const ArrayLiteralNode *>(literal.root()));
     EvaluationContext context;
@@ -112,8 +112,8 @@ void TestArrayFiles::realArrayImports()
     const auto *rate = individual.model().findByName("Rate A");
     QVERIFY(rate);
     QCOMPARE(rate->elementEquations().size(), std::size_t(3));
-    QCOMPARE(rate->elementEquations()[1].indices, QVector<std::size_t> {1});
-    QCOMPARE(rate->elementEquations()[2].equation, QString("0.3"));
+    QCOMPARE(rate->elementEquations()[1].indices(), QVector<std::size_t> {1});
+    QCOMPARE(rate->elementEquations()[2].equation(), QString("0.3"));
 
     QTemporaryDir directory;
     const QString path = directory.filePath(QStringLiteral("individual.xmile"));
@@ -123,7 +123,7 @@ void TestArrayFiles::realArrayImports()
     rate = reimported.model().findByName("Rate A");
     QVERIFY(rate);
     QCOMPARE(rate->elementEquations().size(), std::size_t(3));
-    QCOMPARE(rate->elementEquations()[0].equation, QString("0.01"));
+    QCOMPARE(rate->elementEquations()[0].equation(), QString("0.01"));
 }
 
 } // namespace

@@ -249,15 +249,16 @@ private:
 class Parser {
 public:
     explicit Parser(QString equation)
-        : m_lexer(equation)
+        : m_equation(std::move(equation))
+        , m_lexer(m_equation)
     {
         advance();
     }
 
-    FormulaAnalysis parse()
+    Formula parse()
     {
         if (m_current.type == TokenType::End)
-            return {};
+            return Formula(m_equation, nullptr, {});
         auto ast = expression(0);
         if (m_current.type == TokenType::Comma && ast) {
             const int begin = ast->span().begin;
@@ -276,7 +277,7 @@ public:
         }
         if (m_current.type != TokenType::End)
             fail("Unexpected token");
-        return FormulaAnalysis(std::move(ast), std::move(m_issues));
+        return Formula(m_equation, std::move(ast), std::move(m_issues));
     }
 
 private:
@@ -527,6 +528,7 @@ private:
             std::move(elseExpression), SourceSpan {ifToken.span.begin, elseExpression->span().end});
     }
 
+    QString m_equation;
     Lexer m_lexer;
     Token m_current;
     QVector<FormulaIssue> m_issues;
@@ -534,7 +536,7 @@ private:
 
 } // namespace
 
-FormulaAnalysis analyzeFormula(QString equation)
+Formula analyzeFormula(QString equation)
 {
     Parser parser(equation);
     return parser.parse();

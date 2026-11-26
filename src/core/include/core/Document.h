@@ -5,10 +5,10 @@
 #include <core/Macro.h>
 #include <core/Model.h>
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <QHash>
-#include <QMap>
 #include <QString>
 #include <unordered_map>
 #include <unordered_set>
@@ -77,10 +77,10 @@ public:
     const QVector<Dimension> &dimensions() const { return m_dimensions; }
     bool defineDimension(const QString &displayName, std::size_t size);
     bool defineDimension(const QString &displayName, const QVector<QString> &elements);
-    bool defineMacro(MacroDefinition macro);
-    bool setMacro(MacroDefinition macro);
+    bool defineMacro(MacroDefinitionData macro);
+    bool setMacro(MacroDefinitionData macro);
     const MacroDefinition *findMacro(const QString &name, int argumentCount, int outputCount = 1) const;
-    const QMap<MacroSignature, MacroDefinition> &macros() const { return m_macros; }
+    MacroRange macros() const { return MacroRange(m_macros); }
 
     DocumentRange elements() const { return DocumentRange(m_elements); }
     const Model &model() const { return m_model; }
@@ -130,7 +130,8 @@ private:
     bool validConnectorConnection(EntityId ignoredId, EntityId from, EntityId to) const;
     static bool validFontData(ElementKind kind, const FontStyle &font);
     static bool validRouteData(ElementKind kind, const Route &route);
-    bool prepareMacro(MacroDefinition &macro) const;
+    bool prepareMacro(MacroDefinitionData &macro) const;
+    static std::unique_ptr<MacroDefinition> makeMacro(const MacroDefinitionData &macro);
     bool hasMacroName(const QString &nameKey) const;
     bool validArrayData(const QVector<QString> &dimensions,
         const QVector<ArrayElementEquation> &elementEquations, const QString &equation) const;
@@ -141,7 +142,7 @@ private:
     QHash<QString, EntityId> m_nameIndex;
     QVector<Dimension> m_dimensions;
     QHash<QString, int> m_dimensionIndex;
-    QMap<MacroSignature, MacroDefinition> m_macros;
+    std::map<MacroSignature, std::unique_ptr<MacroDefinition>> m_macros;
     std::unordered_map<ElementKind, std::uint64_t> m_nextNameSuffix;
     EntityId m_nextId = 1;
     Model m_model;
