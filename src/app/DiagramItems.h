@@ -73,6 +73,7 @@ public:
 
     int type() const override;
     QRectF boundingRect() const override;
+    QPainterPath shape() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     qds::core::EntityId id() const override { return m_id; }
     qds::core::ElementKind kind() const { return m_kind; }

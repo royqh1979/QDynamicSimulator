@@ -51,6 +51,7 @@
 - 新增模拟设置对话框、设置 undo/redo、Run Name/Enter、Run/Cancel、同名覆盖确认及编译诊断定位；Worker 使用不可变内存 XML 副本，模型修改保留旧 Run 并标记过期。
 - Stock 使用独立 initialEquation，QDS 以 `<initial>` 保存；属性面板显示 Initial value 和只读流入/流出摘要，普通 equation 不再承担 Stock 初值语义。
 - 修复名称编辑无法输入空格的问题；编辑、实体拖动、框选和连线期间空格不再误触发画布平移，窗口失焦或获焦时清除空格按下状态。
+- Cloud 改为封闭实线云形，绘制、鼠标命中和 Flow 边界端点共用实际轮廓，不再使用椭圆近似。
 - 新增标量公式 AST、UTF-8 名称与注释 Lexer、Pratt Parser、运算符优先级、函数/条件/下标节点和 SourceSpan 诊断，附 SDXorg 语料结构检查与性能基线。
 - 新增 nameKey 符号解析、XMILE 内置函数签名、公式依赖图与代数环检查；Validation 统一使用 AST 分析并区分公式依赖和结构使用关系。
 - 新增无全局状态的标量公式求值，支持已解析变量、时间常量、基本运算、条件分支和无状态数学函数；Analysis 与 Evaluator 共用函数签名注册表。

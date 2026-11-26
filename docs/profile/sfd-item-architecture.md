@@ -240,3 +240,11 @@ CMake 使用 `qt5_create_translation` 更新 TS 并生成 QM，再通过 RCC 内
 | --- | ---: | ---: | ---: |
 | space_pan | 1000 | 1.5013 | 1.5013 |
 | space_focus_reset | 1000 | 1.0027 | 1.0027 |
+
+## Cloud 云形与边界
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`cloud_outline_boundary` 每轮获取一次 Cloud 的实际 shape，并计算水平、垂直和四个斜向的中心射线边界交点；共 8000 次边界计算，逐轮校验轮廓元素数量和非退化交点。单元测试另校验封闭多段路径、八个方向交点到实际轮廓的距离、射线共线、Flow 末端一致性及 QImage 实际渲染。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| cloud_outline_boundary | 8000 | 9.9499 | 1.24374 |

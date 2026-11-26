@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace {
 
@@ -19,6 +20,20 @@ QString viewObjectText(const qds::core::ViewElement &object)
     if (const auto *comment = dynamic_cast<const qds::core::Comment *>(&object))
         return (comment->content());
     return {};
+}
+
+QPainterPath cloudOutline()
+{
+    QPainterPath path;
+    path.moveTo(-35.0, 12.0);
+    path.cubicTo(-48.0, 12.0, -50.0, -4.0, -39.0, -10.0);
+    path.cubicTo(-40.0, -24.0, -20.0, -28.0, -10.0, -17.0);
+    path.cubicTo(0.0, -30.0, 20.0, -26.0, 25.0, -14.0);
+    path.cubicTo(41.0, -20.0, 52.0, -5.0, 43.0, 6.0);
+    path.cubicTo(48.0, 20.0, 25.0, 27.0, 12.0, 19.0);
+    path.cubicTo(-5.0, 28.0, -30.0, 25.0, -35.0, 12.0);
+    path.closeSubpath();
+    return path;
 }
 
 QPolygonF offsetPolygon(const QPolygonF &points, double offset)
@@ -243,16 +258,20 @@ QRectF ViewObjectItem::boundingRect() const
     return QRectF(-65.0, -32.0, 130.0, 72.0);
 }
 
+QPainterPath ViewObjectItem::shape() const
+{
+    return m_kind == qds::core::ElementKind::Cloud ? cloudOutline() : QGraphicsObject::shape();
+}
+
 void ViewObjectItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
 {
     painter->setRenderHint(QPainter::Antialiasing);
     painter->setFont(labelFont());
-    const Qt::PenStyle normalStyle = m_kind == qds::core::ElementKind::Cloud ? Qt::DashLine : Qt::SolidLine;
-    painter->setPen(outlinePen(diagram_palette::EntityOutlineColor, 1.4, 2.0, normalStyle));
+    painter->setPen(outlinePen(diagram_palette::EntityOutlineColor, 1.4, 2.0));
     painter->setBrush(diagram_palette::EntityFillColor);
     QRectF textRect(-60.0, -25.0, 120.0, 50.0);
     if (m_kind == qds::core::ElementKind::Cloud) {
-        painter->drawEllipse(QRectF(-45.0, -25.0, 90.0, 50.0));
+        painter->drawPath(cloudOutline());
         textRect = QRectF(-60.0, 28.0, 120.0, 24.0);
     } else {
         painter->setBrush(diagram_palette::CommentFillColor);
@@ -267,11 +286,27 @@ QPointF ViewObjectItem::boundaryPointToward(const QPointF &target) const
 {
     if (m_kind != qds::core::ElementKind::Cloud)
         return DiagramItem::boundaryPointToward(target);
-    const QPointF delta = target - pos();
+    const QPointF delta = target - center();
     if (delta.isNull())
-        return pos();
-    const double scale = 1.0 / std::sqrt(delta.x() * delta.x() / (45.0 * 45.0) + delta.y() * delta.y() / 625.0);
-    return pos() + delta * scale;
+        return center();
+    const QLineF ray(QPointF(), delta * 1e6);
+    QPointF nearest;
+    double nearestDistance = std::numeric_limits<double>::max();
+    const QList<QPolygonF> polygons = cloudOutline().toSubpathPolygons();
+    for (const QPolygonF &polygon : polygons) {
+        for (int index = 1; index < polygon.size(); ++index) {
+            QPointF intersection;
+            const QLineF edge(polygon[index - 1], polygon[index]);
+            if (edge.intersects(ray, &intersection) != QLineF::BoundedIntersection)
+                continue;
+            const double distance = intersection.x() * intersection.x() + intersection.y() * intersection.y();
+            if (distance < nearestDistance) {
+                nearest = intersection;
+                nearestDistance = distance;
+            }
+        }
+    }
+    return nearestDistance == std::numeric_limits<double>::max() ? center() : center() + nearest;
 }
 
 void ViewObjectItem::refresh(const qds::core::ViewElement &object, const QPointF &position)

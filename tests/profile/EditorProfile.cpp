@@ -612,6 +612,26 @@ int main(int argc, char **argv)
     }
     const qint64 centerBoundaryNs = timer.nsecsElapsed();
 
+    auto *cloudItem = dynamic_cast<ViewObjectItem *>(guideScene.item(valveCloud));
+    timer.restart();
+    int cloudBoundaryCount = 0;
+    int cloudOutlineElementCount = 0;
+    for (int index = 0; index < 1000; ++index) {
+        cloudOutlineElementCount += cloudItem->shape().elementCount();
+        for (const QPointF &target : {QPointF(800.0, 200.0), QPointF(400.0, 600.0), QPointF(0.0, 200.0),
+                                      QPointF(400.0, -200.0), QPointF(700.0, 500.0), QPointF(100.0, 500.0),
+                                      QPointF(700.0, -100.0), QPointF(100.0, -100.0)}) {
+            const QPointF boundary = cloudItem->boundaryPointToward(target);
+            cloudBoundaryCount += QLineF(boundary, cloudItem->center()).length() > 0.0 ? 1 : 0;
+        }
+    }
+    const qint64 cloudBoundaryNs = timer.nsecsElapsed();
+    if (cloudBoundaryCount != 8000 || cloudOutlineElementCount != 19000) {
+        QTextStream(stderr) << "cloud validation failed: boundaries=" << cloudBoundaryCount
+                            << ", elements=" << cloudOutlineElementCount << "\n";
+        return 57;
+    }
+
     DocumentController dragController;
     DiagramScene dragScene(&dragController);
     const EntityId dragStock = dragController.createVariable(ElementKind::Stock, QPointF());
@@ -1002,6 +1022,7 @@ int main(int argc, char **argv)
                         << "flow_arrow_geometry,1000," << flowArrowNs / 1e6 << "," << flowArrowNs / 1000.0 / 1000 << "\n"
                         << "flow_label_geometry,1000," << flowLabelNs / 1e6 << "," << flowLabelNs / 1000.0 / 1000 << "\n"
                         << "flow_center_boundary,1000," << centerBoundaryNs / 1e6 << "," << centerBoundaryNs / 1000.0 / 1000 << "\n"
+                        << "cloud_outline_boundary,8000," << cloudBoundaryNs / 1e6 << "," << cloudBoundaryNs / 1000.0 / 8000 << "\n"
                         << "shift_drag,1000," << modifierDragNs / 1e6 << "," << modifierDragNs / 1000.0 / 1000 << "\n"
                         << "blank_flow_create_undo_redo,1000," << blankFlowNs / 1e6 << "," << blankFlowNs / 1000.0 / 1000 << "\n"
                         << "comment_content_edit,1000," << commentEditNs / 1e6 << "," << commentEditNs / 1000.0 / 1000 << "\n"
@@ -1035,7 +1056,8 @@ int main(int argc, char **argv)
         && singleSelectionGuideCount == 1000 && valveCount == 2000
         && lineStyleChecksum == 3000 && automaticPointCount > 0 && automaticFlagsValid
         && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000
-        && centerBoundaryCount == 1000 && variableKindsMatch && windowLayoutCount == layoutIterations
+        && centerBoundaryCount == 1000 && cloudBoundaryCount == 8000 && cloudOutlineElementCount == 19000
+        && variableKindsMatch && windowLayoutCount == layoutIterations
         && fontStyleCount == count && loadedFontStock
         && translationLoadCount == count && workspaceCount == workspaceIterations
         && pngRenderCount == pngIterations && pngSelectionRenderCount == pngIterations && pngSelectionSmaller

@@ -11,7 +11,7 @@ cmake --build <RELEASE_BUILD_DIR> --target all-profile-targets --parallel
 <RELEASE_BUILD_DIR>/tests/profile/profile-simulation.exe 1000
 ```
 
-输出为 CSV：`operation,count,total_ms,per_operation_us`。核心 profile 覆盖创建、连接、ID/nameKey 查找、移动和删除；编辑器 profile 覆盖命令/Scene 创建、连接、移动、撤销/重做、空格平移与窗口焦点状态重置、空白 Flow 原子创建循环、Flow 双线路径、箭头、名称区域及中心边界几何、直角自动布线点属性、Connector 端点线型、PropertyPanel 刷新、Comment 正文编辑、QDS 保存/打开、XMILE 导出/导入及 SIR 真实模型连续导入。
+输出为 CSV：`operation,count,total_ms,per_operation_us`。核心 profile 覆盖创建、连接、ID/nameKey 查找、移动和删除；编辑器 profile 覆盖命令/Scene 创建、连接、移动、撤销/重做、空格平移与窗口焦点状态重置、Cloud 轮廓与边界、空白 Flow 原子创建循环、Flow 双线路径、箭头、名称区域及中心边界几何、直角自动布线点属性、Connector 端点线型、PropertyPanel 刷新、Comment 正文编辑、QDS 保存/打开、XMILE 导出/导入及 SIR 真实模型连续导入。
 
 结果记录：
 

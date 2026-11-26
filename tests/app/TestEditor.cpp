@@ -53,6 +53,7 @@
 #include <QtTest>
 
 #include <cmath>
+#include <limits>
 #include <optional>
 
 using namespace qds::core;
@@ -136,6 +137,7 @@ private slots:
     void layoutOperations();
     void gridAndSceneBounds();
     void viewOperations();
+    void cloudShapeAndBoundary();
     void routeModesAndGeometry();
     void flowRoutesAndValveGeometry();
     void flowLabelRepaint();
@@ -836,6 +838,48 @@ void TestEditor::viewOperations()
     QApplication::sendEvent(&view, &focusIn);
     QVERIFY(!scene.spacePressed());
     QTest::keyRelease(&view, Qt::Key_Space);
+}
+
+void TestEditor::cloudShapeAndBoundary()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(-240.0, 0.0));
+    const EntityId cloudId = controller.createCloud(QPointF());
+    auto *cloud = dynamic_cast<ViewObjectItem *>(scene.item(cloudId));
+    QVERIFY(cloud);
+    const QPainterPath outline = cloud->shape();
+    QVERIFY(outline.elementCount() > 2);
+    QVERIFY(outline.contains(QPointF()));
+    const QList<QPolygonF> polygons = outline.toSubpathPolygons();
+    QCOMPARE(polygons.size(), 1);
+    QVERIFY(polygons.front().size() > 8);
+    QCOMPARE(polygons.front().first(), polygons.front().last());
+
+    for (const QPointF &target : {QPointF(300.0, 0.0), QPointF(0.0, 300.0), QPointF(-300.0, 0.0),
+                                  QPointF(0.0, -300.0), QPointF(240.0, 180.0), QPointF(-240.0, 180.0),
+                                  QPointF(240.0, -180.0), QPointF(-240.0, -180.0)}) {
+        const QPointF boundary = cloud->boundaryPointToward(target) - cloud->center();
+        double nearest = std::numeric_limits<double>::max();
+        for (int index = 1; index < polygons.front().size(); ++index) {
+            const QPointF start = polygons.front()[index - 1];
+            const QPointF segment = polygons.front()[index] - start;
+            const double lengthSquared = QPointF::dotProduct(segment, segment);
+            if (lengthSquared < 1e-12)
+                continue;
+            const double ratio = std::clamp(QPointF::dotProduct(boundary - start, segment) / lengthSquared, 0.0, 1.0);
+            nearest = std::min(nearest, QLineF(boundary, start + ratio * segment).length());
+        }
+        QVERIFY2(nearest < 0.75, qPrintable(QStringLiteral("target=%1,%2 nearest=%3")
+            .arg(target.x()).arg(target.y()).arg(nearest)));
+        QVERIFY(std::abs(target.x() * boundary.y() - target.y() * boundary.x()) < 1e-6);
+    }
+
+    const EntityId flow = controller.createFlow(stock, cloudId);
+    const QPainterPath flowPath = dynamic_cast<FlowItem *>(scene.item(flow))->geometryPath();
+    QVERIFY(QLineF(flowPath.pointAtPercent(1.0), cloud->boundaryPointToward(scene.item(stock)->center())).length() < 0.75);
+    const QImage rendered = scene.renderImage();
+    QVERIFY(!rendered.isNull());
 }
 
 void TestEditor::routeModesAndGeometry()
