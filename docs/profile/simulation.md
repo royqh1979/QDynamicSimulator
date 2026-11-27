@@ -68,7 +68,7 @@ RK4 校验和约为 2.20265e+07。Euler 与 RK4 分列，不用不同方法的�
 
 `results_show_current` 另覆盖按 RunId 选择此次运行并切换到 Graph 的调用路径；自动显示是否允许发生由 simulationRevision 和真实 MainWindow 集成测试验证。
 
-真实 MainWindow 测试覆盖首次成功显示、Workbench 与画布单选双向同步、表格末时刻可见、最新 Run 优先、加载状态不删除结果、历史名称、旧模型提示、文档重置清理及无显式选择时优先 Stock。165 条中文翻译全部完成，本次 profile stderr 无警告。
+真实 MainWindow 测试覆盖首次成功显示、Workbench 与画布单选双向同步、表格末时刻可见、最新 Run 优先、加载状态不删除结果、历史名称、旧模型提示、文档重置清理及无显式选择时优先 Stock。170 条中文翻译全部完成，本次 profile stderr 无警告。
 
 ## Qt Charts 大结果集
 
@@ -91,3 +91,13 @@ RK4 校验和约为 2.20265e+07。Euler 与 RK4 分列，不用不同方法的�
 | causes_strip_refresh | 100 | 482.178 | 4821.78 |
 
 该结果使用 Release `profile-editor.exe 100`，不包含 Worker 或积分时间，不设置额外性能门槛。
+
+## Runs Compare
+
+`runs_compare_bind` 每轮绑定两个相同真实 NamedRun，按 nameKey 对齐数值 Constant，验证单行结果和零差值；单元测试另覆盖修改、增加和删除常量、旧/新 Run 表头、缺失值、单位、非 Constant 排除以及少于两个已加载 Run 时的空表。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| runs_compare_bind | 100 | 0.0869 | 0.869 |
+
+该结果使用 Release `profile-editor.exe 100`，不包含 Worker 或积分时间。

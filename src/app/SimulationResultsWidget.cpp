@@ -1,6 +1,7 @@
 #include "SimulationResultsWidget.h"
 
 #include "CausesStripWidget.h"
+#include "RunsCompareModel.h"
 #include "SimulationTableModel.h"
 #include "TimeSeriesChartWidget.h"
 
@@ -27,6 +28,8 @@ SimulationResultsWidget::SimulationResultsWidget(SimulationController *controlle
     , m_tableModel(new SimulationTableModel(this))
     , m_chart(new TimeSeriesChartWidget(this))
     , m_causesStrip(new CausesStripWidget(this))
+    , m_runsCompareModel(new RunsCompareModel(this))
+    , m_runsCompareTable(new QTableView(this))
     , m_tabs(new QTabWidget(this))
 {
     m_variableCombo->setObjectName(QStringLiteral("workbenchVariableCombo"));
@@ -54,6 +57,12 @@ SimulationResultsWidget::SimulationResultsWidget(SimulationController *controlle
     m_tabs->addTab(m_chart, tr("Chart"));
     m_tabs->addTab(table, tr("Data"));
     m_tabs->addTab(m_causesStrip, tr("Causes"));
+    m_runsCompareTable->setObjectName(QStringLiteral("runsCompareTable"));
+    m_runsCompareTable->setModel(m_runsCompareModel);
+    m_runsCompareTable->setSelectionBehavior(QAbstractItemView::SelectItems);
+    m_runsCompareTable->setAlternatingRowColors(true);
+    m_runsCompareTable->horizontalHeader()->setStretchLastSection(true);
+    m_tabs->addTab(m_runsCompareTable, tr("Compare"));
     splitter->addWidget(m_tabs);
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
@@ -90,6 +99,11 @@ void SimulationResultsWidget::showTable()
 void SimulationResultsWidget::showCausesStrip()
 {
     m_tabs->setCurrentWidget(m_causesStrip);
+}
+
+void SimulationResultsWidget::showRunsCompare()
+{
+    m_tabs->setCurrentWidget(m_runsCompareTable);
 }
 
 void SimulationResultsWidget::showRun(RunId id)
@@ -142,6 +156,7 @@ void SimulationResultsWidget::refreshWorkbench()
         m_tableModel->clear();
         m_chart->setRuns({}, {});
         m_causesStrip->setRuns({}, {}, {});
+        m_runsCompareModel->clear();
         m_runStatusLabel->setText(tr("No completed runs"));
         m_refreshing = false;
         return;
@@ -193,6 +208,7 @@ void SimulationResultsWidget::refreshWorkbench()
         .arg(m_controller->isOutdated(*run) ? tr(", older model") : QString()));
     m_chart->setRuns(loadedRuns, nameKey);
     refreshCauses(loadedRuns, nameKey);
+    m_runsCompareModel->setRuns(loadedRuns);
     m_refreshing = false;
 }
 

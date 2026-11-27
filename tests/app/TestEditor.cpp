@@ -12,6 +12,7 @@
 #include "Routing.h"
 #include "SimulationController.h"
 #include "CausesStripWidget.h"
+#include "RunsCompareModel.h"
 #include "SimulationResultsWidget.h"
 #include "SimulationSettingsDialog.h"
 #include "SimulationTableModel.h"
@@ -193,6 +194,7 @@ private slots:
     void simulationControls();
     void resultsDock();
     void causesStripGraph();
+    void runsCompare();
     void resultsAutoOpenCurrentRun();
     void simulationSettingsAction();
     void stockInitialValuePresentation();
@@ -3195,6 +3197,79 @@ void TestEditor::causesStripGraph()
     QCOMPARE(charts[0]->chart()->title(), QStringLiteral("births"));
     QCOMPARE(charts[1]->chart()->title(), QStringLiteral("birth rate"));
     QCOMPARE(charts[2]->chart()->title(), QStringLiteral("Population"));
+}
+
+void TestEditor::runsCompare()
+{
+    MainWindow window;
+    auto *controller = window.findChild<DocumentController *>();
+    auto *simulation = window.findChild<SimulationController *>();
+    QVERIFY(controller && simulation);
+    const EntityId stock = controller->createVariable(ElementKind::Stock, QPointF());
+    controller->setInitialEquation(stock, QStringLiteral("100"));
+    const EntityId alpha = controller->createVariable(ElementKind::Variable, QPointF());
+    controller->renameElement(alpha, QStringLiteral("alpha"));
+    controller->setEquation(alpha, QStringLiteral("2"));
+    controller->setUnit(alpha, QStringLiteral("unit"));
+    const EntityId legacy = controller->createVariable(ElementKind::Variable, QPointF());
+    controller->renameElement(legacy, QStringLiteral("legacy"));
+    controller->setEquation(legacy, QStringLiteral("5"));
+    const EntityId shared = controller->createVariable(ElementKind::Variable, QPointF());
+    controller->renameElement(shared, QStringLiteral("shared"));
+    controller->setEquation(shared, QStringLiteral("1"));
+    controller->setSimulationSettings({0.0, 1.0, 1.0, 1.0});
+
+    QVERIFY(simulation->start(QStringLiteral("base")));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    const NamedRun base = simulation->runs().front();
+    auto *table = window.findChild<QTableView *>(QStringLiteral("runsCompareTable"));
+    auto *model = qobject_cast<RunsCompareModel *>(table->model());
+    QVERIFY(table && model);
+    window.findChild<QAction *>(QStringLiteral("runsCompareAction"))->trigger();
+    QCOMPARE(model->rowCount(), 0);
+
+    controller->setEquation(alpha, QStringLiteral("3"));
+    controller->removeElements({legacy});
+    const EntityId added = controller->createVariable(ElementKind::Variable, QPointF());
+    controller->renameElement(added, QStringLiteral("new constant"));
+    controller->setEquation(added, QStringLiteral("4"));
+    QVERIFY(simulation->start(QStringLiteral("expanded")));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QCOMPARE(simulation->runs().size(), 2);
+    QTRY_COMPARE(model->rowCount(), 4);
+    QCOMPARE(model->columnCount(), 5);
+    QCOMPARE(model->headerData(2, Qt::Horizontal).toString(), QStringLiteral("base"));
+    QCOMPARE(model->headerData(3, Qt::Horizontal).toString(), QStringLiteral("expanded"));
+    QCOMPARE(model->headerData(4, Qt::Horizontal).toString(), QStringLiteral("Difference"));
+    const auto row = [model](const QString &name) {
+        for (int index = 0; index < model->rowCount(); ++index) {
+            if (model->data(model->index(index, 0)).toString() == name)
+                return index;
+        }
+        return -1;
+    };
+    const int alphaRow = row(QStringLiteral("alpha"));
+    const int legacyRow = row(QStringLiteral("legacy"));
+    const int addedRow = row(QStringLiteral("new constant"));
+    const int sharedRow = row(QStringLiteral("shared"));
+    QVERIFY(alphaRow >= 0 && legacyRow >= 0 && addedRow >= 0 && sharedRow >= 0);
+    QCOMPARE(row(QStringLiteral("Stock1")), -1);
+    QCOMPARE(model->data(model->index(alphaRow, 1)).toString(), QStringLiteral("unit"));
+    QCOMPARE(model->data(model->index(alphaRow, 2)).toString(), QStringLiteral("2"));
+    QCOMPARE(model->data(model->index(alphaRow, 3)).toString(), QStringLiteral("3"));
+    QCOMPARE(model->data(model->index(alphaRow, 4)).toString(), QStringLiteral("1"));
+    QCOMPARE(model->data(model->index(legacyRow, 2)).toString(), QStringLiteral("5"));
+    QVERIFY(model->data(model->index(legacyRow, 3)).isNull());
+    QVERIFY(model->data(model->index(legacyRow, 4)).isNull());
+    QVERIFY(model->data(model->index(addedRow, 2)).isNull());
+    QCOMPARE(model->data(model->index(addedRow, 3)).toString(), QStringLiteral("4"));
+    QVERIFY(model->data(model->index(addedRow, 4)).isNull());
+    QCOMPARE(model->data(model->index(sharedRow, 4)).toString(), QStringLiteral("0"));
+
+    simulation->setRunLoaded(base.id(), false);
+    QTRY_COMPARE(model->rowCount(), 0);
+    simulation->setRunLoaded(base.id(), true);
+    QTRY_COMPARE(model->rowCount(), 4);
 }
 
 void TestEditor::resultsAutoOpenCurrentRun()

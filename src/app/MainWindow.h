@@ -65,7 +65,8 @@ private:
     enum class SimulationResultView {
         Graph,
         Table,
-        CausesStrip
+        CausesStrip,
+        RunsCompare
     };
 
     void runSimulation();

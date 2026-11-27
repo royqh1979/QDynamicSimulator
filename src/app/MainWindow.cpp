@@ -414,8 +414,13 @@ void MainWindow::createActions()
     graphAction->setObjectName(QStringLiteral("graphAction"));
     QAction *causesStripAction = new QAction(actionIcon("causes-strip"), tr("Causes Strip"), this);
     causesStripAction->setObjectName(QStringLiteral("causesStripAction"));
+    QAction *runsCompareAction = new QAction(actionIcon("runs-compare"), tr("Runs Compare"), this);
+    runsCompareAction->setObjectName(QStringLiteral("runsCompareAction"));
     QAction *tableAction = new QAction(actionIcon("table"), tr("Table"), this);
     tableAction->setObjectName(QStringLiteral("tableAction"));
+    connect(runsCompareAction, &QAction::triggered, this, [this]() {
+        showSimulationResults(SimulationResultView::RunsCompare);
+    });
     connect(graphAction, &QAction::triggered, this, [this]() {
         showSimulationResults(SimulationResultView::Graph);
     });
@@ -427,7 +432,7 @@ void MainWindow::createActions()
     });
     m_simulationSettingsAction = new QAction(actionIcon("simulation-settings"), tr("Simulation settings"), this);
     m_simulationSettingsAction->setObjectName(QStringLiteral("simulationSettingsAction"));
-    for (QAction *action : {m_runAction, m_cancelAction, graphAction, causesStripAction, tableAction, m_simulationSettingsAction}) {
+    for (QAction *action : {m_runAction, m_cancelAction, graphAction, causesStripAction, runsCompareAction, tableAction, m_simulationSettingsAction}) {
         simulationMenu->addAction(action);
         simulationToolBar->addAction(action);
     }
@@ -651,8 +656,10 @@ void MainWindow::showSimulationResults(SimulationResultView view)
         m_results->showGraph();
     else if (view == SimulationResultView::Table)
         m_results->showTable();
-    else
+    else if (view == SimulationResultView::CausesStrip)
         m_results->showCausesStrip();
+    else
+        m_results->showRunsCompare();
 }
 
 void MainWindow::openSimulationSettings()

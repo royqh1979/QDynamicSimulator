@@ -22,6 +22,8 @@ add_library(qds-editor STATIC
     MiniMapView.h
     PropertyPanel.cpp
     PropertyPanel.h
+    RunsCompareModel.cpp
+    RunsCompareModel.h
     RecentFiles.cpp
     RecentFiles.h
     Routing.cpp
