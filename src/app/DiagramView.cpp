@@ -28,7 +28,8 @@ bool isDocumentFileDrop(const QMimeData *mime)
     const QString suffix = QFileInfo(url.toLocalFile()).suffix();
     return suffix.compare(QStringLiteral("qds"), Qt::CaseInsensitive) == 0
         || suffix.compare(QStringLiteral("xmile"), Qt::CaseInsensitive) == 0
-        || suffix.compare(QStringLiteral("xml"), Qt::CaseInsensitive) == 0;
+        || suffix.compare(QStringLiteral("xml"), Qt::CaseInsensitive) == 0
+        || suffix.compare(QStringLiteral("mdl"), Qt::CaseInsensitive) == 0;
 }
 
 }

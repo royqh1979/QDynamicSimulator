@@ -183,6 +183,7 @@ private slots:
     void unifiedIdUndoRedo();
     void modifierDragOperations();
     void fileDropOpen();
+    void mdlOpenAndDrop();
     void documentTitlesAndSaveNames();
     void pngExportAndClipboard();
     void workspaceRestore();
@@ -2549,6 +2550,33 @@ void TestEditor::fileDropOpen()
     QDragEnterEvent rejected(QPoint(20, 20), Qt::CopyAction, &invalid, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view->viewport(), &rejected);
     QVERIFY(!rejected.isAccepted());
+}
+
+void TestEditor::mdlOpenAndDrop()
+{
+    MainWindow opened;
+    QVERIFY(opened.openFile(QStringLiteral(QDS_TEACUP_MDL_PATH)));
+    QVERIFY(opened.windowTitle().startsWith(QStringLiteral("teacup[*]")));
+    QVERIFY(!opened.windowTitle().contains(QStringLiteral(".mdl")));
+    auto *openedScene = opened.findChild<DiagramScene *>();
+    QVERIFY(openedScene);
+    QCOMPARE(openedScene->findElements(QStringLiteral("Teacup Temperature")).size(), std::size_t(1));
+    QCOMPARE(openedScene->findElements(QStringLiteral("Heat Loss to Room")).size(), std::size_t(1));
+
+    MainWindow dropped;
+    auto *view = dropped.findChild<DiagramView *>();
+    auto *scene = dropped.findChild<DiagramScene *>();
+    QVERIFY(view && scene);
+    QMimeData data;
+    data.setUrls({QUrl::fromLocalFile(QStringLiteral(QDS_TEACUP_MDL_PATH))});
+    QDragEnterEvent enter(QPoint(20, 20), Qt::CopyAction, &data, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view->viewport(), &enter);
+    QVERIFY(enter.isAccepted());
+    QDropEvent drop(QPoint(20, 20), Qt::CopyAction, &data, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view->viewport(), &drop);
+    QVERIFY(drop.isAccepted());
+    QVERIFY(dropped.windowTitle().startsWith(QStringLiteral("teacup[*]")));
+    QCOMPARE(scene->findElements(QStringLiteral("Teacup Temperature")).size(), std::size_t(1));
 }
 
 void TestEditor::documentTitlesAndSaveNames()

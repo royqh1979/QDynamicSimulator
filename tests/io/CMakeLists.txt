@@ -17,6 +17,21 @@ endif()
 add_test(NAME io-xmile COMMAND test-xmile)
 add_dependencies(all-test-targets test-xmile)
 
+add_executable(test-mdl
+    TestMdlFile.cpp
+)
+target_link_libraries(test-mdl PRIVATE QDS::IO Qt5::Test)
+target_compile_definitions(test-mdl PRIVATE
+    QDS_ABS_MDL_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/abs/test_abs.mdl"
+    QDS_TEACUP_MDL_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/teacup/teacup.mdl"
+    QDS_MACRO_MDL_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/macro_expression/test_macro_expression.mdl"
+    QDS_SPECIAL_MDL_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/special_characters/test_special_variable_names.mdl"
+    QDS_ARRAY_1D_MDL_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/subscript_individually_defined_1d_arrays/subscript_individually_defined_1d_arrays.mdl"
+    QDS_ARRAY_2D_MDL_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/subscript_2d_arrays/test_subscript_2d_arrays.mdl"
+)
+add_test(NAME io-mdl COMMAND test-mdl)
+add_dependencies(all-test-targets test-mdl)
+
 add_executable(test-array-files
     TestArrayFiles.cpp
 )

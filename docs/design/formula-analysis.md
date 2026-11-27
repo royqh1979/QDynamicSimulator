@@ -96,7 +96,8 @@ Document 中的 ModelElement 和 MacroDefinition 唯一持有各自公式的 For
 ### 4.1 字面量与标识符
 
 - 支持 XMILE 数字形式：`.375`、`14.`、`6E5`、`+8.123e-10`；正负号由一元运算符表达，不并入负数字面量。
-- 未加引号的标识符遵循 XMILE 规则；中文、空格及其它 UTF-8 名称使用双引号及转义规则。
+- 未加引号的标识符遵循 XMILE 规则；中文等 Unicode 名称可以裸写，含空格或特殊字符的 display name 使用双引号及转义规则。模型元素的 display name 本身可以包含空格，公式引用规则不限制显示名称。
+- 裸空格名称不依赖当前 Document 做最长匹配，避免新增或重命名变量改变同一公式文本的 AST。Vensim 等允许裸空格名称的外部方言在 I/O 边界根据完整符号表转换，具体规则见 [Vensim MDL 导入设计](vensim-mdl.md)。
 - Lexer 保留原始文本，Resolver 在反转义后调用现有 `normalizeIdentifier()` 生成 nameKey，不另建名称规范。
 - `{}` 内联注释被跳过，不生成 AST；未闭合注释给出位置明确的错误。首版不支持嵌套注释，遇到 `{` 即进入注释、遇到 `}` 结束。
 
