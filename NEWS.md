@@ -80,3 +80,4 @@
 - 新增 Causes Strip：按一级原因分组显示 Workbench Variable 与驱动变量，Stock 使用 Flow 端点、其他变量使用公式依赖；各历史 Run 保存独立原因映射，支持多 Run、常量原因和同步时间轴缩放/平移。
 - 新增 Runs Compare：按 nameKey 对比前两个已加载 Run 的数值 Constant，显示变量、单位、旧值、新值和差值，支持缺失常量与 Datasets 加载状态切换。
 - 仿真内核支持基本数组执行：Apply-to-All 与显式元素方程、数组 Stock/Flow/Variable、标量广播、维度重排、Euler/RK4 和独立 `arraySeries()`；数组结果 UI 留待后续阶段。
+- 统一 SimulationRun 结果对象：RunId、runName、modelRevision、结果变量元数据、直接原因与标量/数组序列同属一个不可变记录，移除 NamedRun 平行模型。

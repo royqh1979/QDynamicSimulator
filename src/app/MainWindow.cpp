@@ -558,7 +558,7 @@ void MainWindow::createPropertyPanel()
             if (run->status() != qds::core::SimulationRunStatus::Completed)
                 return;
             const auto &runs = m_simulation->runs();
-            const auto completed = std::find_if(runs.begin(), runs.end(), [this](const NamedRun &candidate) {
+            const auto completed = std::find_if(runs.begin(), runs.end(), [this](const SimulationRun &candidate) {
                 return candidate.id() == m_simulation->lastRunId();
             });
             if (completed != runs.end() && !m_simulation->isOutdated(*completed)) {
@@ -683,7 +683,7 @@ void MainWindow::updateRunNameChoices()
     const QString current = m_runName->currentText();
     const QSignalBlocker blocker(m_runName);
     m_runName->clear();
-    for (const NamedRun &run : m_simulation->runs())
+    for (const SimulationRun &run : m_simulation->runs())
         m_runName->addItem(run.name());
     m_runName->setCurrentText(current);
 }

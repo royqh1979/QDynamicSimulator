@@ -12,7 +12,7 @@ class TimeSeriesChartWidget : public QtCharts::QChartView
 public:
     explicit TimeSeriesChartWidget(QWidget *parent = nullptr);
 
-    void setRuns(const QVector<NamedRun> &runs, const QString &nameKey);
+    void setRuns(const QVector<SimulationRun> &runs, const QString &nameKey);
     void resetZoom();
     QPair<double, double> timeRange() const;
     void setTimeRange(double minimum, double maximum);

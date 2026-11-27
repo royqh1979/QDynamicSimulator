@@ -792,17 +792,17 @@
 <context>
     <name>RunsCompareModel</name>
     <message>
-        <location filename="../src/app/RunsCompareModel.cpp" line="107"/>
+        <location filename="../src/app/RunsCompareModel.cpp" line="109"/>
         <source>Variable</source>
         <translation>变量</translation>
     </message>
     <message>
-        <location filename="../src/app/RunsCompareModel.cpp" line="109"/>
+        <location filename="../src/app/RunsCompareModel.cpp" line="111"/>
         <source>Unit</source>
         <translation>单位</translation>
     </message>
     <message>
-        <location filename="../src/app/RunsCompareModel.cpp" line="115"/>
+        <location filename="../src/app/RunsCompareModel.cpp" line="117"/>
         <source>Difference</source>
         <translation>差值</translation>
     </message>
@@ -810,17 +810,17 @@
 <context>
     <name>SimulationController</name>
     <message>
-        <location filename="../src/app/SimulationController.cpp" line="128"/>
+        <location filename="../src/app/SimulationController.cpp" line="107"/>
         <source>A simulation is already running.</source>
         <translation>已有模拟正在运行。</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationController.cpp" line="133"/>
+        <location filename="../src/app/SimulationController.cpp" line="112"/>
         <source>Run name cannot be empty.</source>
         <translation>运行名称不能为空。</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationController.cpp" line="137"/>
+        <location filename="../src/app/SimulationController.cpp" line="116"/>
         <source>A run with this name already exists.</source>
         <translation>已存在同名运行。</translation>
     </message>
@@ -828,52 +828,52 @@
 <context>
     <name>SimulationResultsWidget</name>
     <message>
-        <location filename="../src/app/SimulationResultsWidget.cpp" line="42"/>
+        <location filename="../src/app/SimulationResultsWidget.cpp" line="44"/>
         <source>Variable:</source>
         <translation>变量：</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationResultsWidget.cpp" line="44"/>
+        <location filename="../src/app/SimulationResultsWidget.cpp" line="46"/>
         <source>Run:</source>
         <translation>运行：</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationResultsWidget.cpp" line="57"/>
+        <location filename="../src/app/SimulationResultsWidget.cpp" line="59"/>
         <source>Chart</source>
         <translation>图表</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationResultsWidget.cpp" line="58"/>
+        <location filename="../src/app/SimulationResultsWidget.cpp" line="60"/>
         <source>Data</source>
         <translation>数据</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationResultsWidget.cpp" line="59"/>
+        <location filename="../src/app/SimulationResultsWidget.cpp" line="61"/>
         <source>Causes</source>
         <translation>原因</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationResultsWidget.cpp" line="65"/>
+        <location filename="../src/app/SimulationResultsWidget.cpp" line="67"/>
         <source>Compare</source>
         <translation>比较</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationResultsWidget.cpp" line="134"/>
+        <location filename="../src/app/SimulationResultsWidget.cpp" line="136"/>
         <source> (older model)</source>
         <translation>（旧模型）</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationResultsWidget.cpp" line="160"/>
+        <location filename="../src/app/SimulationResultsWidget.cpp" line="162"/>
         <source>No completed runs</source>
         <translation>尚无已完成的运行</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationResultsWidget.cpp" line="206"/>
+        <location filename="../src/app/SimulationResultsWidget.cpp" line="208"/>
         <source>%1 — %2 samples%3</source>
         <translation>%1 — %2 个样本%3</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationResultsWidget.cpp" line="208"/>
+        <location filename="../src/app/SimulationResultsWidget.cpp" line="210"/>
         <source>, older model</source>
         <translation>，旧模型</translation>
     </message>
@@ -924,7 +924,7 @@
 <context>
     <name>SimulationTableModel</name>
     <message>
-        <location filename="../src/app/SimulationTableModel.cpp" line="79"/>
+        <location filename="../src/app/SimulationTableModel.cpp" line="81"/>
         <source>Time</source>
         <translation>时间</translation>
     </message>
@@ -932,12 +932,12 @@
 <context>
     <name>TimeSeriesChartWidget</name>
     <message>
-        <location filename="../src/app/TimeSeriesChartWidget.cpp" line="35"/>
+        <location filename="../src/app/TimeSeriesChartWidget.cpp" line="37"/>
         <source>No variable selected</source>
         <translation>未选择变量</translation>
     </message>
     <message>
-        <location filename="../src/app/TimeSeriesChartWidget.cpp" line="84"/>
+        <location filename="../src/app/TimeSeriesChartWidget.cpp" line="86"/>
         <source>No loaded data for this variable</source>
         <translation>此变量没有已加载的数据</translation>
     </message>

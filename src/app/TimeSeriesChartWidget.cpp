@@ -10,6 +10,8 @@
 #include <algorithm>
 #include <cmath>
 
+using qds::core::RunVariableInfo;
+
 using namespace QtCharts;
 
 TimeSeriesChartWidget::TimeSeriesChartWidget(QWidget *parent)
@@ -22,7 +24,7 @@ TimeSeriesChartWidget::TimeSeriesChartWidget(QWidget *parent)
     setRuns({}, {});
 }
 
-void TimeSeriesChartWidget::setRuns(const QVector<NamedRun> &runs, const QString &nameKey)
+void TimeSeriesChartWidget::setRuns(const QVector<SimulationRun> &runs, const QString &nameKey)
 {
     m_chart->removeAllSeries();
     const auto axes = m_chart->axes();
@@ -40,17 +42,17 @@ void TimeSeriesChartWidget::setRuns(const QVector<NamedRun> &runs, const QString
     double maximumValue = 0.0;
     bool hasSamples = false;
     QString displayName;
-    for (const NamedRun &run : runs) {
+    for (const SimulationRun &run : runs) {
         const auto variable = std::find_if(run.variables().begin(), run.variables().end(), [&nameKey](const RunVariableInfo &candidate) {
             return candidate.nameKey() == nameKey;
         });
         if (variable == run.variables().end())
             continue;
-        const QVector<double> *values = run.run()->series(variable->id());
+        const QVector<double> *values = run.series(variable->id());
         if (!values)
             continue;
         displayName = variable->displayName();
-        const QVector<double> &times = run.run()->times();
+        const QVector<double> &times = run.times();
         const int count = std::min(times.size(), values->size());
         QList<QPointF> points;
         points.reserve(count);

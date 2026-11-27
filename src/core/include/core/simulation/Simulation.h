@@ -15,6 +15,37 @@ namespace qds::core {
 class Document;
 struct SimulationCompileResult;
 
+using RunId = quint64;
+
+class RunVariableInfo
+{
+public:
+    RunVariableInfo(EntityId id, QString displayName, QString nameKey, QString unit, ElementKind kind, bool constant);
+
+    EntityId id() const { return m_id; }
+    const QString &displayName() const { return m_displayName; }
+    const QString &nameKey() const { return m_nameKey; }
+    const QString &unit() const { return m_unit; }
+    ElementKind kind() const { return m_kind; }
+    bool isConstant() const { return m_constant; }
+
+private:
+    EntityId m_id;
+    QString m_displayName;
+    QString m_nameKey;
+    QString m_unit;
+    ElementKind m_kind;
+    bool m_constant;
+};
+
+struct SimulationRunMetadata {
+    RunId id = 0;
+    QString name;
+    quint64 modelRevision = 0;
+    QVector<RunVariableInfo> variables;
+    QHash<EntityId, QVector<EntityId>> causes;
+};
+
 struct StockFlows {
     EntityId stock = 0;
     QVector<EntityId> inflows;
@@ -55,6 +86,13 @@ enum class SimulationRunStatus {
 class SimulationRun
 {
 public:
+    RunId id() const { return m_id; }
+    const QString &name() const { return m_name; }
+    quint64 modelRevision() const { return m_modelRevision; }
+    const QVector<RunVariableInfo> &variables() const { return m_variables; }
+    QVector<EntityId> causes(EntityId dependent) const { return m_causes.value(dependent); }
+    SimulationRun withMetadata(SimulationRunMetadata metadata) const;
+
     SimulationRunStatus status() const { return m_status; }
     const SimulationSettings &settings() const { return m_settings; }
     const QVector<double> &times() const { return m_times; }
@@ -67,6 +105,11 @@ private:
     friend class SimulationRunner;
     SimulationRun() = default;
 
+    RunId m_id = 0;
+    QString m_name;
+    quint64 m_modelRevision = 0;
+    QVector<RunVariableInfo> m_variables;
+    QHash<EntityId, QVector<EntityId>> m_causes;
     SimulationRunStatus m_status = SimulationRunStatus::Failed;
     SimulationSettings m_settings;
     QVector<double> m_times;

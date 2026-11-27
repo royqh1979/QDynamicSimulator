@@ -18,6 +18,8 @@
 
 #include <algorithm>
 
+using qds::core::RunVariableInfo;
+
 SimulationResultsWidget::SimulationResultsWidget(SimulationController *controller, QWidget *parent)
     : QWidget(parent)
     , m_controller(controller)
@@ -124,7 +126,7 @@ void SimulationResultsWidget::refreshRuns()
     int selectedIndex = -1;
     int firstLoadedIndex = -1;
     bool hasNewRun = false;
-    for (const NamedRun &run : m_controller->runs()) {
+    for (const SimulationRun &run : m_controller->runs()) {
         hasNewRun = hasNewRun || !m_knownRuns.contains(run.id());
         m_runCombo->addItem(run.name(), run.id());
         if (run.id() == selected)
@@ -139,7 +141,7 @@ void SimulationResultsWidget::refreshRuns()
     m_runCombo->setCurrentIndex(!hasNewRun && selectedIndex >= 0 ? selectedIndex : firstLoadedIndex);
     m_runStatusLabel->clear();
     m_knownRuns.clear();
-    for (const NamedRun &run : m_controller->runs())
+    for (const SimulationRun &run : m_controller->runs())
         m_knownRuns.insert(run.id());
     m_refreshing = false;
     refreshWorkbench();
@@ -150,7 +152,7 @@ void SimulationResultsWidget::refreshWorkbench()
     if (m_refreshing)
         return;
     m_refreshing = true;
-    const std::optional<NamedRun> run = currentRun();
+    const std::optional<SimulationRun> run = currentRun();
     m_variableCombo->clear();
     if (!run) {
         m_tableModel->clear();
@@ -164,7 +166,7 @@ void SimulationResultsWidget::refreshWorkbench()
 
     QVector<RunVariableInfo> availableVariables;
     QSet<QString> seenNames;
-    for (const NamedRun &candidate : m_controller->runs()) {
+    for (const SimulationRun &candidate : m_controller->runs()) {
         for (const RunVariableInfo &variable : candidate.variables()) {
             if (!variable.isConstant() && !seenNames.contains(variable.nameKey())) {
                 seenNames.insert(variable.nameKey());
@@ -194,8 +196,8 @@ void SimulationResultsWidget::refreshWorkbench()
         : m_controller->workbenchNameKey();
     if (selectedIndex >= 0 && m_controller->workbenchNameKey() != nameKey)
         m_controller->setWorkbenchVariableName(nameKey);
-    QVector<NamedRun> loadedRuns;
-    for (const NamedRun &candidate : m_controller->runs()) {
+    QVector<SimulationRun> loadedRuns;
+    for (const SimulationRun &candidate : m_controller->runs()) {
         if (m_controller->isRunLoaded(candidate.id()))
             loadedRuns.push_back(candidate);
     }
@@ -204,7 +206,7 @@ void SimulationResultsWidget::refreshWorkbench()
     else
         m_tableModel->clear();
     m_runStatusLabel->setText(tr("%1 — %2 samples%3")
-        .arg(run->name()).arg(run->run()->times().size())
+        .arg(run->name()).arg(run->times().size())
         .arg(m_controller->isOutdated(*run) ? tr(", older model") : QString()));
     m_chart->setRuns(loadedRuns, nameKey);
     refreshCauses(loadedRuns, nameKey);
@@ -212,7 +214,7 @@ void SimulationResultsWidget::refreshWorkbench()
     m_refreshing = false;
 }
 
-void SimulationResultsWidget::refreshCauses(const QVector<NamedRun> &loadedRuns, const QString &rootNameKey)
+void SimulationResultsWidget::refreshCauses(const QVector<SimulationRun> &loadedRuns, const QString &rootNameKey)
 {
     struct CauseEntry {
         QString nameKey;
@@ -220,7 +222,7 @@ void SimulationResultsWidget::refreshCauses(const QVector<NamedRun> &loadedRuns,
     };
     QVector<CauseEntry> entries;
     QSet<QString> seen;
-    for (const NamedRun &run : loadedRuns) {
+    for (const SimulationRun &run : loadedRuns) {
         const auto root = std::find_if(run.variables().begin(), run.variables().end(), [&rootNameKey](const RunVariableInfo &variable) {
             return variable.nameKey() == rootNameKey;
         });
@@ -246,13 +248,13 @@ void SimulationResultsWidget::refreshCauses(const QVector<NamedRun> &loadedRuns,
     m_causesStrip->setRuns(loadedRuns, rootNameKey, causeNameKeys);
 }
 
-std::optional<NamedRun> SimulationResultsWidget::currentRun() const
+std::optional<SimulationRun> SimulationResultsWidget::currentRun() const
 {
     const RunId id = m_runCombo->currentData().toULongLong();
     const auto &runs = m_controller->runs();
-    const auto found = std::find_if(runs.begin(), runs.end(), [id](const NamedRun &run) {
+    const auto found = std::find_if(runs.begin(), runs.end(), [id](const SimulationRun &run) {
         return run.id() == id;
     });
-    return found == runs.end() ? std::nullopt : std::optional<NamedRun>(*found);
+    return found == runs.end() ? std::nullopt : std::optional<SimulationRun>(*found);
 }
 

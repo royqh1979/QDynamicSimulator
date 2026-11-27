@@ -385,6 +385,27 @@ SimulationCompileResult compileSimulation(const Document &document)
     return result;
 }
 
+RunVariableInfo::RunVariableInfo(EntityId id, QString displayName, QString nameKey, QString unit, ElementKind kind, bool constant)
+    : m_id(id)
+    , m_displayName(std::move(displayName))
+    , m_nameKey(std::move(nameKey))
+    , m_unit(std::move(unit))
+    , m_kind(kind)
+    , m_constant(constant)
+{
+}
+
+SimulationRun SimulationRun::withMetadata(SimulationRunMetadata metadata) const
+{
+    SimulationRun copy = *this;
+    copy.m_id = metadata.id;
+    copy.m_name = std::move(metadata.name);
+    copy.m_modelRevision = metadata.modelRevision;
+    copy.m_variables = std::move(metadata.variables);
+    copy.m_causes = std::move(metadata.causes);
+    return copy;
+}
+
 const QVector<double> *SimulationRun::series(EntityId id) const
 {
     const auto found = m_series.constFind(id);

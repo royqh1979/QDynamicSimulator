@@ -69,27 +69,6 @@ private:
 
 } // namespace
 
-RunVariableInfo::RunVariableInfo(EntityId id, QString displayName, QString nameKey, QString unit, ElementKind kind, bool constant)
-    : m_id(id)
-    , m_displayName(std::move(displayName))
-    , m_nameKey(std::move(nameKey))
-    , m_unit(std::move(unit))
-    , m_kind(kind)
-    , m_constant(constant)
-{
-}
-
-NamedRun::NamedRun(RunId id, QString name, std::shared_ptr<const SimulationRun> run, quint64 modelRevision,
-    QVector<RunVariableInfo> variables, QHash<EntityId, QVector<EntityId>> causes)
-    : m_id(id)
-    , m_name(std::move(name))
-    , m_run(std::move(run))
-    , m_modelRevision(modelRevision)
-    , m_variables(std::move(variables))
-    , m_causes(std::move(causes))
-{
-}
-
 SimulationController::SimulationController(DocumentController *documentController)
     : QObject(documentController)
     , m_documentController(documentController)
@@ -236,19 +215,19 @@ bool SimulationController::isBusy() const
 bool SimulationController::hasRunName(const QString &name) const
 {
     const QString trimmed = name.trimmed();
-    return std::any_of(m_runs.begin(), m_runs.end(), [&trimmed](const NamedRun &run) {
+    return std::any_of(m_runs.begin(), m_runs.end(), [&trimmed](const SimulationRun &run) {
         return run.name() == trimmed;
     });
 }
 
-bool SimulationController::isOutdated(const NamedRun &run) const
+bool SimulationController::isOutdated(const SimulationRun &run) const
 {
     return run.modelRevision() != m_documentController->simulationRevision();
 }
 
 void SimulationController::setRunLoaded(RunId id, bool loaded)
 {
-    const auto found = std::find_if(m_runs.begin(), m_runs.end(), [id](const NamedRun &run) {
+    const auto found = std::find_if(m_runs.begin(), m_runs.end(), [id](const SimulationRun &run) {
         return run.id() == id;
     });
     if (found == m_runs.end())
@@ -307,10 +286,10 @@ void SimulationController::workerFinished(std::shared_ptr<const SimulationRun> r
     m_lastRunName = m_activeRequest->runName;
     switch (m_lastRun->status()) {
     case SimulationRunStatus::Completed: {
-        NamedRun named(m_nextRunId++, m_activeRequest->runName, m_lastRun, m_activeRequest->modelRevision,
-            m_activeRequest->variables, m_activeRequest->causes);
+        const SimulationRun named = m_lastRun->withMetadata({m_nextRunId++, m_activeRequest->runName,
+            m_activeRequest->modelRevision, m_activeRequest->variables, m_activeRequest->causes});
         m_lastRunId = named.id();
-        auto existing = std::find_if(m_runs.begin(), m_runs.end(), [this](const NamedRun &candidate) {
+        auto existing = std::find_if(m_runs.begin(), m_runs.end(), [this](const SimulationRun &candidate) {
             return candidate.name() == m_activeRequest->runName;
         });
         if (existing != m_runs.end()) {

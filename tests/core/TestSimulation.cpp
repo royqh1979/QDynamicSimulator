@@ -66,6 +66,7 @@ private slots:
     void arrayDimensionFailures();
     void rungeKutta4();
     void rungeKutta4StageFailure();
+    void unifiedRunMetadata();
     void compilationDiagnostics();
     void cancellationAndRuntimeFailure();
 };
@@ -425,6 +426,36 @@ void TestSimulation::rungeKutta4StageFailure()
     QCOMPARE(run.endTime(), std::optional<double>(0.5));
     QVERIFY(!run.issues().isEmpty());
     QCOMPARE(run.issues().front().code, QStringLiteral("non-finite-simulation-value"));
+}
+
+void TestSimulation::unifiedRunMetadata()
+{
+    const Document document = exponentialDocument(1.0);
+    const SimulationRun numerical = runModel(document);
+    const EntityId stock = document.findByName("Stock")->id();
+    const EntityId flow = document.findByName("Flow1")->id();
+    SimulationRunMetadata metadata;
+    metadata.id = 42;
+    metadata.name = "experiment";
+    metadata.modelRevision = 7;
+    metadata.variables = {RunVariableInfo(stock, "Stock", "stock", "unit", ElementKind::Stock, false)};
+    metadata.causes.insert(stock, {flow});
+    const SimulationRun identified = numerical.withMetadata(std::move(metadata));
+
+    QCOMPARE(identified.id(), RunId(42));
+    QCOMPARE(identified.name(), QString("experiment"));
+    QCOMPARE(identified.modelRevision(), quint64(7));
+    QCOMPARE(identified.variables().size(), 1);
+    QCOMPARE(identified.variables().front().nameKey(), QString("stock"));
+    QCOMPARE(identified.causes(stock), QVector<EntityId> {flow});
+    QCOMPARE(identified.status(), numerical.status());
+    QCOMPARE(identified.times(), numerical.times());
+    QCOMPARE(identified.series(stock), numerical.series(stock));
+    QCOMPARE(numerical.id(), RunId(0));
+    QVERIFY(numerical.name().isEmpty());
+    QCOMPARE(numerical.modelRevision(), quint64(0));
+    QVERIFY(numerical.variables().isEmpty());
+    QVERIFY(numerical.causes(stock).isEmpty());
 }
 
 void TestSimulation::compilationDiagnostics()

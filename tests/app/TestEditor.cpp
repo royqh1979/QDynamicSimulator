@@ -2967,7 +2967,7 @@ void TestEditor::resultsDock()
     QCOMPARE(datasets->count(), 1);
     QCOMPARE(datasets->item(0)->checkState(), Qt::Checked);
     QCOMPARE(model->columnCount(), 2);
-    QCOMPARE(model->rowCount(), simulation->runs().front().run()->times().size());
+    QCOMPARE(model->rowCount(), simulation->runs().front().times().size());
     QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("equilib"));
     const QModelIndex last = model->index(model->rowCount() - 1, 1);
     QCOMPARE(model->data(last).toString(), QStringLiteral("1000"));
@@ -3093,7 +3093,7 @@ void TestEditor::resultsDock()
     QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
     QTRY_VERIFY(!simulation->isBusy());
     QCOMPARE(variables->currentData().toString(), QStringLiteral("stock1"));
-    QCOMPARE(model->rowCount(), simulation->runs().front().run()->times().size());
+    QCOMPARE(model->rowCount(), simulation->runs().front().times().size());
     QCOMPARE(chart->chart()->series().size(), 1);
 }
 
@@ -3133,8 +3133,8 @@ void TestEditor::causesStripGraph()
 
     QVERIFY(simulation->start(QStringLiteral("base")));
     QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
-    const NamedRun base = simulation->runs().front();
-    const auto runVariableId = [](const NamedRun &run, const QString &nameKey) {
+    const SimulationRun base = simulation->runs().front();
+    const auto runVariableId = [](const SimulationRun &run, const QString &nameKey) {
         const auto found = std::find_if(run.variables().begin(), run.variables().end(), [&nameKey](const RunVariableInfo &variable) {
             return variable.nameKey() == nameKey;
         });
@@ -3221,7 +3221,7 @@ void TestEditor::runsCompare()
 
     QVERIFY(simulation->start(QStringLiteral("base")));
     QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
-    const NamedRun base = simulation->runs().front();
+    const SimulationRun base = simulation->runs().front();
     auto *table = window.findChild<QTableView *>(QStringLiteral("runsCompareTable"));
     auto *model = qobject_cast<RunsCompareModel *>(table->model());
     QVERIFY(table && model);

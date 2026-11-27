@@ -113,17 +113,22 @@ SimulationRunner
 ├─ const SimulationPlan &
 └─ SimulationState                当前时间、状态和取消标志
 
-SimulationRun                     一次已结束运行的不可变结果
+SimulationRun                     一次运行的完整不可变记录
+├─ RunId / runName / modelRevision
 ├─ settings / method
 ├─ times
-├─ EntityId → 标量时间序列
-├─ 完成/取消/失败状态
-└─ 诊断
+├─ EntityId → 标量时间序列 / ArrayValue 时间序列
+├─ 完成/取消/失败状态与诊断
+├─ RunVariableInfo：EntityId、displayName、nameKey、unit、kind
+└─ causes：EntityId → 直接原因 EntityId 列表
 ```
 
 约束：
 
 - SimulationPlan 不持有 AST、FormulaNode、ModelElement 或 MacroDefinition 指针；只保存 EntityId 顺序和关系。公式仍在 Document 中唯一持有。
+- RunId、runName、modelRevision、RunVariableInfo 和 causes 与数值结果属于同一个 SimulationRun，保证 EntityId 与运行副本元数据自洽；不再使用 NamedRun 平行保存这些字段。
+- `withMetadata()` 返回补齐身份的新对象，原结果不变，禁止发布后改写元数据。RunId 是运行记录身份，不是 EntityId，也不是跨 Run 的模型元素 ID。
+- Qt 容器利用写时复制，值拷贝不主动复制数值矩阵；Worker 和跨视图仍共享不可变对象。
 - Plan 和 Run 不进入 Document，也不进入编辑器 ChangeSet。
 - Document 修改后 Plan 必须重新编译；UI 不得让旧 Plan 静默作用于新模型。
 - 首批运行采用同步调用，Document、Plan 和 Runner 的生命周期由同一调用栈保证。异步执行需要单独设计模型只读快照或生命周期共享，不能只把 raw reference 移入线程。

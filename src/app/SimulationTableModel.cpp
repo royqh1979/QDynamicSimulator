@@ -2,27 +2,29 @@
 
 #include <algorithm>
 
+using qds::core::RunVariableInfo;
+
 SimulationTableModel::SimulationTableModel(QObject *parent)
     : QAbstractTableModel(parent)
 {
 }
 
-void SimulationTableModel::setRuns(const QVector<NamedRun> &runs, const QString &nameKey)
+void SimulationTableModel::setRuns(const QVector<SimulationRun> &runs, const QString &nameKey)
 {
     beginResetModel();
     m_times.clear();
     m_columns.clear();
-    for (const NamedRun &run : runs) {
+    for (const SimulationRun &run : runs) {
         const auto variable = std::find_if(run.variables().begin(), run.variables().end(), [&nameKey](const RunVariableInfo &candidate) {
             return candidate.nameKey() == nameKey;
         });
         if (variable == run.variables().end())
             continue;
-        const QVector<double> *values = run.run()->series(variable->id());
+        const QVector<double> *values = run.series(variable->id());
         if (!values)
             continue;
-        m_columns.push_back({run.name(), run.run(), values});
-        m_times += run.run()->times();
+        m_columns.push_back({run.name(), std::make_shared<const SimulationRun>(run), values});
+        m_times += run.times();
     }
     std::sort(m_times.begin(), m_times.end());
     m_times.erase(std::unique(m_times.begin(), m_times.end()), m_times.end());

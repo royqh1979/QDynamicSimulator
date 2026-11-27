@@ -11,7 +11,7 @@ class SimulationTableModel : public QAbstractTableModel
 public:
     explicit SimulationTableModel(QObject *parent = nullptr);
 
-    void setRuns(const QVector<NamedRun> &runs, const QString &nameKey);
+    void setRuns(const QVector<SimulationRun> &runs, const QString &nameKey);
     void clear();
 
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;

@@ -29,7 +29,7 @@ void createModel(DocumentController &document, double stop = 2.0)
     document.replaceDocument(std::move(model));
 }
 
-const RunVariableInfo &variable(const NamedRun &run, const QString &nameKey)
+const RunVariableInfo &variable(const SimulationRun &run, const QString &nameKey)
 {
     const auto found = std::find_if(run.variables().begin(), run.variables().end(), [&nameKey](const RunVariableInfo &info) {
         return info.nameKey() == nameKey;
@@ -125,8 +125,8 @@ void TestSimulationController::namedRunsAndOverwrite()
     QCOMPARE(controller.runs().size(), 1);
     QCOMPARE(controller.lastRunName(), QStringLiteral("equilib"));
     QCOMPARE(controller.lastRun()->status(), SimulationRunStatus::Completed);
-    const NamedRun equilibrium = controller.runs().front();
-    QCOMPARE(*equilibrium.run()->series(variable(equilibrium, "stock").id()), (QVector<double> {0.0, 1.0, 2.0}));
+    const SimulationRun equilibrium = controller.runs().front();
+    QCOMPARE(*equilibrium.series(variable(equilibrium, "stock").id()), (QVector<double> {0.0, 1.0, 2.0}));
     QVERIFY(controller.isRunLoaded(equilibrium.id()));
 
     QVERIFY(controller.start("growth"));
@@ -145,15 +145,15 @@ void TestSimulationController::namedRunsAndOverwrite()
     QVERIFY(controller.start("equilib", true));
     waitCompleted(controller);
     QCOMPARE(controller.runs().size(), 2);
-    const QVector<NamedRun> runs = controller.runs();
-    const auto replaced = std::find_if(runs.begin(), runs.end(), [](const NamedRun &run) {
+    const QVector<SimulationRun> runs = controller.runs();
+    const auto replaced = std::find_if(runs.begin(), runs.end(), [](const SimulationRun &run) {
         return run.name() == "equilib";
     });
     QVERIFY(replaced != runs.end());
     QVERIFY(replaced->id() != oldId);
     QVERIFY(replaced->id() > oldId);
     QVERIFY(controller.isRunLoaded(replaced->id()));
-    QCOMPARE(*equilibrium.run()->series(variable(equilibrium, "stock").id()), (QVector<double> {0.0, 1.0, 2.0}));
+    QCOMPARE(*equilibrium.series(variable(equilibrium, "stock").id()), (QVector<double> {0.0, 1.0, 2.0}));
 }
 
 void TestSimulationController::revisionsAndReset()
@@ -163,7 +163,7 @@ void TestSimulationController::revisionsAndReset()
     SimulationController controller(&document);
     controller.start("initial");
     waitCompleted(controller);
-    const NamedRun run = controller.runs().front();
+    const SimulationRun run = controller.runs().front();
     QVERIFY(!controller.isOutdated(run));
 
     const EntityId stock = document.document().findByName("Stock")->id();
@@ -174,7 +174,7 @@ void TestSimulationController::revisionsAndReset()
 
     document.setEquation(document.document().findByName("Flow1")->id(), "2");
     QVERIFY(controller.isOutdated(run));
-    QCOMPARE(*run.run()->series(variable(run, "stock").id()), (QVector<double> {0.0, 1.0, 2.0}));
+    QCOMPARE(*run.series(variable(run, "stock").id()), (QVector<double> {0.0, 1.0, 2.0}));
     document.undoStack()->undo();
     QVERIFY(controller.isOutdated(run));
 
