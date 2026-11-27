@@ -2,7 +2,7 @@
 
 ## 1. 范围与当前基础
 
-状态：运行会话、SimulationSettingsDialog、Run Name/Enter、Run/Cancel、设置撤销和诊断定位已实现；最小 Run results Dock 已覆盖 Workbench Variable、最新优先 Datasets、加载状态、单变量表格、历史名称和过期提示。Qt Charts 基础折线图已实现，支持多 Run 叠加、图例显隐、缩放、平移和完整范围复位；多变量可见性、最近样本提示与结果导出尚未开始。
+状态：运行会话、SimulationSettingsDialog、Run Name/Enter、Run/Cancel、设置撤销和诊断定位已实现；Run results Dock 已覆盖 Workbench Variable、最新优先 Datasets、加载状态、单变量表格、历史名称和过期提示。Qt Charts 折线图支持多 Run 叠加、图例显隐、缩放、平移和完整范围复位；Causes Strip 已实现根变量与一级原因的分组曲线、历史原因并集和共享时间轴。多变量可见性、最近样本提示与结果导出尚未开始。
 
 当前 Core 已提供 SimulationSettings、SimulationPlan、同步 SimulationRunner 和不可变 SimulationRun。本设计覆盖建模到运行的完整工作流、命名结果、Workbench Variable、折线图和数据表。命名多 Run 与叠加比较属于基本结果管理；数组、参数扫描、批量实验和蒙特卡洛仍不提前混入首批实现。
 
@@ -28,7 +28,7 @@
 | Cancel | Esc，仅运行时捕获 | 请求当前 Worker 取消，不影响编辑器其他 Esc 操作 |
 | Graph | — | 在结果区显示 Workbench Variable 的全部已加载 Run 折线 |
 | Table | — | 在结果区显示同一变量的逐时刻数据表 |
-| Causes Strip | — | 后续显示 Workbench Variable 及其直接原因 |
+| Causes Strip | — | 以共享时间轴的分组曲线显示 Workbench Variable 及其直接原因 |
 | Runs Compare | — | 后续比较前两个已加载 Run 的 Constant/Lookup 差异 |
 | Simulation settings | — | 打开设置对话框 |
 | Export results | — | 导出当前选中变量的 CSV；实现时单独审核文件错误语义 |
@@ -208,8 +208,9 @@ QDS 只保存当前 Document，不包含 NamedRun。当前 Run 只存在于会�
 
 ### 4.3 原因与 Run 比较（后续分析工具）
 
-- Causes Strip 使用 Workbench Variable 在对应 SimulationPlan/AnalysisReport 中的直接公式依赖，显示该变量及 births/deaths 等直接原因；不能仅凭画面上的 Connector 猜测公式依赖。
-- 每个已加载 Run 可显示相应条带；历史结果使用各自不可变模型副本的依赖关系。
+- Causes Strip 使用 Workbench Variable 在对应运行副本中的直接原因，显示该变量及 births/deaths 等原因；不能仅凭画面上的 Connector 猜测公式依赖。Variable/Flow 使用 AnalysisReport 的直接公式引用，Stock 使用与其端点相连的全部 Flow，不把 Stock 初值公式误当作运行期净流量。
+- 运行副本发布 NamedRun 时同时保存 `EntityId → 直接原因 EntityId`，与 RunVariableInfo 一样不可变。不同历史 Run 的原因集合取并集，根变量固定为第一条，其余按当时 displayName 排序；某 Run 缺少对应原因序列时跳过该 Run，不用当前 Document 补齐或改写历史原因。数值常量原因也显示为水平线，即使它不在普通变量下拉框中。
+- `CausesStripWidget` 在结果 Dock 的 Causes 标签中按变量纵向组织独立 `TimeSeriesChartWidget`。每条使用自己的 Y 轴并叠加该变量的全部已加载 Run；X 轴范围、滚轮缩放和拖动平移在各条之间同步，双击任一条恢复全部条带的完整时间范围。Chart/Data/Causes 标签行为相互独立，不修改模型、命名结果、画布选择或加载状态。
 - Runs Compare 默认比较加载列表的前两个 Run，报告 Constant 的初值/运行值差异，并列出 Run Name、旧值、新值和差值。Lookup 比较在 Lookup 模型实现后加入。
 - 这些工具只是分析视图，不修改模型、命名结果或加载状态。
 
@@ -234,6 +235,7 @@ QDS 只保存当前 Document，不包含 NamedRun。当前 Run 只存在于会�
 - Run Name 默认值、中文名称、Enter 运行、空名称、同名覆盖确认/取消、失败不覆盖旧结果；
 - 画布与 Variable Selection 双向同步 Workbench Variable，标题栏刷新，多选不与 Workbench 状态混淆；
 - Graph/Table 对 Workbench Variable 和全部已加载 Run 的展示，恒定值水平线及表格末时刻；
+- Causes Strip 的空结果、Stock 端点原因、Flow 公式原因、常量原因、历史 Run 原因并集、缺少历史序列、根变量排序、时间轴缩放/复位同步及动态图表可见性；
 - Datasets 最新优先、加载状态、RunId 稳定性、Close/Close All Output 不删除结果；
 - 缺少公式的画布提示、Model Check 定位、Stock 初值/Flow 方向和单位检查未实现时的明确状态；
 - 变量选择、图表/表格/诊断切换及结果导出；
@@ -261,6 +263,6 @@ QDS 只保存当前 Document，不包含 NamedRun。当前 Run 只存在于会�
 3. **结果 Dock**：Workbench Variable、命名 Datasets、加载状态、数据表及历史结果过期提示。
 4. **Qt Charts 折线图**：统一 TimeSeriesChartWidget 接口，完成 Workbench/多 Run 叠加交互，并用固定场景 profile 检查回归。
 5. **结果导出与完善**：CSV/PNG、Close All Output、键盘可访问性、翻译、大结果 profile。
-6. **后续独立设计**：Causes Strip、Runs Compare（含 Lookup）、数组结果、参数实验与敏感性分析界面。
+6. **Causes Strip**：运行副本保存直接原因，分组曲线、历史原因并集与共享时间轴已实现；Runs Compare（含 Lookup）、数组结果、参数实验与敏感性分析界面仍分别独立设计。
 
 每阶段单独提交设计所对应的实现和测试；本文件只记录功能设计，不进入 history。

@@ -1,5 +1,6 @@
 #include "SimulationResultsWidget.h"
 
+#include "CausesStripWidget.h"
 #include "SimulationTableModel.h"
 #include "TimeSeriesChartWidget.h"
 
@@ -25,6 +26,7 @@ SimulationResultsWidget::SimulationResultsWidget(SimulationController *controlle
     , m_runStatusLabel(new QLabel(this))
     , m_tableModel(new SimulationTableModel(this))
     , m_chart(new TimeSeriesChartWidget(this))
+    , m_causesStrip(new CausesStripWidget(this))
     , m_tabs(new QTabWidget(this))
 {
     m_variableCombo->setObjectName(QStringLiteral("workbenchVariableCombo"));
@@ -51,6 +53,7 @@ SimulationResultsWidget::SimulationResultsWidget(SimulationController *controlle
     table->horizontalHeader()->setStretchLastSection(true);
     m_tabs->addTab(m_chart, tr("Chart"));
     m_tabs->addTab(table, tr("Data"));
+    m_tabs->addTab(m_causesStrip, tr("Causes"));
     splitter->addWidget(m_tabs);
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
@@ -82,6 +85,11 @@ void SimulationResultsWidget::showGraph()
 void SimulationResultsWidget::showTable()
 {
     m_tabs->setCurrentIndex(1);
+}
+
+void SimulationResultsWidget::showCausesStrip()
+{
+    m_tabs->setCurrentWidget(m_causesStrip);
 }
 
 void SimulationResultsWidget::showRun(RunId id)
@@ -133,6 +141,7 @@ void SimulationResultsWidget::refreshWorkbench()
     if (!run) {
         m_tableModel->clear();
         m_chart->setRuns({}, {});
+        m_causesStrip->setRuns({}, {}, {});
         m_runStatusLabel->setText(tr("No completed runs"));
         m_refreshing = false;
         return;
@@ -183,7 +192,42 @@ void SimulationResultsWidget::refreshWorkbench()
         .arg(run->name()).arg(run->run()->times().size())
         .arg(m_controller->isOutdated(*run) ? tr(", older model") : QString()));
     m_chart->setRuns(loadedRuns, nameKey);
+    refreshCauses(loadedRuns, nameKey);
     m_refreshing = false;
+}
+
+void SimulationResultsWidget::refreshCauses(const QVector<NamedRun> &loadedRuns, const QString &rootNameKey)
+{
+    struct CauseEntry {
+        QString nameKey;
+        QString displayName;
+    };
+    QVector<CauseEntry> entries;
+    QSet<QString> seen;
+    for (const NamedRun &run : loadedRuns) {
+        const auto root = std::find_if(run.variables().begin(), run.variables().end(), [&rootNameKey](const RunVariableInfo &variable) {
+            return variable.nameKey() == rootNameKey;
+        });
+        if (root == run.variables().end())
+            continue;
+        for (const qds::core::EntityId causeId : run.causes(root->id())) {
+            const auto cause = std::find_if(run.variables().begin(), run.variables().end(), [causeId](const RunVariableInfo &variable) {
+                return variable.id() == causeId;
+            });
+            if (cause != run.variables().end() && !seen.contains(cause->nameKey())) {
+                seen.insert(cause->nameKey());
+                entries.push_back({cause->nameKey(), cause->displayName()});
+            }
+        }
+    }
+    std::sort(entries.begin(), entries.end(), [](const CauseEntry &left, const CauseEntry &right) {
+        const int order = QString::localeAwareCompare(left.displayName, right.displayName);
+        return order != 0 ? order < 0 : left.nameKey < right.nameKey;
+    });
+    QVector<QString> causeNameKeys;
+    for (const CauseEntry &entry : entries)
+        causeNameKeys.push_back(entry.nameKey);
+    m_causesStrip->setRuns(loadedRuns, rootNameKey, causeNameKeys);
 }
 
 std::optional<NamedRun> SimulationResultsWidget::currentRun() const

@@ -12,6 +12,7 @@ class QListWidget;
 class QListWidgetItem;
 class QTableView;
 class QTabWidget;
+class CausesStripWidget;
 class SimulationTableModel;
 class TimeSeriesChartWidget;
 
@@ -23,11 +24,13 @@ public:
     explicit SimulationResultsWidget(SimulationController *controller, QWidget *parent = nullptr);
     void showGraph();
     void showTable();
+    void showCausesStrip();
     void showRun(RunId id);
 
 private:
     void refreshRuns();
     void refreshWorkbench();
+    void refreshCauses(const QVector<NamedRun> &loadedRuns, const QString &rootNameKey);
     std::optional<NamedRun> currentRun() const;
 
     SimulationController *m_controller;
@@ -37,6 +40,7 @@ private:
     QLabel *m_runStatusLabel;
     SimulationTableModel *m_tableModel;
     TimeSeriesChartWidget *m_chart;
+    CausesStripWidget *m_causesStrip;
     QTabWidget *m_tabs;
     QSet<RunId> m_knownRuns;
     bool m_refreshing = false;

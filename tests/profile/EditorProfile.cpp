@@ -1,3 +1,4 @@
+#include "CausesStripWidget.h"
 #include "DiagramItems.h"
 #include "DiagramScene.h"
 #include "DiagramView.h"
@@ -1041,6 +1042,22 @@ int main(int argc, char **argv)
         ++showCurrentCount;
     }
     const qint64 showCurrentNs = timer.nsecsElapsed();
+    resultsWidget.showCausesStrip();
+    auto *causesStrip = resultsWidget.findChild<CausesStripWidget *>();
+    if (!causesStrip || causesStrip->charts().size() != 2) {
+        QTextStream(stderr) << "Unexpected Causes Strip chart count: "
+                            << (causesStrip ? causesStrip->charts().size() : -1) << "\n";
+        return 65;
+    }
+    timer.restart();
+    int causesStripCount = 0;
+    for (int index = 0; index < count; ++index) {
+        session.setWorkbenchVariable(0);
+        session.setWorkbenchVariable(stockVariable->id());
+        resultsWidget.showCausesStrip();
+        ++causesStripCount;
+    }
+    const qint64 causesStripNs = timer.nsecsElapsed();
     session.reset();
 
     timer.restart();
@@ -1160,6 +1177,8 @@ int main(int argc, char **argv)
                         << resultsRefreshNs / 1000.0 / resultsRefreshCount << "\n"
                         << "results_show_current," << showCurrentCount << "," << showCurrentNs / 1e6 << ","
                         << showCurrentNs / 1000.0 / showCurrentCount << "\n"
+                        << "causes_strip_refresh," << causesStripCount << "," << causesStripNs / 1e6 << ","
+                        << causesStripNs / 1000.0 / causesStripCount << "\n"
                         << "simulation_settings_dialog," << settingsDialogCount << "," << settingsDialogNs / 1e6 << ","
                         << settingsDialogNs / 1000.0 / settingsDialogCount << "\n"
                         << "chart_build_render_100000x10,1," << chartRenderNs / 1e6 << "," << chartRenderNs / 1000.0 << "\n"

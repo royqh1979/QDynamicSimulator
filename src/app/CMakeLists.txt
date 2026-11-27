@@ -6,8 +6,12 @@ add_library(qds-editor STATIC
     DiagramScene.h
     DiagramView.cpp
     DiagramView.h
+    CausesStripWidget.cpp
+    CausesStripWidget.h
     DocumentController.cpp
     DocumentController.h
+    SimulationCauses.cpp
+    SimulationCauses.h
     EntityPalette.cpp
     EntityPalette.h
     EquationEditor.cpp

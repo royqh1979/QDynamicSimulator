@@ -1,6 +1,7 @@
 #include "SimulationController.h"
 
 #include "DocumentController.h"
+#include "SimulationCauses.h"
 #include <core/formula/Formula.h>
 #include <io/DocumentFile.h>
 
@@ -15,12 +16,14 @@ class SimulationRunRequest
 {
 public:
     SimulationRunRequest(std::shared_ptr<const Document> model, SimulationPlan plan, QString runName,
-        quint64 modelRevision, QVector<RunVariableInfo> variables)
+        quint64 modelRevision, QVector<RunVariableInfo> variables,
+        QHash<EntityId, QVector<EntityId>> causes)
         : model(std::move(model))
         , plan(std::move(plan))
         , runName(std::move(runName))
         , modelRevision(modelRevision)
         , variables(std::move(variables))
+        , causes(std::move(causes))
     {
     }
 
@@ -29,6 +32,7 @@ public:
     QString runName;
     quint64 modelRevision = 0;
     QVector<RunVariableInfo> variables;
+    QHash<EntityId, QVector<EntityId>> causes;
 };
 
 namespace {
@@ -76,12 +80,13 @@ RunVariableInfo::RunVariableInfo(EntityId id, QString displayName, QString nameK
 }
 
 NamedRun::NamedRun(RunId id, QString name, std::shared_ptr<const SimulationRun> run, quint64 modelRevision,
-    QVector<RunVariableInfo> variables)
+    QVector<RunVariableInfo> variables, QHash<EntityId, QVector<EntityId>> causes)
     : m_id(id)
     , m_name(std::move(name))
     , m_run(std::move(run))
     , m_modelRevision(modelRevision)
     , m_variables(std::move(variables))
+    , m_causes(std::move(causes))
 {
 }
 
@@ -154,14 +159,17 @@ bool SimulationController::start(const QString &runName, bool overwrite)
     }
 
     QVector<RunVariableInfo> variables;
+    QHash<EntityId, QVector<EntityId>> causes;
+    const AnalysisReport analysis = analyzeDocument(*model);
     for (EntityId id : compiled.plan->outputOrder()) {
         const auto *element = dynamic_cast<const ModelElement *>(model->find(id));
         if (element)
             variables.push_back(RunVariableInfo(id, element->displayName(), element->nameKey(), element->unit(), element->kind(),
                 element->kind() == ElementKind::Variable && isConstantFormula(element->equation())));
+        causes.insert(id, directSimulationCauses(*model, analysis, id));
     }
     m_activeRequest = std::make_shared<SimulationRunRequest>(std::move(model), std::move(*compiled.plan), name,
-        m_documentController->simulationRevision(), std::move(variables));
+        m_documentController->simulationRevision(), std::move(variables), std::move(causes));
     m_cancelRequested = std::make_shared<std::atomic_bool>(false);
     const quint64 generation = ++m_generation;
 
@@ -300,7 +308,7 @@ void SimulationController::workerFinished(std::shared_ptr<const SimulationRun> r
     switch (m_lastRun->status()) {
     case SimulationRunStatus::Completed: {
         NamedRun named(m_nextRunId++, m_activeRequest->runName, m_lastRun, m_activeRequest->modelRevision,
-            m_activeRequest->variables);
+            m_activeRequest->variables, m_activeRequest->causes);
         m_lastRunId = named.id();
         auto existing = std::find_if(m_runs.begin(), m_runs.end(), [this](const NamedRun &candidate) {
             return candidate.name() == m_activeRequest->runName;

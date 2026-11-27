@@ -118,11 +118,40 @@ void TimeSeriesChartWidget::resetZoom()
         timeAxis->setRange(m_minimumTime, m_maximumTime);
         valueAxis->setRange(m_minimumValue, m_maximumValue);
     }
+    emitCurrentTimeRange();
+}
+
+QPair<double, double> TimeSeriesChartWidget::timeRange() const
+{
+    const auto *timeAxis = qobject_cast<QValueAxis *>(m_chart->axes(Qt::Horizontal).value(0));
+    return timeAxis ? QPair<double, double>(timeAxis->min(), timeAxis->max()) : QPair<double, double>();
+}
+
+void TimeSeriesChartWidget::setTimeRange(double minimum, double maximum)
+{
+    if (m_timeRangeGuard || !std::isfinite(minimum) || !std::isfinite(maximum) || minimum >= maximum)
+        return;
+    auto *timeAxis = qobject_cast<QValueAxis *>(m_chart->axes(Qt::Horizontal).value(0));
+    if (!timeAxis)
+        return;
+    m_timeRangeGuard = true;
+    timeAxis->setRange(minimum, maximum);
+    m_timeRangeGuard = false;
+}
+
+void TimeSeriesChartWidget::emitCurrentTimeRange()
+{
+    if (m_timeRangeGuard)
+        return;
+    const auto range = timeRange();
+    if (range.second > range.first)
+        emit timeRangeChanged(range.first, range.second);
 }
 
 void TimeSeriesChartWidget::wheelEvent(QWheelEvent *event)
 {
     m_chart->zoom(std::pow(1.15, event->angleDelta().y() / 120.0));
+    emitCurrentTimeRange();
     event->accept();
 }
 
@@ -144,6 +173,7 @@ void TimeSeriesChartWidget::mouseMoveEvent(QMouseEvent *event)
         const QPoint delta = event->pos() - m_lastPanPosition;
         m_chart->scroll(-delta.x(), delta.y());
         m_lastPanPosition = event->pos();
+        emitCurrentTimeRange();
         event->accept();
         return;
     }
