@@ -307,12 +307,8 @@ void MainWindow::createActions()
     stockAction->setShortcut(QKeySequence(Qt::Key_1));
     QAction *flowAction = addToolAction(tr("Flow"), DiagramScene::Tool::AddFlow, "flow");
     flowAction->setShortcut(QKeySequence(Qt::Key_2));
-    QAction *auxiliaryAction = addToolAction(tr("Auxiliary"), DiagramScene::Tool::AddAuxiliary, "auxiliary");
-    auxiliaryAction->setShortcut(QKeySequence(Qt::Key_3));
-    QAction *constantAction = addToolAction(tr("Constant"), DiagramScene::Tool::AddConstant, "constant");
-    constantAction->setShortcut(QKeySequence(Qt::Key_5));
-    QAction *dataAction = addToolAction(tr("Data"), DiagramScene::Tool::AddData, "data");
-    dataAction->setShortcut(QKeySequence(Qt::Key_6));
+    QAction *variableAction = addToolAction(tr("Variable"), DiagramScene::Tool::AddVariable, "variable");
+    variableAction->setShortcut(QKeySequence(Qt::Key_3));
     QAction *cloudAction = addToolAction(tr("Cloud"), DiagramScene::Tool::AddCloud, "cloud");
     cloudAction->setShortcut(QKeySequence(Qt::Key_7));
     QAction *annotationAction = addToolAction(tr("Comment"), DiagramScene::Tool::AddComment, "annotation");
@@ -884,14 +880,8 @@ void MainWindow::setTool(DiagramScene::Tool tool)
     case DiagramScene::Tool::AddFlow:
         statusBar()->showMessage(tr("Drag from a stock, cloud, or blank point to create a flow"));
         break;
-    case DiagramScene::Tool::AddAuxiliary:
-        statusBar()->showMessage(tr("Click on the canvas to create an auxiliary"));
-        break;
-    case DiagramScene::Tool::AddConstant:
-        statusBar()->showMessage(tr("Click on the canvas to create a constant"));
-        break;
-    case DiagramScene::Tool::AddData:
-        statusBar()->showMessage(tr("Click on the canvas to create data"));
+    case DiagramScene::Tool::AddVariable:
+        statusBar()->showMessage(tr("Click on the canvas to create a variable"));
         break;
     case DiagramScene::Tool::AddCloud:
         statusBar()->showMessage(tr("Click on the canvas to create a source/sink cloud"));

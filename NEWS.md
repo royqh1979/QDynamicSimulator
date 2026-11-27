@@ -50,6 +50,7 @@
 - 新增标量模拟编译与同步 Euler/RK4 执行：初值/运行期拓扑排序、Stock 净流入、不可变 Run、取消、失败前缀和按保存间隔采样；解析解、Euler/RK4 阶数、不变量及 SDXorg ABS/Teacup/SIR 等参考结果纳入自动验证。
 - 新增模拟设置对话框、设置 undo/redo、可输入并选择已有名称的 Run Name ComboBox/Enter、Run/Cancel、同名覆盖确认及编译诊断定位；Worker 使用不可变内存 XML 副本，模型修改保留旧 Run 并标记过期。时间参数去除多余小数零，DT/SAVEPER 使用 0.1 步长。
 - 新增 Run results Dock：Workbench Variable 与画布单选双向同步，支持最新优先的命名 Datasets 和加载状态；变量列表排除 Constant 并按名称排序，时间表为每个已加载 Run 提供独立列并合并时间并集，保留历史名称和旧模型提示。
+- 将 Auxiliary/Constant/Data 重构为统一 Variable：面板、画布、QDS/XMILE 和模拟使用同一类型；结果列表根据公式排除数值常量。
 - 新增基于 Qt Charts 的 Graph/Table：叠加全部已加载 Run，Run 名直接作为图例，支持图例显隐、常量水平线、滚轮缩放、拖动平移和双击恢复完整范围。运行完成且模型未变时自动打开此次运行的 Graph；过期结果不自动弹出。
 - 修复含运行结果的主窗口析构时，模拟状态回调可能访问正在销毁的 Dock 或状态栏的问题。
 - 左右 Dock 占据各自侧边全部高度；文档标题使用无后缀文件名，新建按 Untitled N 编号，首次保存默认使用标题加 .qds。

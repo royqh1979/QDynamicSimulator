@@ -72,8 +72,8 @@ void TestDocument::namingNormalization()
     QVERIFY(document.rename(stock, "\u5E93\u5B58"));
     QVERIFY(!document.rename(stock, "\u6D41\u5165_\u901F\u7387"));
 
-    const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
-    const EntityId second = document.createVariable(ElementKind::Auxiliary);
+    const EntityId auxiliary = document.createVariable(ElementKind::Variable);
+    const EntityId second = document.createVariable(ElementKind::Variable);
     QVERIFY(document.rename(auxiliary, "birth rate"));
     QVERIFY(!document.rename(second, "birth_rate"));
     QVERIFY(document.setEquation(auxiliary, "\"\u6D41\u5165 \u901F\u7387\" * 2"));
@@ -94,10 +94,10 @@ void TestDocument::generatedNamesUseNameKeyIndex()
     Document document;
     const EntityId firstStock = document.createVariable(ElementKind::Stock);
     const EntityId secondStock = document.createVariable(ElementKind::Stock);
-    const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
+    const EntityId auxiliary = document.createVariable(ElementKind::Variable);
     QCOMPARE(static_cast<const ModelElement *>(document.find(firstStock))->displayName(), QString("Stock1"));
     QCOMPARE(static_cast<const ModelElement *>(document.find(secondStock))->displayName(), QString("Stock2"));
-    QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->displayName(), QString("Auxiliary1"));
+    QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->displayName(), QString("Variable1"));
     QCOMPARE(static_cast<const ModelElement *>(document.find(firstStock))->nameKey(), QString("stock1"));
 
     QVERIFY(document.rename(auxiliary, "Stock3"));
@@ -115,7 +115,7 @@ void TestDocument::rejectInvalidOperations()
 {
     Document document;
     const EntityId stock = document.createVariable(ElementKind::Stock);
-    const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
+    const EntityId auxiliary = document.createVariable(ElementKind::Variable);
     QCOMPARE(document.createVariable(ElementKind::Flow), EntityId(0));
     QCOMPARE(document.createFlow(auxiliary, stock), EntityId(0));
     QCOMPARE(document.createFlow(stock, stock), EntityId(0));
@@ -136,7 +136,7 @@ void TestDocument::removeCascades()
     const EntityId stock = document.createVariable(ElementKind::Stock);
     const EntityId cloud = document.createCloud();
     const EntityId flow = document.createFlow(stock, cloud);
-    const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
+    const EntityId auxiliary = document.createVariable(ElementKind::Variable);
     const EntityId connector = document.createConnector(auxiliary, flow);
     const QVector<EntityId> removed = document.remove(stock);
     QVERIFY(document.find(stock) == nullptr);
@@ -155,7 +155,7 @@ void TestDocument::restoreWithStableIds()
     const EntityId stock = document.createVariable(ElementKind::Stock, {15.0, 25.0});
     const EntityId cloud = document.createCloud({200.0, 25.0});
     const EntityId flow = document.createFlow(stock, cloud);
-    const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
+    const EntityId auxiliary = document.createVariable(ElementKind::Variable);
     const EntityId connector = document.createConnector(auxiliary, flow);
     Route route;
     route.mode = RouteMode::Bezier;
@@ -184,7 +184,7 @@ void TestDocument::routeAndPositionState()
     const EntityId cloud = document.createCloud({200.0, 0.0});
     const EntityId flow = document.createFlow(stock, cloud);
     QCOMPARE(document.diagram().route(flow).mode, RouteMode::Straight);
-    const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
+    const EntityId auxiliary = document.createVariable(ElementKind::Variable);
     const EntityId connector = document.createConnector(auxiliary, flow);
     QCOMPARE(document.diagram().route(connector), defaultConnectorRoute());
     Route route;
@@ -246,9 +246,9 @@ void TestDocument::entityAndConnectorTypes()
 {
     Document document;
     const EntityId stock = document.createVariable(ElementKind::Stock);
-    const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
-    const EntityId constant = document.createVariable(ElementKind::Constant);
-    const EntityId data = document.createVariable(ElementKind::Data);
+    const EntityId auxiliary = document.createVariable(ElementKind::Variable);
+    const EntityId constant = document.createVariable(ElementKind::Variable);
+    const EntityId data = document.createVariable(ElementKind::Variable);
     const EntityId cloud = document.createCloud();
     const EntityId secondCloud = document.createCloud();
     const EntityId comment = document.createComment("Note");
@@ -282,7 +282,7 @@ void TestDocument::reconnectRoutes()
     const EntityId first = document.createVariable(ElementKind::Stock);
     const EntityId second = document.createVariable(ElementKind::Stock);
     const EntityId cloud = document.createCloud();
-    const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
+    const EntityId auxiliary = document.createVariable(ElementKind::Variable);
     const EntityId connector = document.createConnector(first, auxiliary);
     QVERIFY(document.reconnectConnector(connector, second, auxiliary));
     QCOMPARE(static_cast<const Connector *>(document.find(connector))->from(), second);
@@ -356,7 +356,7 @@ void TestDocument::applyFailureIsAtomic()
     QCOMPARE(*document.capture(flow), originalFlow);
     QCOMPARE(*document.capture(otherFlow), originalOtherFlow);
 
-    const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
+    const EntityId auxiliary = document.createVariable(ElementKind::Variable);
     const EntityId connector = document.createConnector(stock, auxiliary);
     const ElementData originalConnector = *document.capture(connector);
     ElementData connectorEdit = originalConnector;
@@ -380,12 +380,12 @@ void TestDocument::validation()
 {
     Document document;
     const EntityId stock = document.createVariable(ElementKind::Stock);
-    const EntityId first = document.createVariable(ElementKind::Auxiliary);
-    const EntityId second = document.createVariable(ElementKind::Auxiliary);
+    const EntityId first = document.createVariable(ElementKind::Variable);
+    const EntityId second = document.createVariable(ElementKind::Variable);
     document.rename(stock, "\u5E93\u5B58");
     document.setInitialEquation(stock, "100");
     document.rename(first, "\u8F85\u52A9 \u53D8\u91CF");
-    document.setEquation(first, "Auxiliary2 + Missing");
+    document.setEquation(first, "Variable2 + Missing");
     document.setEquation(second, "\"\u8F85\u52A9 \u53D8\u91CF\"");
     document.createConnector(first, second);
     document.createConnector(second, first);

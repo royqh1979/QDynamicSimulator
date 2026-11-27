@@ -53,9 +53,9 @@ private slots:
 void TestEvaluation::resolvedReferences()
 {
     Document document;
-    const EntityId input = document.createVariable(ElementKind::Constant);
-    const EntityId offset = document.createVariable(ElementKind::Constant);
-    const EntityId result = document.createVariable(ElementKind::Auxiliary);
+    const EntityId input = document.createVariable(ElementKind::Variable);
+    const EntityId offset = document.createVariable(ElementKind::Variable);
+    const EntityId result = document.createVariable(ElementKind::Variable);
     document.rename(input, "Input");
     document.rename(offset, "Offset");
     document.setEquation(result, "Input * 2 + Offset");

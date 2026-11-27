@@ -10,9 +10,7 @@
         <file>icons/select.svg</file>
         <file>icons/stock.svg</file>
         <file>icons/flow.svg</file>
-        <file>icons/auxiliary.svg</file>
-        <file>icons/constant.svg</file>
-        <file>icons/data.svg</file>
+        <file>icons/variable.svg</file>
         <file>icons/cloud.svg</file>
         <file>icons/annotation.svg</file>
         <file>icons/connect.svg</file>

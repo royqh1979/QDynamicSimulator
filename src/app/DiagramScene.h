@@ -23,9 +23,7 @@ public:
     enum class Tool {
         Select,
         AddStock,
-        AddAuxiliary,
-        AddConstant,
-        AddData,
+        AddVariable,
         AddCloud,
         AddComment,
         AddFlow,

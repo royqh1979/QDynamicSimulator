@@ -2,7 +2,7 @@
 
 QDynamicSimulator 是一款跨平台系统动力学建模与仿真软件。项目采用 C++17、Qt 5 Widgets 和 CMake，以 QDS 为原生模型格式，支持 XMILE 导入/导出，许可证为 GPL v3。
 
-当前已实现 SFD 编辑闭环：创建存量、流量、辅助变量、常量、Data（数据）、云团和注释，移动、框选、删除与连线，编辑名称和方程，以及打开和保存 QDS 文件。`.qds` 是 ZIP deflate 容器，内部只有一个 `document.xml`；XMILE 1.1 仅作为未压缩 XML 导入/导出。当前还支持标量模型的 Euler/RK4 模拟、命名 Run、结果表格和多 Run 折线图。完整需求见 [requirement.md](requirement.md)。
+当前已实现 SFD 编辑闭环：创建存量、流量、通用 Variable、云团和注释，移动、框选、删除与连线，编辑名称和方程，以及打开和保存 QDS 文件。`.qds` 是 ZIP deflate 容器，内部只有一个 `document.xml`；XMILE 1.1 仅作为未压缩 XML 导入/导出。当前还支持标量模型的 Euler/RK4 模拟、命名 Run、结果表格和多 Run 折线图。完整需求见 [requirement.md](requirement.md)。
 
 ## 基本操作
 

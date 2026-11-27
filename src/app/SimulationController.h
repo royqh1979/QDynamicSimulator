@@ -20,13 +20,14 @@ using RunId = quint64;
 class RunVariableInfo
 {
 public:
-    RunVariableInfo(qds::core::EntityId id, QString displayName, QString nameKey, QString unit, qds::core::ElementKind kind);
+    RunVariableInfo(qds::core::EntityId id, QString displayName, QString nameKey, QString unit, qds::core::ElementKind kind, bool constant);
 
     qds::core::EntityId id() const { return m_id; }
     const QString &displayName() const { return m_displayName; }
     const QString &nameKey() const { return m_nameKey; }
     const QString &unit() const { return m_unit; }
     qds::core::ElementKind kind() const { return m_kind; }
+    bool isConstant() const { return m_constant; }
 
 private:
     qds::core::EntityId m_id;
@@ -34,6 +35,7 @@ private:
     QString m_nameKey;
     QString m_unit;
     qds::core::ElementKind m_kind;
+    bool m_constant;
 };
 
 class NamedRun

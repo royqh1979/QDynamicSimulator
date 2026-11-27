@@ -127,8 +127,7 @@ QVector<EntityId> topologicalOrder(const QVector<EntityId> &roots, const Documen
         state[id] = 1;
         for (EntityId dependency : dependencies(analysis, id)) {
             const DocumentElement *element = document.find(dependency);
-            const bool currentState = element && (element->kind() == ElementKind::Stock
-                || element->kind() == ElementKind::Constant);
+            const bool currentState = element && element->kind() == ElementKind::Stock;
             if (!initialization && currentState)
                 continue;
             if (state.value(dependency) == 1) {
@@ -161,16 +160,12 @@ SimulationCompileResult compileSimulation(const Document &document)
             result.issues.push_back(issue);
     }
 
-    QVector<EntityId> constants;
+    QVector<EntityId> initializationRoots;
     QVector<EntityId> stocks;
     QVector<EntityId> runtimeRoots;
     QVector<EntityId> outputs;
     for (const ModelElement &element : document.model().elements()) {
         const EntityId id = element.id();
-        if (element.kind() == ElementKind::Data) {
-            addIssue(result, id, "External data is not supported by the scalar simulator", "unsupported-simulation-data");
-            continue;
-        }
         if (!element.dimensions().isEmpty() || !element.elementEquations().empty()) {
             addIssue(result, id, "Array simulation is not implemented", "unsupported-simulation-array");
             continue;
@@ -184,15 +179,15 @@ SimulationCompileResult compileSimulation(const Document &document)
         }
         scanSupportedCalls(document, definition, id, result);
         outputs.push_back(id);
-        if (element.kind() == ElementKind::Stock)
+        if (element.kind() == ElementKind::Stock) {
             stocks.push_back(id);
-        else if (element.kind() == ElementKind::Constant)
-            constants.push_back(id);
-        else
+        } else {
+            initializationRoots.push_back(id);
             runtimeRoots.push_back(id);
+        }
     }
     std::sort(stocks.begin(), stocks.end());
-    std::sort(constants.begin(), constants.end());
+    std::sort(initializationRoots.begin(), initializationRoots.end());
     std::sort(runtimeRoots.begin(), runtimeRoots.end());
     std::sort(outputs.begin(), outputs.end());
     if (!result.issues.empty())
@@ -201,7 +196,7 @@ SimulationCompileResult compileSimulation(const Document &document)
     SimulationPlan plan;
     plan.m_settings = settings;
     plan.m_outputOrder = outputs;
-    plan.m_initializationOrder = topologicalOrder(constants, document, analysis, true, result);
+    plan.m_initializationOrder = topologicalOrder(initializationRoots, document, analysis, true, result);
     const QVector<EntityId> stockInitialization = topologicalOrder(stocks, document, analysis, true, result);
     for (EntityId id : stockInitialization) {
         if (!plan.m_initializationOrder.contains(id))

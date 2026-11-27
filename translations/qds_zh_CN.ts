@@ -9,42 +9,42 @@
         <translation>注释</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="558"/>
+        <location filename="../src/app/DiagramScene.cpp" line="554"/>
         <source>Route type</source>
         <translation>布线类型</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="567"/>
+        <location filename="../src/app/DiagramScene.cpp" line="563"/>
         <source>Straight</source>
         <translation>直线</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="568"/>
+        <location filename="../src/app/DiagramScene.cpp" line="564"/>
         <source>Orthogonal</source>
         <translation>直角线</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="569"/>
+        <location filename="../src/app/DiagramScene.cpp" line="565"/>
         <source>Bezier</source>
         <translation>贝塞尔曲线</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="583"/>
+        <location filename="../src/app/DiagramScene.cpp" line="579"/>
         <source>Reset automatic route</source>
         <translation>重置自动布线</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="585"/>
+        <location filename="../src/app/DiagramScene.cpp" line="581"/>
         <source>Lock route</source>
         <translation>锁定路径</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="594"/>
+        <location filename="../src/app/DiagramScene.cpp" line="590"/>
         <source>Delete</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="965"/>
+        <location filename="../src/app/DiagramScene.cpp" line="961"/>
         <source>The name cannot be empty or duplicate another variable.</source>
         <translation>名称不能为空或与其他变量重名。</translation>
     </message>
@@ -57,47 +57,49 @@
         <translation>存量</translation>
     </message>
     <message>
-        <location filename="../src/app/EntityPalette.cpp" line="20"/>
         <source>Auxiliary</source>
-        <translation>辅助变量</translation>
+        <translation type="vanished">辅助变量</translation>
+    </message>
+    <message>
+        <source>Constant</source>
+        <translation type="vanished">常量</translation>
+    </message>
+    <message>
+        <source>Data</source>
+        <translation type="vanished">数据</translation>
+    </message>
+    <message>
+        <location filename="../src/app/EntityPalette.cpp" line="20"/>
+        <source>Variable</source>
+        <translation>变量</translation>
     </message>
     <message>
         <location filename="../src/app/EntityPalette.cpp" line="21"/>
-        <source>Constant</source>
-        <translation>常量</translation>
-    </message>
-    <message>
-        <location filename="../src/app/EntityPalette.cpp" line="22"/>
-        <source>Data</source>
-        <translation>数据</translation>
-    </message>
-    <message>
-        <location filename="../src/app/EntityPalette.cpp" line="23"/>
         <source>Cloud</source>
         <translation>云团</translation>
     </message>
     <message>
-        <location filename="../src/app/EntityPalette.cpp" line="24"/>
+        <location filename="../src/app/EntityPalette.cpp" line="22"/>
         <source>Comment</source>
         <translation>注释</translation>
     </message>
     <message>
-        <location filename="../src/app/EntityPalette.cpp" line="30"/>
+        <location filename="../src/app/EntityPalette.cpp" line="28"/>
         <source>Drag onto the canvas to create %1</source>
         <translation>拖到画布以创建 %1</translation>
     </message>
     <message>
-        <location filename="../src/app/EntityPalette.cpp" line="46"/>
+        <location filename="../src/app/EntityPalette.cpp" line="44"/>
         <source>Flow</source>
         <translation>流量</translation>
     </message>
     <message>
-        <location filename="../src/app/EntityPalette.cpp" line="47"/>
+        <location filename="../src/app/EntityPalette.cpp" line="45"/>
         <source>Arrow</source>
         <translation>连接线</translation>
     </message>
     <message>
-        <location filename="../src/app/EntityPalette.cpp" line="54"/>
+        <location filename="../src/app/EntityPalette.cpp" line="52"/>
         <source>Drag on the canvas to create %1</source>
         <translation>在画布上拖动以创建 %1</translation>
     </message>
@@ -200,339 +202,336 @@
         <translation>流量</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="310"/>
         <source>Auxiliary</source>
-        <translation>辅助变量</translation>
+        <translation type="vanished">辅助变量</translation>
+    </message>
+    <message>
+        <source>Constant</source>
+        <translation type="vanished">常量</translation>
+    </message>
+    <message>
+        <source>Data</source>
+        <translation type="vanished">数据</translation>
     </message>
     <message>
         <location filename="../src/app/MainWindow.cpp" line="312"/>
-        <source>Constant</source>
-        <translation>常量</translation>
-    </message>
-    <message>
-        <location filename="../src/app/MainWindow.cpp" line="314"/>
-        <source>Data</source>
-        <translation>数据</translation>
-    </message>
-    <message>
-        <location filename="../src/app/MainWindow.cpp" line="316"/>
         <source>Cloud</source>
         <translation>云团</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="318"/>
+        <location filename="../src/app/MainWindow.cpp" line="314"/>
         <source>Comment</source>
         <translation>注释</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="320"/>
+        <location filename="../src/app/MainWindow.cpp" line="316"/>
         <source>Arrow</source>
         <translation>连接线</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="324"/>
+        <location filename="../src/app/MainWindow.cpp" line="320"/>
         <source>Delete</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="331"/>
+        <location filename="../src/app/MainWindow.cpp" line="327"/>
         <source>Select all</source>
         <translation>全选</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="347"/>
+        <location filename="../src/app/MainWindow.cpp" line="343"/>
         <source>Copy</source>
         <translation>复制</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="351"/>
+        <location filename="../src/app/MainWindow.cpp" line="347"/>
         <source>Copy as PNG</source>
         <translation>复制为 PNG</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="355"/>
+        <location filename="../src/app/MainWindow.cpp" line="351"/>
         <source>Cut</source>
         <translation>剪切</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="362"/>
+        <location filename="../src/app/MainWindow.cpp" line="358"/>
         <source>Paste</source>
         <translation>粘贴</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="366"/>
+        <location filename="../src/app/MainWindow.cpp" line="362"/>
         <source>Duplicate</source>
         <translation>创建副本</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="381"/>
+        <location filename="../src/app/MainWindow.cpp" line="377"/>
         <source>Align left</source>
         <translation>左对齐</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="382"/>
+        <location filename="../src/app/MainWindow.cpp" line="378"/>
         <source>Align horizontal centers</source>
         <translation>水平居中对齐</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="383"/>
+        <location filename="../src/app/MainWindow.cpp" line="379"/>
         <source>Align right</source>
         <translation>右对齐</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="384"/>
+        <location filename="../src/app/MainWindow.cpp" line="380"/>
         <source>Align top</source>
         <translation>顶部对齐</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="385"/>
+        <location filename="../src/app/MainWindow.cpp" line="381"/>
         <source>Align vertical centers</source>
         <translation>垂直居中对齐</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="386"/>
+        <location filename="../src/app/MainWindow.cpp" line="382"/>
         <source>Align bottom</source>
         <translation>底部对齐</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="388"/>
+        <location filename="../src/app/MainWindow.cpp" line="384"/>
         <source>Distribute horizontally</source>
         <translation>水平等距分布</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="393"/>
+        <location filename="../src/app/MainWindow.cpp" line="389"/>
         <source>Distribute vertically</source>
         <translation>垂直等距分布</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="399"/>
+        <location filename="../src/app/MainWindow.cpp" line="395"/>
         <source>&amp;Simulation</source>
         <translation>模拟(&amp;S)</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="400"/>
+        <location filename="../src/app/MainWindow.cpp" line="396"/>
         <source>Simulation</source>
         <translation>模拟</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="402"/>
+        <location filename="../src/app/MainWindow.cpp" line="398"/>
         <source>Run name:</source>
         <translation>运行名称:</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="411"/>
+        <location filename="../src/app/MainWindow.cpp" line="407"/>
         <source>Run</source>
         <translation>运行</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="414"/>
+        <location filename="../src/app/MainWindow.cpp" line="410"/>
         <source>Cancel</source>
         <translation>取消</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="417"/>
+        <location filename="../src/app/MainWindow.cpp" line="413"/>
         <source>Graph</source>
         <translation>折线图</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="419"/>
+        <location filename="../src/app/MainWindow.cpp" line="415"/>
         <source>Table</source>
         <translation>表格</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="433"/>
+        <location filename="../src/app/MainWindow.cpp" line="429"/>
         <source>Simulation settings</source>
         <translation>模拟设置</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="445"/>
+        <location filename="../src/app/MainWindow.cpp" line="441"/>
         <source>&amp;View</source>
         <translation>视图(&amp;V)</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="453"/>
+        <location filename="../src/app/MainWindow.cpp" line="449"/>
         <source>Zoom in</source>
         <translation>放大</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="454"/>
+        <location filename="../src/app/MainWindow.cpp" line="450"/>
         <source>Zoom out</source>
         <translation>缩小</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="455"/>
+        <location filename="../src/app/MainWindow.cpp" line="451"/>
         <source>Actual size</source>
         <translation>实际大小</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="456"/>
+        <location filename="../src/app/MainWindow.cpp" line="452"/>
         <source>Fit all</source>
         <translation>适应全部元素</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="457"/>
+        <location filename="../src/app/MainWindow.cpp" line="453"/>
         <source>Fit selection</source>
         <translation>适应选中元素</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="459"/>
+        <location filename="../src/app/MainWindow.cpp" line="455"/>
         <source>Show grid</source>
         <translation>显示网格</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="464"/>
+        <location filename="../src/app/MainWindow.cpp" line="460"/>
         <source>Snap to grid</source>
         <translation>吸附到网格</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="470"/>
+        <location filename="../src/app/MainWindow.cpp" line="466"/>
         <source>&amp;Routing</source>
         <translation>布线(&amp;R)</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="478"/>
+        <location filename="../src/app/MainWindow.cpp" line="474"/>
         <source>Straight</source>
         <translation>直线</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="479"/>
+        <location filename="../src/app/MainWindow.cpp" line="475"/>
         <source>Orthogonal</source>
         <translation>直角线</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="480"/>
+        <location filename="../src/app/MainWindow.cpp" line="476"/>
         <source>Bezier</source>
         <translation>贝塞尔曲线</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="481"/>
+        <location filename="../src/app/MainWindow.cpp" line="477"/>
         <source>Reset automatic route</source>
         <translation>重置自动布线</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="484"/>
+        <location filename="../src/app/MainWindow.cpp" line="480"/>
         <source>Lock/unlock route</source>
         <translation>锁定/解锁路径</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="487"/>
+        <location filename="../src/app/MainWindow.cpp" line="483"/>
         <source>Reroute all</source>
         <translation>全部重新布线</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="494"/>
+        <location filename="../src/app/MainWindow.cpp" line="490"/>
         <source>Drawing elements</source>
         <translation>绘图元素</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="503"/>
+        <location filename="../src/app/MainWindow.cpp" line="499"/>
         <source>Properties</source>
         <translation>属性</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="510"/>
+        <location filename="../src/app/MainWindow.cpp" line="506"/>
         <source>Model validation</source>
         <translation>模型检查</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="524"/>
+        <location filename="../src/app/MainWindow.cpp" line="520"/>
         <source>Navigation</source>
         <translation>导航</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="529"/>
+        <location filename="../src/app/MainWindow.cpp" line="525"/>
         <source>Search variable names</source>
         <translation>搜索变量名称</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="550"/>
+        <location filename="../src/app/MainWindow.cpp" line="546"/>
         <source>Run results</source>
         <translation>运行结果</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="617"/>
+        <location filename="../src/app/MainWindow.cpp" line="613"/>
         <source>Cursor: %1, %2  View: %3, %4  Zoom: %5%</source>
         <translation>光标: %1, %2  视口: %3, %4  缩放: %5%</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="656"/>
+        <location filename="../src/app/MainWindow.cpp" line="652"/>
         <source>Overwrite run</source>
         <translation>覆盖运行</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="657"/>
+        <location filename="../src/app/MainWindow.cpp" line="653"/>
         <source>Run &apos;%1&apos; already exists. Overwrite its dataset?</source>
         <translation>运行 &apos;%1&apos; 已存在。是否覆盖其数据集？</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="706"/>
+        <location filename="../src/app/MainWindow.cpp" line="702"/>
         <source>%1: %2</source>
         <translation>%1: %2</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="714"/>
+        <location filename="../src/app/MainWindow.cpp" line="710"/>
         <source>Simulation compilation failed</source>
         <translation>模拟编译失败</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="733"/>
+        <location filename="../src/app/MainWindow.cpp" line="729"/>
         <source>Open model</source>
         <translation>打开模型</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="735"/>
+        <location filename="../src/app/MainWindow.cpp" line="731"/>
         <source>QDS documents (*.qds);;XMILE models (*.xmile *.xml);;All files (*)</source>
         <translation>QDS 文档 (*.qds);;XMILE 模型 (*.xmile *.xml);;所有文件 (*)</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="751"/>
+        <location filename="../src/app/MainWindow.cpp" line="747"/>
         <source>Save QDS document</source>
         <translation>保存 QDS 文档</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="753"/>
+        <location filename="../src/app/MainWindow.cpp" line="749"/>
         <source>QDS documents (*.qds);;All files (*)</source>
         <translation>QDS 文档 (*.qds);;所有文件 (*)</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="767"/>
+        <location filename="../src/app/MainWindow.cpp" line="763"/>
         <source>Export XMILE model</source>
         <translation>导出 XMILE 模型</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="769"/>
+        <location filename="../src/app/MainWindow.cpp" line="765"/>
         <source>XMILE models (*.xmile);;All files (*)</source>
         <translation>XMILE 模型 (*.xmile);;所有文件 (*)</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="776"/>
-        <location filename="../src/app/MainWindow.cpp" line="802"/>
+        <location filename="../src/app/MainWindow.cpp" line="772"/>
+        <location filename="../src/app/MainWindow.cpp" line="798"/>
         <source>Export failed</source>
         <translation>导出失败</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="779"/>
-        <location filename="../src/app/MainWindow.cpp" line="805"/>
+        <location filename="../src/app/MainWindow.cpp" line="775"/>
+        <location filename="../src/app/MainWindow.cpp" line="801"/>
         <source>Exported %1</source>
         <translation>已导出 %1</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="787"/>
+        <location filename="../src/app/MainWindow.cpp" line="783"/>
         <source>Export PNG image</source>
         <translation>导出 PNG 图像</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="789"/>
+        <location filename="../src/app/MainWindow.cpp" line="785"/>
         <source>PNG images (*.png);;All files (*)</source>
         <translation>PNG 图像 (*.png);;所有文件 (*)</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="802"/>
+        <location filename="../src/app/MainWindow.cpp" line="798"/>
         <source>Could not write the PNG image.</source>
         <translation>无法写入 PNG 图像。</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="815"/>
+        <location filename="../src/app/MainWindow.cpp" line="811"/>
         <source>Select one or more elements to copy as PNG</source>
         <translation>请选择一个或多个元素以复制为 PNG</translation>
     </message>
@@ -549,22 +548,22 @@
         <translation type="vanished">已将 PNG 图像复制到剪贴板</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="825"/>
+        <location filename="../src/app/MainWindow.cpp" line="821"/>
         <source>Save failed</source>
         <translation>保存失败</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="834"/>
+        <location filename="../src/app/MainWindow.cpp" line="830"/>
         <source>Saved %1</source>
         <translation>已保存 %1</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="844"/>
+        <location filename="../src/app/MainWindow.cpp" line="840"/>
         <source>Unsaved changes</source>
         <translation>未保存的修改</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="845"/>
+        <location filename="../src/app/MainWindow.cpp" line="841"/>
         <source>The current model has been modified. Save it?</source>
         <translation>当前模型已修改，是否保存？</translation>
     </message>
@@ -573,83 +572,80 @@
         <translation type="vanished">未命名.qds</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="857"/>
+        <location filename="../src/app/MainWindow.cpp" line="853"/>
         <source>%1[*] - QDynamicSimulator</source>
         <translation>%1[*] - QDynamicSimulator</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="864"/>
+        <location filename="../src/app/MainWindow.cpp" line="860"/>
         <source>Untitled %1</source>
         <translation>未命名 %1</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="879"/>
+        <location filename="../src/app/MainWindow.cpp" line="875"/>
         <source>Drag to move, rubber-band to select, Delete to remove</source>
         <translation>拖动以移动，框选以选择，按 Delete 删除</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="882"/>
+        <location filename="../src/app/MainWindow.cpp" line="878"/>
         <source>Click on the canvas to create a stock</source>
         <translation>单击画布以创建存量</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="885"/>
+        <location filename="../src/app/MainWindow.cpp" line="881"/>
         <source>Drag from a stock, cloud, or blank point to create a flow</source>
         <translation>从存量、云团或空白位置拖动以创建流量</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="888"/>
         <source>Click on the canvas to create an auxiliary</source>
-        <translation>单击画布以创建辅助变量</translation>
+        <translation type="vanished">单击画布以创建辅助变量</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="891"/>
         <source>Click on the canvas to create a constant</source>
-        <translation>单击画布以创建常量</translation>
+        <translation type="vanished">单击画布以创建常量</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="894"/>
         <source>Click on the canvas to create data</source>
-        <translation>单击画布以创建数据</translation>
+        <translation type="vanished">单击画布以创建数据</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="897"/>
+        <location filename="../src/app/MainWindow.cpp" line="887"/>
         <source>Click on the canvas to create a source/sink cloud</source>
         <translation>单击画布以创建源/汇云团</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="900"/>
+        <location filename="../src/app/MainWindow.cpp" line="890"/>
         <source>Click on the canvas to create a comment</source>
         <translation>单击画布以创建注释</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="903"/>
+        <location filename="../src/app/MainWindow.cpp" line="893"/>
         <source>Drag from source to target to create an arrow; right-click to cancel</source>
         <translation>从源对象拖到目标对象以创建连接线；右键取消</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="941"/>
+        <location filename="../src/app/MainWindow.cpp" line="931"/>
         <source>Auto-save failed: %1</source>
         <translation>自动保存失败：%1</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="950"/>
+        <location filename="../src/app/MainWindow.cpp" line="940"/>
         <source>Restore model</source>
         <translation>恢复模型</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="950"/>
+        <location filename="../src/app/MainWindow.cpp" line="940"/>
         <source>An auto-saved copy from the previous session was found. Restore it?</source>
         <translation>发现上次会话的自动保存副本，是否恢复？</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="957"/>
+        <location filename="../src/app/MainWindow.cpp" line="947"/>
         <source>Restore failed</source>
         <translation>恢复失败</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="705"/>
-        <location filename="../src/app/MainWindow.cpp" line="975"/>
+        <location filename="../src/app/MainWindow.cpp" line="701"/>
+        <location filename="../src/app/MainWindow.cpp" line="965"/>
         <source>Model</source>
         <translation>模型</translation>
     </message>
@@ -694,17 +690,27 @@
         <translation>已完成 %1：%2 个样本</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="976"/>
+        <location filename="../src/app/MainWindow.cpp" line="310"/>
+        <source>Variable</source>
+        <translation>变量</translation>
+    </message>
+    <message>
+        <location filename="../src/app/MainWindow.cpp" line="884"/>
+        <source>Click on the canvas to create a variable</source>
+        <translation>在画布上单击以创建变量</translation>
+    </message>
+    <message>
+        <location filename="../src/app/MainWindow.cpp" line="966"/>
         <source>Error</source>
         <translation>错误</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="976"/>
+        <location filename="../src/app/MainWindow.cpp" line="966"/>
         <source>Warning</source>
         <translation>警告</translation>
     </message>
     <message>
-        <location filename="../src/app/MainWindow.cpp" line="978"/>
+        <location filename="../src/app/MainWindow.cpp" line="968"/>
         <source>%1 [%2]: %3</source>
         <translation>%1 [%2]: %3</translation>
     </message>
@@ -772,17 +778,17 @@
 <context>
     <name>SimulationController</name>
     <message>
-        <location filename="../src/app/SimulationController.cpp" line="121"/>
+        <location filename="../src/app/SimulationController.cpp" line="123"/>
         <source>A simulation is already running.</source>
         <translation>已有模拟正在运行。</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationController.cpp" line="126"/>
+        <location filename="../src/app/SimulationController.cpp" line="128"/>
         <source>Run name cannot be empty.</source>
         <translation>运行名称不能为空。</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationController.cpp" line="130"/>
+        <location filename="../src/app/SimulationController.cpp" line="132"/>
         <source>A run with this name already exists.</source>
         <translation>已存在同名运行。</translation>
     </message>

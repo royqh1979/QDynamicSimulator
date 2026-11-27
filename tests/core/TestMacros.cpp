@@ -88,7 +88,7 @@ void TestMacros::definitionsAndOverloads()
     invalid.parameters = {parameter("x"), parameter("X")};
     QVERIFY(!document.defineMacro(invalid));
 
-    const EntityId variable = document.createVariable(ElementKind::Constant);
+    const EntityId variable = document.createVariable(ElementKind::Variable);
     document.rename(variable, "Variable");
     MacroDefinitionData conflict = scale;
     conflict.displayName = "Variable";
@@ -101,8 +101,8 @@ void TestMacros::definitionsAndOverloads()
 void TestMacros::expansionAndEvaluation()
 {
     Document document;
-    const EntityId offset = document.createVariable(ElementKind::Constant);
-    const EntityId output = document.createVariable(ElementKind::Auxiliary);
+    const EntityId offset = document.createVariable(ElementKind::Variable);
+    const EntityId output = document.createVariable(ElementKind::Variable);
     document.rename(offset, "Offset");
     document.rename(output, "Output");
 
@@ -143,7 +143,7 @@ void TestMacros::expansionAndEvaluation()
 void TestMacros::recursionAndErrors()
 {
     Document document;
-    const EntityId output = document.createVariable(ElementKind::Auxiliary);
+    const EntityId output = document.createVariable(ElementKind::Variable);
     MacroDefinitionData factorial;
     factorial.displayName = "Fact";
     factorial.parameters = {parameter("x")};
@@ -162,15 +162,15 @@ void TestMacros::recursionAndErrors()
 void TestMacros::runtimeScopesAndRecursion()
 {
     Document document;
-    const EntityId input = document.createVariable(ElementKind::Constant);
+    const EntityId input = document.createVariable(ElementKind::Variable);
     document.rename(input, "Input");
-    const EntityId globalA = document.createVariable(ElementKind::Constant);
+    const EntityId globalA = document.createVariable(ElementKind::Variable);
     document.rename(globalA, "A");
-    const EntityId globalOffset = document.createVariable(ElementKind::Constant);
+    const EntityId globalOffset = document.createVariable(ElementKind::Variable);
     document.rename(globalOffset, "Offset");
-    const EntityId values = document.createVariable(ElementKind::Constant);
+    const EntityId values = document.createVariable(ElementKind::Variable);
     document.rename(values, "Values");
-    const EntityId output = document.createVariable(ElementKind::Auxiliary);
+    const EntityId output = document.createVariable(ElementKind::Variable);
 
     MacroDefinitionData fact {"Fact", {parameter("x")}, "IF x <= 1 THEN 1 ELSE x * Fact(x - 1)"};
     MacroDefinitionData even {"Even", {parameter("x")}, "IF x <= 0 THEN 1 ELSE Odd(x - 1)"};
@@ -226,12 +226,12 @@ void TestMacros::runtimeScopesAndRecursion()
 void TestMacros::dependencyClosure()
 {
     Document document;
-    const EntityId a = document.createVariable(ElementKind::Constant);
-    const EntityId b = document.createVariable(ElementKind::Constant);
+    const EntityId a = document.createVariable(ElementKind::Variable);
+    const EntityId b = document.createVariable(ElementKind::Variable);
     document.rename(a, "A");
     document.rename(b, "B");
-    const EntityId withDefault = document.createVariable(ElementKind::Auxiliary);
-    const EntityId explicitArgument = document.createVariable(ElementKind::Auxiliary);
+    const EntityId withDefault = document.createVariable(ElementKind::Variable);
+    const EntityId explicitArgument = document.createVariable(ElementKind::Variable);
 
     MacroDefinitionData inner {"Inner", {parameter("x")}, "x + A"};
     MacroDefinitionData outer {"Outer", {parameter("x"), parameter("y", "Inner(x)")}, "y + B"};
@@ -258,7 +258,7 @@ void TestMacros::dependencyClosure()
 void TestMacros::depthAndModification()
 {
     Document document;
-    const EntityId output = document.createVariable(ElementKind::Auxiliary);
+    const EntityId output = document.createVariable(ElementKind::Variable);
     MacroDefinitionData down {"Down", {parameter("x")}, "IF x <= 0 THEN 0 ELSE Down(x - 1)"};
     MacroDefinitionData scale {"Scale", {parameter("x"), parameter("factor", "2")}, "x * factor"};
     QVERIFY(document.defineMacro(down));

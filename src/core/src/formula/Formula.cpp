@@ -542,6 +542,20 @@ Formula analyzeFormula(QString equation)
     return parser.parse();
 }
 
+bool isConstantFormula(QString source)
+{
+    const Formula formula = analyzeFormula(std::move(source));
+    if (!formula.issues().isEmpty() || !formula.root())
+        return false;
+    const FormulaNode *node = formula.root();
+    while (const auto *unary = dynamic_cast<const UnaryNode *>(node)) {
+        if (unary->op() != UnaryOperator::Positive && unary->op() != UnaryOperator::Negative)
+            return false;
+        node = unary->operand();
+    }
+    return node->kind() == FormulaNodeKind::Number;
+}
+
 std::size_t formulaNodeCount(const FormulaNode *node)
 {
     if (!node)

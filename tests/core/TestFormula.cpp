@@ -41,6 +41,7 @@ class TestFormula : public QObject
 
 private slots:
     void emptyAndNumbers();
+    void constantClassification();
     void precedence();
     void callsAndConditionals();
     void identifiersCommentsAndSubscripts();
@@ -65,6 +66,16 @@ void TestFormula::emptyAndNumbers()
     QCOMPARE(dynamic_cast<const NumberNode *>(positive->operand())->value(), 8.123e-10);
     QVERIFY(!analyzeFormula("1.2.3").issues().empty());
     QVERIFY(!analyzeFormula("1e").issues().empty());
+}
+
+void TestFormula::constantClassification()
+{
+    for (const QString &source : {QStringLiteral("0"), QStringLiteral(".375"), QStringLiteral("14."),
+                                  QStringLiteral("6E5"), QStringLiteral("+8.123e-10"), QStringLiteral("-1")})
+        QVERIFY(isConstantFormula(source));
+    for (const QString &source : {QString(), QStringLiteral("A"), QStringLiteral("1 + 2"),
+                                  QStringLiteral("1.2.3"), QStringLiteral("NOT 1")})
+        QVERIFY(!isConstantFormula(source));
 }
 
 void TestFormula::precedence()

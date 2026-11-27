@@ -142,7 +142,7 @@ void SimulationResultsWidget::refreshWorkbench()
     QSet<QString> seenNames;
     for (const NamedRun &candidate : m_controller->runs()) {
         for (const RunVariableInfo &variable : candidate.variables()) {
-            if (variable.kind() != qds::core::ElementKind::Constant && !seenNames.contains(variable.nameKey())) {
+            if (!variable.isConstant() && !seenNames.contains(variable.nameKey())) {
                 seenNames.insert(variable.nameKey());
                 availableVariables.push_back(variable);
             }

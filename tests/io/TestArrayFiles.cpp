@@ -50,8 +50,8 @@ void TestArrayFiles::arrayRoundTrips()
     Document document;
     document.defineDimension("Location", {"Boston", "New York"});
     document.defineDimension("N", 2);
-    const EntityId apply = document.createVariable(ElementKind::Auxiliary);
-    const EntityId individual = document.createVariable(ElementKind::Auxiliary);
+    const EntityId apply = document.createVariable(ElementKind::Variable);
+    const EntityId individual = document.createVariable(ElementKind::Variable);
     document.rename(apply, "Apply");
     document.rename(individual, "Individual");
     document.setDimensions(apply, {"Location", "N"});

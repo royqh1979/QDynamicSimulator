@@ -511,7 +511,7 @@ QVector<EntityId> DocumentController::pasteClipboard(const ClipboardData &clipbo
             ElementData target = source;
             target.id = id;
             target.position = source.position + Vec2({offset.x(), offset.y()});
-            if (source.kind <= ElementKind::Data)
+            if (source.kind <= ElementKind::Variable)
                 target.displayName = uniqueCopyName(m_document, source.displayName);
             if (source.kind == ElementKind::Flow)
                 target.flowEndpoints = {idMap[source.flowEndpoints.from], idMap[source.flowEndpoints.to]};

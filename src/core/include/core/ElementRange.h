@@ -23,7 +23,7 @@ class ElementRange
         if constexpr (std::is_same_v<T, DocumentElement>) {
             return true;
         } else if constexpr (std::is_same_v<T, ModelElement>) {
-            return kind <= ElementKind::Data;
+            return kind <= ElementKind::Variable;
         } else {
             return kind >= ElementKind::Connector;
         }

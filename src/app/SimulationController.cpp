@@ -1,6 +1,7 @@
 #include "SimulationController.h"
 
 #include "DocumentController.h"
+#include <core/formula/Formula.h>
 #include <io/DocumentFile.h>
 
 #include <QThread>
@@ -64,12 +65,13 @@ private:
 
 } // namespace
 
-RunVariableInfo::RunVariableInfo(EntityId id, QString displayName, QString nameKey, QString unit, ElementKind kind)
+RunVariableInfo::RunVariableInfo(EntityId id, QString displayName, QString nameKey, QString unit, ElementKind kind, bool constant)
     : m_id(id)
     , m_displayName(std::move(displayName))
     , m_nameKey(std::move(nameKey))
     , m_unit(std::move(unit))
     , m_kind(kind)
+    , m_constant(constant)
 {
 }
 
@@ -155,7 +157,8 @@ bool SimulationController::start(const QString &runName, bool overwrite)
     for (EntityId id : compiled.plan->outputOrder()) {
         const auto *element = dynamic_cast<const ModelElement *>(model->find(id));
         if (element)
-            variables.push_back(RunVariableInfo(id, element->displayName(), element->nameKey(), element->unit(), element->kind()));
+            variables.push_back(RunVariableInfo(id, element->displayName(), element->nameKey(), element->unit(), element->kind(),
+                element->kind() == ElementKind::Variable && isConstantFormula(element->equation())));
     }
     m_activeRequest = std::make_shared<SimulationRunRequest>(std::move(model), std::move(*compiled.plan), name,
         m_documentController->simulationRevision(), std::move(variables));

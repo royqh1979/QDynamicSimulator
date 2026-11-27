@@ -8,7 +8,7 @@
 
 首个可运行闭环只包含：
 
-- 标量 Stock、Flow、Auxiliary、Constant；
+- 标量 Stock、Flow、Variable；常量与辅助计算共用 Variable，由公式区分；
 - 当前已经实现的纯数学、时间、条件和宏公式；
 - Euler 与 RK4；
 - 起止时间、DT、结果保存间隔；
@@ -141,7 +141,7 @@ SimulationRun                     一次已结束运行的不可变结果
 本设计对应为：
 
 1. **Preparation**：先求值全部 Constant。Data 读取、Data 方程和初始时间数据值属于后续 Data 阶段；首批含 Data 输入时明确拒绝运行。
-2. **Initialization**：按初始公式依赖递归求值 Stock；尚未计算的输入按需递归计算，直到 Constant/Data 或检测到环。初始环报告 simultaneous initial equation 类诊断，不能当作普通运行期环。该过程可产生初始化专用 Auxiliary 值。
+2. **Initialization**：按初始公式依赖递归求值 Stock；尚未计算的输入按需递归计算，直到数值常量、外部输入或检测到环。初始环报告 simultaneous initial equation 类诊断，不能当作普通运行期环。该过程可产生初始化专用 Variable 值。
 3. **Computation of Auxiliaries**：在 Stock 已有初值后，按运行期依赖计算全部 Auxiliary 和 Flow；未计算输入按需递归，终止于 Constant、Data 或当前 Stock。实际拓扑顺序在运行前确定，不依赖 Document 创建顺序。
 4. **Storage of Results**：普通 Euler/RK4 在新速率计算完成后保存当前 Stock 及由这些 Stock 产生的 Auxiliary/Flow，即“Level 和由 Level 得到的值”。Difference 虽然使用相同的状态推进，但在新速率计算前记录，即“Level 和产生这些 Level 的值”；首次记录时部分 Auxiliary 可为缺失值。Diff/Difference 不在当前首批范围内，后续实现不得复用 Euler 的记录时点。
 5. **Computation of Net Rates**：基于当前 Auxiliary/Flow 计算每个 Stock 的净流入。
