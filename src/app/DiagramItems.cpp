@@ -8,6 +8,7 @@
 #include <QPainterPath>
 #include <QSignalBlocker>
 #include <QStyleOptionGraphicsItem>
+#include <QTransform>
 
 #include <algorithm>
 #include <cmath>
@@ -33,7 +34,9 @@ QPainterPath cloudOutline()
     path.cubicTo(48.0, 20.0, 25.0, 27.0, 12.0, 19.0);
     path.cubicTo(-5.0, 28.0, -30.0, 25.0, -35.0, 12.0);
     path.closeSubpath();
-    return path;
+    QTransform scale;
+    scale.scale(0.4, 0.4);
+    return scale.map(path);
 }
 
 QPolygonF offsetPolygon(const QPolygonF &points, double offset)
@@ -348,6 +351,8 @@ int ViewObjectItem::type() const
 
 QRectF ViewObjectItem::boundingRect() const
 {
+    if (m_kind == qds::core::ElementKind::Cloud)
+        return cloudOutline().boundingRect().adjusted(-2.0, -2.0, 2.0, 2.0);
     return QRectF(-65.0, -32.0, 130.0, 72.0);
 }
 
@@ -473,7 +478,7 @@ void RoutedItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWid
         for (const QLineF &guide : guides)
             painter->drawLine(guide);
     }
-    const QPen pen = outlinePen(diagram_palette::FlowOutlineColor, 2.4, 3.4);
+    const QPen pen = outlinePen(diagram_palette::EntityOutlineColor, 2.4, 3.4);
     painter->setPen(pen);
     painter->setBrush(pen.color());
     for (const QPainterPath &path : linePaths())

@@ -10,7 +10,6 @@ inline const QColor EntityOutlineColor(45, 55, 65);
 inline const QColor EntityTextColor(25, 30, 35);
 inline const QColor EntityFillColor(Qt::white);
 inline const QColor CommentFillColor(255, 250, 205);
-inline const QColor FlowOutlineColor(45, 100, 160);
 inline const QColor ArrowOutlineColor(75, 85, 95);
 inline const QColor ControlGuideColor(70, 95, 120);
 inline const QColor SourceHandleColor(50, 160, 90);

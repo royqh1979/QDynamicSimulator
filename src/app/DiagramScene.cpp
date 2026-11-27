@@ -94,14 +94,14 @@ DiagramScene::DiagramScene(DocumentController *controller, QObject *parent)
 
 DiagramScene::~DiagramScene()
 {
-    finishInlineRename(false);
+    finishInlineEdit(false);
     disconnect(this, &QGraphicsScene::selectionChanged, this, &DiagramScene::syncControlPoints);
     m_controlHandles.clear();
 }
 
 void DiagramScene::setTool(Tool tool)
 {
-    finishInlineRename(false);
+    finishInlineEdit(false);
     m_tool = tool;
     m_connectionSource = 0;
     cancelRubberLine();
@@ -299,13 +299,13 @@ QImage DiagramScene::renderImage(bool selectionOnly)
     const QList<QGraphicsItem *> selection = selectedItems();
     const bool gridVisible = m_gridVisible;
     const bool rubberVisible = m_rubberLine && m_rubberLine->isVisible();
-    const bool editorVisible = m_inlineNameEditor && m_inlineNameEditor->isVisible();
-    QWidget *editorWidget = m_inlineNameEditor ? m_inlineNameEditor->widget() : nullptr;
+    const bool editorVisible = m_inlineEditor && m_inlineEditor->isVisible();
+    QWidget *editorWidget = m_inlineEditor ? m_inlineEditor->widget() : nullptr;
     const bool editorSignalsBlocked = editorWidget && editorWidget->blockSignals(true);
     if (m_rubberLine)
         m_rubberLine->hide();
-    if (m_inlineNameEditor)
-        m_inlineNameEditor->hide();
+    if (m_inlineEditor)
+        m_inlineEditor->hide();
     clearSelection();
     setGridVisible(false);
     {
@@ -337,8 +337,8 @@ QImage DiagramScene::renderImage(bool selectionOnly)
         item->setSelected(true);
     if (m_rubberLine)
         m_rubberLine->setVisible(rubberVisible);
-    if (m_inlineNameEditor)
-        m_inlineNameEditor->setVisible(editorVisible);
+    if (m_inlineEditor)
+        m_inlineEditor->setVisible(editorVisible);
     if (editorWidget)
         editorWidget->blockSignals(editorSignalsBlocked);
     return image;
@@ -595,11 +595,23 @@ void DiagramScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
 
 void DiagramScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
 {
-    finishInlineRename(true);
-    auto *item = dynamic_cast<DiagramItem *>(itemAt(event->scenePos(), QTransform()));
-    if (event->button() == Qt::LeftButton && item
-        && dynamic_cast<const ModelElement *>(m_controller->document().find(item->id()))) {
-        beginInlineRename(item);
+    finishInlineEdit(true);
+    DiagramItem *item = nullptr;
+    const QList<QGraphicsItem *> candidates = items(event->scenePos(), Qt::IntersectsItemBoundingRect);
+    for (QGraphicsItem *candidate : candidates) {
+        auto *flow = dynamic_cast<FlowItem *>(candidate);
+        if (flow && flow->labelRect().contains(flow->mapFromScene(event->scenePos()))) {
+            item = flow;
+            break;
+        }
+    }
+    if (!item)
+        item = dynamic_cast<DiagramItem *>(itemAt(event->scenePos(), QTransform()));
+    const DocumentElement *element = item ? m_controller->document().find(item->id()) : nullptr;
+    const bool editable = dynamic_cast<const ModelElement *>(element) || dynamic_cast<const Comment *>(element);
+    const bool inLabel = item && item->labelRect().contains(item->mapFromScene(event->scenePos()));
+    if (event->button() == Qt::LeftButton && editable && (item->type() != FlowItem::Type || inLabel)) {
+        beginInlineEdit(item);
         event->accept();
         return;
     }
@@ -619,7 +631,7 @@ void DiagramScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
 void DiagramScene::applyChangeNotification(const ChangeNotification &notification)
 {
     if (notification.documentReset) {
-        finishInlineRename(false);
+        finishInlineEdit(false);
         m_controlHandles.clear();
         m_obstacles.clear();
         m_rubberLine = nullptr;
@@ -638,8 +650,8 @@ void DiagramScene::applyChangeNotification(const ChangeNotification &notificatio
     }
 
     for (EntityId id : notification.removed) {
-        if (id == m_inlineNameId)
-            finishInlineRename(false);
+        if (id == m_inlineEditId)
+            finishInlineEdit(false);
         m_obstacles.remove(id);
         DiagramItem *item = m_items.take(id);
         delete item;
@@ -906,39 +918,41 @@ void DiagramScene::cancelEndpointPreview()
 
 bool DiagramScene::eventFilter(QObject *watched, QEvent *event)
 {
-    if (m_inlineNameEditor && watched == m_inlineNameEditor->widget()
+    if (m_inlineEditor && watched == m_inlineEditor->widget()
         && event->type() == QEvent::KeyPress && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
-        finishInlineRename(false);
+        finishInlineEdit(false);
         return true;
     }
     return QGraphicsScene::eventFilter(watched, event);
 }
 
-void DiagramScene::beginInlineRename(DiagramItem *item)
+void DiagramScene::beginInlineEdit(DiagramItem *item)
 {
-    const auto *model = item ? dynamic_cast<const ModelElement *>(m_controller->document().find(item->id())) : nullptr;
-    if (!model || item->labelRect().isEmpty())
+    const DocumentElement *element = item ? m_controller->document().find(item->id()) : nullptr;
+    const auto *model = dynamic_cast<const ModelElement *>(element);
+    const auto *comment = dynamic_cast<const Comment *>(element);
+    if ((!model && !comment) || item->labelRect().isEmpty())
         return;
-    finishInlineRename(true);
+    finishInlineEdit(true);
     const QRectF editorRect = item->mapToScene(item->labelRect()).boundingRect().adjusted(-2.0, -2.0, 2.0, 2.0);
     auto *proxy = new QGraphicsProxyWidget;
     auto *editor = new QLineEdit;
-    editor->setObjectName(QStringLiteral("inlineNameEditor"));
+    editor->setObjectName(comment ? QStringLiteral("inlineCommentEditor") : QStringLiteral("inlineNameEditor"));
     editor->setFont(item->labelFont());
     editor->setStyleSheet(QStringLiteral("QLineEdit { border: 2px solid %1; border-radius: 4px; padding: 2px 4px; background: %2; color: %3; }")
         .arg(diagram_palette::SelectionColor.name(), diagram_palette::EntityFillColor.name(), diagram_palette::EntityTextColor.name()));
-    editor->setText((model->displayName()));
+    editor->setText(comment ? comment->content() : model->displayName());
     editor->resize(editorRect.size().toSize());
     proxy->setWidget(editor);
     proxy->setPos(editorRect.topLeft());
     proxy->setZValue(30.0);
     addItem(proxy);
-    m_inlineNameEditor = proxy;
-    m_inlineNameId = item->id();
+    m_inlineEditor = proxy;
+    m_inlineEditId = item->id();
     clearSelection();
     item->setSelected(true);
     connect(editor, &QLineEdit::editingFinished, this, [this]() {
-        finishInlineRename(true);
+        finishInlineEdit(true);
     });
     connect(editor, &QLineEdit::textChanged, this, [this, editor]() {
         QToolTip::hideText();
@@ -949,23 +963,27 @@ void DiagramScene::beginInlineRename(DiagramItem *item)
     editor->selectAll();
 }
 
-void DiagramScene::finishInlineRename(bool commit)
+void DiagramScene::finishInlineEdit(bool commit)
 {
-    if (!m_inlineNameEditor) {
-        m_inlineNameId = 0;
+    if (!m_inlineEditor) {
+        m_inlineEditId = 0;
         return;
     }
-    QGraphicsProxyWidget *proxy = m_inlineNameEditor;
+    QGraphicsProxyWidget *proxy = m_inlineEditor;
     auto *editor = qobject_cast<QLineEdit *>(proxy->widget());
-    if (commit && editor && !m_controller->renameElement(m_inlineNameId, editor->text())) {
-        editor->setToolTip(tr("The name cannot be empty or duplicate another variable."));
-        QToolTip::showText(editor->mapToGlobal(QPoint(0, editor->height())), editor->toolTip(), editor);
-        editor->setFocus(Qt::OtherFocusReason);
-        editor->selectAll();
-        return;
+    if (commit && editor) {
+        if (dynamic_cast<const Comment *>(m_controller->document().find(m_inlineEditId))) {
+            m_controller->setCommentContent(m_inlineEditId, editor->text());
+        } else if (!m_controller->renameElement(m_inlineEditId, editor->text())) {
+            editor->setToolTip(tr("The name cannot be empty or duplicate another variable."));
+            QToolTip::showText(editor->mapToGlobal(QPoint(0, editor->height())), editor->toolTip(), editor);
+            editor->setFocus(Qt::OtherFocusReason);
+            editor->selectAll();
+            return;
+        }
     }
-    m_inlineNameEditor.clear();
-    m_inlineNameId = 0;
+    m_inlineEditor.clear();
+    m_inlineEditId = 0;
     if (editor)
         editor->blockSignals(true);
     removeItem(proxy);

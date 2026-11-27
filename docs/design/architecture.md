@@ -20,6 +20,7 @@ M1 先交付 SFD 建模、方程编辑、Euler/RK4、折线图和文件保存，
 - [SFD 查看与编辑器设计](sfd-editor.md)：完整功能清单、连接线/布线子系统和实施计划。
 - [SFD 核心模型与画布 Item 架构](sfd-item-architecture.md)：DocumentElement、统一 ID 与命名、Flow/Connector、ChangeSet 撤销、ChangeNotification 同步、生命周期及阀门几何。
 - [Vensim、XMILE 与本程序概念对应](vensim-xmile-mapping.md)：元素、Rate、Arrow、Cloud、Comment 的语义和重构边界。
+- [Vensim MDL 导入设计](vensim-mdl.md)：记录解析、多方程归并、名称引用转换、Sketch 映射及兼容边界。
 - [公式分析器设计](formula-analysis.md)：标量 AST、Pratt Parser、符号解析、依赖图、诊断及分阶段实施。
 - [仿真引擎设计](simulation.md)：仿真设置、编译与执行顺序、Euler/RK4、运行结果、状态函数边界及正确性验证。
 - [模拟器界面设计](simulation-ui.md)：运行设置、Worker 生命周期、取消、结果 Dock、折线图和数据表。

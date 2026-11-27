@@ -1,9 +1,11 @@
 #include <io/DocumentFile.h>
 
+#include <io/MdlFile.h>
 #include <io/XmileFile.h>
 
 #include <QCoreApplication>
 #include <QFile>
+#include <QFileInfo>
 #include <QSaveFile>
 #include <QXmlStreamReader>
 #include <QXmlStreamWriter>
@@ -935,6 +937,14 @@ bool DocumentFile::open(const QString &fileName, core::Document &document, Works
 {
     if (nativeFormat)
         *nativeFormat = false;
+    if (QFileInfo(fileName).suffix().compare(QStringLiteral("mdl"), Qt::CaseInsensitive) == 0) {
+        core::Document imported;
+        if (!MdlFile::importFile(fileName, imported, errorMessage))
+            return false;
+        workspace = {};
+        document = std::move(imported);
+        return true;
+    }
     QByteArray contents;
     if (!readFileBytes(fileName, contents, errorMessage))
         return false;

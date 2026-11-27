@@ -1,6 +1,6 @@
 # QDynamicSimulator
 
-QDynamicSimulator 是一款跨平台系统动力学建模与仿真软件。项目采用 C++17、Qt 5 Widgets 和 CMake，以 QDS 为原生模型格式，支持 XMILE 导入/导出，许可证为 GPL v3。
+QDynamicSimulator 是一款跨平台系统动力学建模与仿真软件。项目采用 C++17、Qt 5 Widgets 和 CMake，以 QDS 为原生模型格式，支持 XMILE 导入/导出及 Vensim MDL 导入，许可证为 GPL v3。
 
 当前已实现 SFD 编辑闭环：创建存量、流量、通用 Variable、云团和注释，移动、框选、删除与连线，编辑名称和方程，以及打开和保存 QDS 文件。`.qds` 是 ZIP deflate 容器，内部只有一个 `document.xml`；XMILE 1.1 仅作为未压缩 XML 导入/导出。当前还支持标量模型的 Euler/RK4 模拟、命名 Run、结果表格和多 Run 折线图。完整需求见 [requirement.md](requirement.md)。
 
@@ -17,9 +17,11 @@ QDynamicSimulator 是一款跨平台系统动力学建模与仿真软件。项�
 - 连接线显示在实体上方；仅单独选中一条贝塞尔曲线时，以清晰的深色虚线显示端点到控制点的辅助线，多选和框选过程中隐藏辅助线及控制句柄。
 - Ctrl+Z 撤销、Ctrl+Y 重做，覆盖创建、删除、移动、连线、重命名、方程和路径编辑。
 - 独立 `PropertyPanel` 属性组件编辑名称、方程、单位和说明；选中注释时编辑正文并同步画布，支持撤销/重做，可脱离主窗口独立测试；模型检查面板可定位错误。
+- 双击 Stock/Variable 编辑名称，Flow 仅在名称区域双击重命名，Comment 双击编辑正文；Cloud 使用小尺寸云形，连接端点与命中区域同步缩小。
 - 支持复制、剪切、粘贴、Duplicate、最近文件、搜索定位、缩略导航图和定时恢复副本。
-- Ctrl+O 打开，Ctrl+S 保存；打开和拖放均支持 `.qds` 与未压缩 `.xmile`，按内容选择加载通道。Save As 只生成 `.qds`，Export XMILE 生成未压缩 XML。
+- Ctrl+O 打开，Ctrl+S 保存；打开和拖放均支持 `.qds`、未压缩 `.xmile/.xml` 与 Vensim `.mdl`。QDS/XMILE 按内容选择加载通道，MDL 按后缀导入。Save As 只生成 `.qds`，Export XMILE 生成未压缩 XML。
 - 打开缺少视图或路径的纯 XMILE 时自动补齐可见变量、Flow 和 Cloud；原生 QDS 通过 uid 保持相同内容 Comment 的各自连接关系。
+- MDL 导入保留基本方程、数组定义、表达式宏、仿真设置和主要 Sketch，带空格变量引用自动转换为带引号的 XMILE 形式。不能映射的结构明确报错；当前兼容边界和后续项目见 `requirement.md` 与 `docs/design/vensim-mdl.md`。
 - Simulation 菜单设置起止时间、DT/SAVEPER 和 Euler/RK4，命名并运行模型；Run results 支持 Workbench Variable、Datasets 加载状态、时间表及多 Run 折线图。
 
 ## 环境要求
@@ -43,7 +45,7 @@ cmake --build R:/build-qdynamic-simulator-qt5-release --parallel
 
 ## 测试
 
-常规回归使用 `all-test-targets` 和 `ctest --output-on-failure`。`QDS_ENABLE_XMILE_CORPUS_TESTS` 默认 OFF；修改 XMILE 导入时，配置该选项为 ON 并运行 `io-xmile-corpus`，将验证 `samples/SIR/SIR.xmile` 和全部 67 个 SDXorg XMILE 文件。公式引用变量的孤立判断暂缓并在输出中列出，不支持结构和损坏 XML 必须明确拒绝。
+常规回归使用 `all-test-targets` 和 `ctest --output-on-failure`。MDL 专项测试为 `io-mdl`，Release 性能测量运行 `tests/profile/profile-mdl.exe 50`，用法见 `docs/profile/vensim-mdl.md`。`QDS_ENABLE_XMILE_CORPUS_TESTS` 默认 OFF；修改 XMILE 导入时，配置该选项为 ON 并运行 `io-xmile-corpus`，将验证 `samples/SIR/SIR.xmile` 和全部 67 个 SDXorg XMILE 文件。公式引用变量的孤立判断暂缓并在输出中列出，不支持结构和损坏 XML 必须明确拒绝。
 
 ## 目录结构
 

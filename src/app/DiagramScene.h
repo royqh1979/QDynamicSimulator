@@ -90,8 +90,8 @@ private:
     void removeControlPoint(qds::core::EntityId id, int index);
     void updateAutomaticRoute(RoutedItem *item);
     void setEndpointTarget(DiagramItem *target);
-    void beginInlineRename(DiagramItem *item);
-    void finishInlineRename(bool commit);
+    void beginInlineEdit(DiagramItem *item);
+    void finishInlineEdit(bool commit);
     void cancelRubberLine();
     void cancelEndpointPreview();
 
@@ -103,8 +103,8 @@ private:
     QGraphicsLineItem *m_rubberLine = nullptr;
     QPointer<RoutedItem> m_endpointPreviewItem;
     QPointer<DiagramItem> m_endpointTarget;
-    QPointer<QGraphicsProxyWidget> m_inlineNameEditor;
-    qds::core::EntityId m_inlineNameId = 0;
+    QPointer<QGraphicsProxyWidget> m_inlineEditor;
+    qds::core::EntityId m_inlineEditId = 0;
     QList<ControlPointHandle *> m_controlHandles;
     ObstacleIndex m_obstacles;
     OrthogonalRouter m_router;

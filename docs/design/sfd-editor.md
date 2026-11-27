@@ -119,7 +119,7 @@
 ### 3.6 属性与方程编辑
 
 - 属性编辑由独立 `PropertyPanel` Widget 承担，直接依赖 DocumentController/DiagramScene，不依赖 MainWindow；MainWindow 仅负责停靠和保存时调用 commit。名称、方程、单位和说明编辑；选中 Comment 时切换为 Content，正文修改通过 ChangeSet 撤销/重做并同步画布及 XMILE text_box。
-- 双击 Stock、Variable 或 Flow 打开画布内联名称编辑器，编辑器放在公共 `labelRect()` 对应的场景位置并适当扩大；使用 2 像素选中色边框、4 像素圆角和内边距，颜色来自 DiagramPalette，字体与对应 Item 一致。Enter 通过同一 `renameElement()` ChangeSet 提交，Esc 或切换工具取消，空名称/重名保留编辑状态且不生成命令。Arrow 双击仍用于增加控制点。名称、方程、单位和说明均纳入 undo/redo，属性面板逐项提交的测试覆盖完整恢复顺序。
+- 双击 Stock 或 Variable 打开画布内联名称编辑器；Flow 只有双击 `labelRect()` 名称区域才重命名，管线和阀门双击不触发名称编辑。Comment 双击打开正文编辑器并通过 `setCommentContent()` 提交，不调用重命名。编辑器放在公共 `labelRect()` 对应的场景位置并适当扩大；使用 2 像素选中色边框、4 像素圆角和内边距，颜色来自 DiagramPalette，字体与对应 Item 一致。Enter 通过 ChangeSet 提交，Esc 或切换工具取消，空名称/重名保留编辑状态且不生成命令。Arrow 双击仍用于增加控制点。名称、方程、单位和说明均纳入 undo/redo，属性面板逐项提交的测试覆盖完整恢复顺序。
 - commit 先读取全部输入值再执行修改，避免首个 ChangeNotification 刷新输入框时覆盖其他待提交字段。
 - 存量初值及净流入/净流出关系查看。
 - 流量和辅助变量方程编辑。
@@ -183,7 +183,7 @@
 - 根据相邻元素位置自动选择最优连接侧。
 - 存量支持左、右、上、下和自定义端口。
 - Flow 管线由两条平行实线路径组成，Connector/Arrow 使用一条实线路径；二者复用 RoutedItem 绘制、命中和箭头逻辑。Flow 箭头尺寸为 16，双实线在箭头底边前截止，短线空间不足时不绘制管线，避免穿入箭头；流量管线与沙漏形阀门形成连续图形，不出现断缝。
-- 云团和辅助变量使用各自的边界交点。Cloud 的绘制、shape 命中和端点计算共用同一个封闭实线云形 QPainterPath；端点取中心朝向目标的射线与实际轮廓的最近交点，不再按椭圆近似。
+- 云团和辅助变量使用各自的边界交点。Cloud 的绘制、shape 命中和端点计算共用同一个封闭实线云形 QPainterPath，并统一缩放为原尺寸的 0.4；`boundingRect()` 同步缩小，端点取中心朝向目标的射线与实际轮廓的最近交点，不再按椭圆近似。
 - 支持拖动端点重连到其他元素；端点预览期间隐藏中间控制点和辅助线，保留端点句柄，释放或取消后恢复并清除旧预览。
 - 重连时保留可用的中间路径。
 - 同一端口有多条连接时合理错开。
