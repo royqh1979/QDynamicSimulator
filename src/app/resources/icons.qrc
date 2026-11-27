@@ -51,5 +51,7 @@
         <file>icons/run.svg</file>
         <file>icons/cancel.svg</file>
         <file>icons/simulation-settings.svg</file>
+        <file>icons/graph.svg</file>
+        <file>icons/table.svg</file>
     </qresource>
 </RCC>

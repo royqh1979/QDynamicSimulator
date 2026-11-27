@@ -66,3 +66,15 @@ RK4 校验和约为 2.20265e+07。Euler 与 RK4 分列，不用不同方法的�
 | results_dock_refresh | 1000 | 35.3193 | 35.3193 |
 
 真实 MainWindow 测试覆盖首次成功显示、Workbench 与画布单选双向同步、表格末时刻可见、最新 Run 优先、加载状态不删除结果、历史名称、旧模型提示、文档重置清理及无显式选择时优先 Stock。163 条中文翻译全部完成，本次 profile stderr 无警告。
+
+## Qt Charts 大结果集
+
+固定场景由一次 Core 运行生成 100000 个样本和 10 个变量，再构造 10 个共享同一不可变结果的 NamedRun，避免把重复积分计入图表时间。`chart_build_render_100000x10` 包含 10 条 QLineSeries 的创建、批量点输入、坐标轴和真实 Widget 渲染；`chart_zoom_reset_100000x10` 执行 10 次放大、事件处理和完整范围复位；PNG 使用实际渲染 QImage 写盘。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| chart_build_render_100000x10 | 1 | 594.989 | 594989 |
+| chart_png_100000x10 | 1 | 10.1786 | 10178.6 |
+| chart_zoom_reset_100000x10 | 10 | 4102.64 | 410264 |
+
+这些结果用于发现异常和后续同场景回归，不设置当前不需要的极限门槛。MainWindow 集成测试另覆盖 Graph/Table、已加载 Run 数量、图例显隐、常量值坐标余量、滚轮、拖动、双击复位和文档清空；profile stderr 无警告。

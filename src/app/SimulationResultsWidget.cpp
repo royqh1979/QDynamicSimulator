@@ -1,6 +1,7 @@
 #include "SimulationResultsWidget.h"
 
 #include "SimulationTableModel.h"
+#include "TimeSeriesChartWidget.h"
 
 #include <QComboBox>
 #include <QHBoxLayout>
@@ -10,6 +11,7 @@
 #include <QSignalBlocker>
 #include <QSplitter>
 #include <QTableView>
+#include <QTabWidget>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -22,6 +24,8 @@ SimulationResultsWidget::SimulationResultsWidget(SimulationController *controlle
     , m_datasetsList(new QListWidget(this))
     , m_runStatusLabel(new QLabel(this))
     , m_tableModel(new SimulationTableModel(this))
+    , m_chart(new TimeSeriesChartWidget(this))
+    , m_tabs(new QTabWidget(this))
 {
     m_variableCombo->setObjectName(QStringLiteral("workbenchVariableCombo"));
     m_runCombo->setObjectName(QStringLiteral("resultsRunCombo"));
@@ -39,13 +43,15 @@ SimulationResultsWidget::SimulationResultsWidget(SimulationController *controlle
 
     auto *splitter = new QSplitter(Qt::Horizontal, this);
     splitter->addWidget(m_datasetsList);
-    auto *table = new QTableView(splitter);
+    auto *table = new QTableView(m_tabs);
     table->setObjectName(QStringLiteral("resultsTable"));
     table->setModel(m_tableModel);
     table->setSelectionBehavior(QAbstractItemView::SelectItems);
     table->setAlternatingRowColors(true);
     table->horizontalHeader()->setStretchLastSection(true);
-    splitter->addWidget(table);
+    m_tabs->addTab(m_chart, tr("Chart"));
+    m_tabs->addTab(table, tr("Data"));
+    splitter->addWidget(m_tabs);
     splitter->setStretchFactor(0, 0);
     splitter->setStretchFactor(1, 1);
     splitter->setSizes({180, 600});
@@ -66,6 +72,16 @@ SimulationResultsWidget::SimulationResultsWidget(SimulationController *controlle
             m_controller->setRunLoaded(item->data(Qt::UserRole).toULongLong(), item->checkState() == Qt::Checked);
     });
     refreshRuns();
+}
+
+void SimulationResultsWidget::showGraph()
+{
+    m_tabs->setCurrentWidget(m_chart);
+}
+
+void SimulationResultsWidget::showTable()
+{
+    m_tabs->setCurrentIndex(1);
 }
 
 void SimulationResultsWidget::refreshRuns()
@@ -109,6 +125,7 @@ void SimulationResultsWidget::refreshWorkbench()
     m_variableCombo->clear();
     if (!run) {
         m_tableModel->clear();
+        m_chart->setRuns({}, {});
         m_runStatusLabel->setText(tr("No completed runs"));
         m_refreshing = false;
         return;
@@ -136,6 +153,12 @@ void SimulationResultsWidget::refreshWorkbench()
     m_runStatusLabel->setText(tr("%1 — %2 samples%3")
         .arg(run->name()).arg(run->run()->times().size())
         .arg(m_controller->isOutdated(*run) ? tr(", older model") : QString()));
+    QVector<NamedRun> loadedRuns;
+    for (const NamedRun &candidate : m_controller->runs()) {
+        if (m_controller->isRunLoaded(candidate.id()))
+            loadedRuns.push_back(candidate);
+    }
+    m_chart->setRuns(loadedRuns, nameKey);
     m_refreshing = false;
 }
 

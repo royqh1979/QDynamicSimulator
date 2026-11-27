@@ -154,6 +154,14 @@ MainWindow::MainWindow(QWidget *parent)
     }
 }
 
+MainWindow::~MainWindow()
+{
+    if (m_simulation) {
+        disconnect(m_simulation, nullptr, this, nullptr);
+        m_simulation->reset();
+    }
+}
+
 bool MainWindow::openFile(const QString &fileName)
 {
     qds::core::Document document;
@@ -399,9 +407,25 @@ void MainWindow::createActions()
     m_cancelAction = new QAction(actionIcon("cancel"), tr("Cancel"), this);
     m_cancelAction->setObjectName(QStringLiteral("cancelAction"));
     m_cancelAction->setShortcut(QKeySequence(Qt::Key_Escape));
+    QAction *graphAction = new QAction(actionIcon("graph"), tr("Graph"), this);
+    graphAction->setObjectName(QStringLiteral("graphAction"));
+    QAction *tableAction = new QAction(actionIcon("table"), tr("Table"), this);
+    tableAction->setObjectName(QStringLiteral("tableAction"));
+    connect(graphAction, &QAction::triggered, this, [this]() {
+        if (m_resultsDock && m_results) {
+            m_resultsDock->show();
+            m_results->showGraph();
+        }
+    });
+    connect(tableAction, &QAction::triggered, this, [this]() {
+        if (m_resultsDock && m_results) {
+            m_resultsDock->show();
+            m_results->showTable();
+        }
+    });
     m_simulationSettingsAction = new QAction(actionIcon("simulation-settings"), tr("Simulation settings"), this);
     m_simulationSettingsAction->setObjectName(QStringLiteral("simulationSettingsAction"));
-    for (QAction *action : {m_runAction, m_cancelAction, m_simulationSettingsAction}) {
+    for (QAction *action : {m_runAction, m_cancelAction, graphAction, tableAction, m_simulationSettingsAction}) {
         simulationMenu->addAction(action);
         simulationToolBar->addAction(action);
     }
@@ -516,20 +540,20 @@ void MainWindow::createPropertyPanel()
             }
         }
     });
-    QDockWidget *resultsDock = new QDockWidget(tr("Run results"), this);
-    resultsDock->setObjectName(QStringLiteral("resultsDock"));
-    auto *results = new SimulationResultsWidget(m_simulation, resultsDock);
-    resultsDock->setWidget(results);
-    addDockWidget(Qt::BottomDockWidgetArea, resultsDock);
-    resultsDock->hide();
+    m_resultsDock = new QDockWidget(tr("Run results"), this);
+    m_resultsDock->setObjectName(QStringLiteral("resultsDock"));
+    m_results = new SimulationResultsWidget(m_simulation, m_resultsDock);
+    m_resultsDock->setWidget(m_results);
+    addDockWidget(Qt::BottomDockWidgetArea, m_resultsDock);
+    m_resultsDock->hide();
     connect(m_simulation, &SimulationController::runTerminated, this,
-        [this, resultsDock](const std::shared_ptr<const qds::core::SimulationRun> &run) {
+        [this](const std::shared_ptr<const qds::core::SimulationRun> &run) {
             if (run->status() == qds::core::SimulationRunStatus::Completed)
-                resultsDock->show();
+                m_resultsDock->show();
         });
-    connect(m_simulation, &SimulationController::namedRunsChanged, this, [this, resultsDock]() {
+    connect(m_simulation, &SimulationController::namedRunsChanged, this, [this]() {
         if (m_simulation->runs().isEmpty())
-            resultsDock->hide();
+            m_resultsDock->hide();
     });
     connect(m_scene, &QGraphicsScene::selectionChanged, this, [this]() {
         const QList<QGraphicsItem *> selection = m_scene->selectedItems();

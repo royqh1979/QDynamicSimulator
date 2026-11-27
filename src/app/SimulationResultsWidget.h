@@ -11,7 +11,9 @@ class QLabel;
 class QListWidget;
 class QListWidgetItem;
 class QTableView;
+class QTabWidget;
 class SimulationTableModel;
+class TimeSeriesChartWidget;
 
 class SimulationResultsWidget : public QWidget
 {
@@ -19,6 +21,8 @@ class SimulationResultsWidget : public QWidget
 
 public:
     explicit SimulationResultsWidget(SimulationController *controller, QWidget *parent = nullptr);
+    void showGraph();
+    void showTable();
 
 private:
     void refreshRuns();
@@ -31,6 +35,8 @@ private:
     QListWidget *m_datasetsList;
     QLabel *m_runStatusLabel;
     SimulationTableModel *m_tableModel;
+    TimeSeriesChartWidget *m_chart;
+    QTabWidget *m_tabs;
     QSet<RunId> m_knownRuns;
     bool m_refreshing = false;
 };

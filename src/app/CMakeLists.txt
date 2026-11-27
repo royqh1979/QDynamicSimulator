@@ -32,6 +32,8 @@ add_library(qds-editor STATIC
     SimulationSettingsDialog.h
     Translation.cpp
     Translation.h
+    TimeSeriesChartWidget.cpp
+    TimeSeriesChartWidget.h
     resources/icons.qrc
 )
 add_library(QDS::Editor ALIAS qds-editor)
@@ -50,6 +52,7 @@ target_link_libraries(qds-editor
         QDS::IO
         Qt5::Widgets
         Qt5::Svg
+        Qt5::Charts
 )
 
 add_executable(qdynamic-simulator WIN32 MACOSX_BUNDLE main.cpp)

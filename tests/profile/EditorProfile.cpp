@@ -8,11 +8,13 @@
 #include "SimulationResultsWidget.h"
 #include "SimulationSettingsDialog.h"
 #include "SimulationTableModel.h"
+#include "TimeSeriesChartWidget.h"
 #include <io/DocumentFile.h>
 #include <io/XmileFile.h>
 
 #include <QActionGroup>
 #include <QApplication>
+#include <QChart>
 #include <QClipboard>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
@@ -1043,6 +1045,50 @@ int main(int argc, char **argv)
     }
     const qint64 settingsDialogNs = timer.nsecsElapsed();
 
+    Document chartDocument;
+    for (int index = 0; index < 10; ++index) {
+        const EntityId id = chartDocument.createVariable(ElementKind::Auxiliary);
+        chartDocument.setEquation(id, QString::number(index));
+    }
+    chartDocument.setSimulationSettings({0.0, 99999.0, 1.0, 1.0});
+    SimulationCompileResult chartCompiled = compileSimulation(chartDocument);
+    if (!chartCompiled.plan)
+        return 62;
+    auto chartRun = std::make_shared<const SimulationRun>(SimulationRunner(chartDocument, *chartCompiled.plan).run());
+    if (chartRun->status() != SimulationRunStatus::Completed || chartRun->times().size() != 100000)
+        return 63;
+    QVector<RunVariableInfo> chartVariables;
+    for (EntityId id : chartCompiled.plan->outputOrder()) {
+        const auto *element = dynamic_cast<const ModelElement *>(chartDocument.find(id));
+        if (element)
+            chartVariables.push_back(RunVariableInfo(id, element->displayName(), element->nameKey(), element->unit(), element->kind()));
+    }
+    QVector<NamedRun> chartRuns;
+    for (int index = 0; index < 10; ++index)
+        chartRuns.push_back(NamedRun(index + 1, QStringLiteral("Run%1").arg(index + 1), chartRun, 0, chartVariables));
+    TimeSeriesChartWidget chartWidget;
+    chartWidget.resize(1000, 600);
+    chartWidget.show();
+    QApplication::processEvents();
+    timer.restart();
+    chartWidget.setRuns(chartRuns, chartVariables.front().nameKey());
+    QApplication::processEvents();
+    const QImage chartImage = chartWidget.grab().toImage();
+    const qint64 chartRenderNs = timer.nsecsElapsed();
+    const int chartSeriesCount = chartWidget.chart()->series().size();
+    const bool chartImageValid = !chartImage.isNull();
+    timer.restart();
+    const bool chartPngWritten = chartImage.save(directory.filePath(QStringLiteral("chart-profile.png")), "PNG");
+    const qint64 chartPngNs = timer.nsecsElapsed();
+    timer.restart();
+    for (int index = 0; index < 10; ++index) {
+        chartWidget.chart()->zoom(1.01);
+        QApplication::processEvents();
+        chartWidget.resetZoom();
+        QApplication::processEvents();
+    }
+    const qint64 chartZoomNs = timer.nsecsElapsed();
+
     const qint64 commands = controller.undoStack()->count();
     QTextStream(stdout) << "operation,count,total_ms,per_operation_us\n"
                         << "editor_create," << count << "," << createNs / 1e6 << "," << createNs / 1000.0 / count << "\n"
@@ -1103,7 +1149,10 @@ int main(int argc, char **argv)
                         << "results_dock_refresh," << resultsRefreshCount << "," << resultsRefreshNs / 1e6 << ","
                         << resultsRefreshNs / 1000.0 / resultsRefreshCount << "\n"
                         << "simulation_settings_dialog," << settingsDialogCount << "," << settingsDialogNs / 1e6 << ","
-                        << settingsDialogNs / 1000.0 / settingsDialogCount << "\n";
+                        << settingsDialogNs / 1000.0 / settingsDialogCount << "\n"
+                        << "chart_build_render_100000x10,1," << chartRenderNs / 1e6 << "," << chartRenderNs / 1000.0 << "\n"
+                        << "chart_png_100000x10,1," << chartPngNs / 1e6 << "," << chartPngNs / 1000.0 << "\n"
+                        << "chart_zoom_reset_100000x10,10," << chartZoomNs / 1e6 << "," << chartZoomNs / 1000.0 / 10 << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
         && inlineRenameCount == count && areaResizeCount == 1000 && spacePanCount == 1000
         && spaceFocusResetCount == 1000 && cursorStatusCount == 1000
@@ -1127,6 +1176,7 @@ int main(int argc, char **argv)
         && !dependentArrows.empty() && dependentEndpointChecksum != 0.0
         && sessionCount == count && sessionSamples == count * 2 && tableRowCount == count * 2
         && resultsRefreshCount == count && settingsDialogCount == count
+        && chartSeriesCount == 10 && chartImageValid && chartPngWritten
         && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)
         QTextStream(stderr) << "validation failed: commands=" << commands << ", points=" << pointCount

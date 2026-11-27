@@ -14,10 +14,12 @@
 #include "SimulationResultsWidget.h"
 #include "SimulationSettingsDialog.h"
 #include "SimulationTableModel.h"
+#include "TimeSeriesChartWidget.h"
 #include <io/DocumentFile.h>
 #include <io/XmileFile.h>
 
 #include <QAbstractButton>
+#include <QChart>
 #include <QClipboard>
 #include <QComboBox>
 #include <QVector>
@@ -37,6 +39,8 @@
 #include <QImageReader>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLineSeries>
+#include <QLegendMarker>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -53,8 +57,11 @@
 #include <QTimer>
 #include <QToolBar>
 #include <QTableView>
+#include <QTabWidget>
+#include <QValueAxis>
 #include <QTranslator>
 #include <QUrl>
+#include <QWheelEvent>
 #include <QRegularExpression>
 #include <QtTest>
 
@@ -2795,7 +2802,9 @@ void TestEditor::resultsDock()
     auto *table = window.findChild<QTableView *>(QStringLiteral("resultsTable"));
     auto *status = window.findChild<QLabel *>(QStringLiteral("runStatusLabel"));
     auto *model = qobject_cast<SimulationTableModel *>(table->model());
-    QVERIFY(variables && runs && datasets && table && status && model);
+    auto *chart = window.findChild<TimeSeriesChartWidget *>();
+    auto *tabs = window.findChild<QTabWidget *>();
+    QVERIFY(variables && runs && datasets && table && status && model && chart && tabs);
     QCOMPARE(variables->currentData().toString(), QStringLiteral("population"));
     QCOMPARE(runs->currentText(), QStringLiteral("equilib"));
     QCOMPARE(datasets->count(), 1);
@@ -2805,22 +2814,58 @@ void TestEditor::resultsDock()
     QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("Population [rabbit]"));
     const QModelIndex last = model->index(model->rowCount() - 1, 1);
     QCOMPARE(model->data(last).toString(), QStringLiteral("1000"));
+    window.findChild<QAction *>(QStringLiteral("tableAction"))->trigger();
     table->scrollTo(last);
     QTRY_VERIFY(table->viewport()->rect().intersects(table->visualRect(last)));
     QCOMPARE(table->verticalScrollBar()->value(), table->verticalScrollBar()->maximum());
+    QCOMPARE(chart->chart()->series().size(), 1);
+    window.findChild<QAction *>(QStringLiteral("graphAction"))->trigger();
+    QCOMPARE(tabs->currentWidget(), chart);
+    window.findChild<QAction *>(QStringLiteral("tableAction"))->trigger();
+    QVERIFY(tabs->currentWidget() != chart);
+    window.findChild<QAction *>(QStringLiteral("graphAction"))->trigger();
+    QVERIFY(!chart->grab().isNull());
+    auto *timeAxis = qobject_cast<QtCharts::QValueAxis *>(chart->chart()->axes(Qt::Horizontal).front());
+    auto *valueAxis = qobject_cast<QtCharts::QValueAxis *>(chart->chart()->axes(Qt::Vertical).front());
+    QVERIFY(valueAxis->min() < 1000.0 && valueAxis->max() > 1000.0);
+    const double initialMin = timeAxis->min();
+    const double initialMax = timeAxis->max();
+    const QPoint wheelPosition = chart->rect().center();
+    QWheelEvent chartWheel(wheelPosition, chart->mapToGlobal(wheelPosition), QPoint(), QPoint(0, 120),
+                           Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(chart->viewport(), &chartWheel);
+    QTRY_VERIFY(timeAxis->max() - timeAxis->min() < initialMax - initialMin);
+    const double zoomedMin = timeAxis->min();
+    const QPoint panStart = chart->rect().center();
+    const QPoint panEnd = panStart + QPoint(30, 20);
+    QMouseEvent chartPress(QEvent::MouseButtonPress, panStart, chart->mapToGlobal(panStart), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(chart->viewport(), &chartPress);
+    QMouseEvent chartMove(QEvent::MouseMove, panEnd, chart->mapToGlobal(panEnd), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(chart->viewport(), &chartMove);
+    QMouseEvent chartRelease(QEvent::MouseButtonRelease, panEnd, chart->mapToGlobal(panEnd), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(chart->viewport(), &chartRelease);
+    QVERIFY(timeAxis->min() != zoomedMin);
+    QMouseEvent chartDoubleClick(QEvent::MouseButtonDblClick, panStart, chart->mapToGlobal(panStart), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(chart->viewport(), &chartDoubleClick);
+    QApplication::sendEvent(chart->viewport(), &chartRelease);
+    QCOMPARE(timeAxis->min(), initialMin);
+    QCOMPARE(timeAxis->max(), initialMax);
 
     scene->clearSelection();
     scene->item(auxiliary)->setSelected(true);
     QCOMPARE(variables->currentData().toString(), QStringLiteral("birth_rate"));
     QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("birth rate [fraction/Year]"));
     QCOMPARE(model->data(model->index(model->rowCount() - 1, 1)).toString(), QStringLiteral("0.125"));
+    QCOMPARE(chart->chart()->series().size(), 1);
+    QVERIFY(chart->chart()->series().front()->name().contains(QStringLiteral("birth rate")));
+    auto *constantAxis = qobject_cast<QtCharts::QValueAxis *>(chart->chart()->axes(Qt::Vertical).front());
+    QVERIFY(constantAxis->min() < 0.125 && constantAxis->max() > 0.125);
     const int populationIndex = variables->findData(QStringLiteral("population"));
     QVERIFY(populationIndex >= 0);
     variables->setCurrentIndex(populationIndex);
     QCOMPARE(simulation->workbenchVariable(), stock);
     QVERIFY(scene->item(stock)->isSelected());
 
-    controller->renameElement(stock, QStringLiteral("Rabbit Population"));
     controller->setEquation(auxiliary, QStringLiteral("0.25"));
     QVERIFY(simulation->start(QStringLiteral("growth")));
     QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
@@ -2828,9 +2873,20 @@ void TestEditor::resultsDock()
     QCOMPARE(datasets->count(), 2);
     QCOMPARE(datasets->item(0)->text(), QStringLiteral("growth"));
     QCOMPARE(runs->currentText(), QStringLiteral("growth"));
+    QCOMPARE(chart->chart()->series().size(), 2);
+    auto *firstSeries = qobject_cast<QtCharts::QLineSeries *>(chart->chart()->series().front());
+    const auto markers = chart->chart()->legend()->markers(firstSeries);
+    QVERIFY(!markers.isEmpty());
+    QMetaObject::invokeMethod(markers.front(), "clicked");
+    QVERIFY(!firstSeries->isVisible());
+    QMetaObject::invokeMethod(markers.front(), "clicked");
+    QVERIFY(firstSeries->isVisible());
+    controller->renameElement(stock, QStringLiteral("Rabbit Population"));
+    simulation->setWorkbenchVariableName(QStringLiteral("population"));
     datasets->item(1)->setCheckState(Qt::Unchecked);
     QVERIFY(!simulation->isRunLoaded(datasets->item(1)->data(Qt::UserRole).toULongLong()));
     QCOMPARE(simulation->runs().size(), 2);
+    QCOMPARE(chart->chart()->series().size(), 1);
 
     runs->setCurrentIndex(1);
     QCOMPARE(variables->currentText(), QStringLiteral("Population"));
@@ -2843,6 +2899,7 @@ void TestEditor::resultsDock()
     QCOMPARE(simulation->workbenchVariable(), EntityId(0));
     QVERIFY(!dock->isVisible());
     QCOMPARE(model->rowCount(), 0);
+    QCOMPARE(chart->chart()->series().size(), 0);
 
     controller->createVariable(ElementKind::Stock, QPointF());
     controller->setInitialEquation(controller->document().findByName("Stock1")->id(), QStringLiteral("10"));
@@ -2851,6 +2908,7 @@ void TestEditor::resultsDock()
     QTRY_VERIFY(!simulation->isBusy());
     QCOMPARE(variables->currentData().toString(), QStringLiteral("stock1"));
     QCOMPARE(model->rowCount(), simulation->runs().front().run()->times().size());
+    QCOMPARE(chart->chart()->series().size(), 1);
 }
 
 void TestEditor::simulationSettingsAction()
@@ -3035,6 +3093,8 @@ void TestEditor::simplifiedChineseTranslation()
     for (QAction *action : window.findChildren<QAction *>())
         hasStock = hasStock || action->text() == QStringLiteral("\u5B58\u91CF");
     QVERIFY(hasStock);
+    QCOMPARE(window.findChild<QAction *>(QStringLiteral("graphAction"))->text(), QStringLiteral("\u6298\u7EBF\u56FE"));
+    QCOMPARE(window.findChild<QAction *>(QStringLiteral("tableAction"))->text(), QStringLiteral("\u8868\u683C"));
     auto *resultsDock = window.findChild<QDockWidget *>(QStringLiteral("resultsDock"));
     auto *results = window.findChild<SimulationResultsWidget *>();
     QVERIFY(resultsDock && results);

@@ -2,7 +2,7 @@
 
 ## 1. 范围与当前基础
 
-状态：运行会话、SimulationSettingsDialog、Run Name/Enter、Run/Cancel、设置撤销和诊断定位已实现；最小 Run results Dock 已覆盖 Workbench Variable、最新优先 Datasets、加载状态、单变量表格、历史名称和过期提示。多变量可见性、结果导出与 Qt Charts 尚未开始。
+状态：运行会话、SimulationSettingsDialog、Run Name/Enter、Run/Cancel、设置撤销和诊断定位已实现；最小 Run results Dock 已覆盖 Workbench Variable、最新优先 Datasets、加载状态、单变量表格、历史名称和过期提示。Qt Charts 基础折线图已实现，支持多 Run 叠加、图例显隐、缩放、平移和完整范围复位；多变量可见性、最近样本提示与结果导出尚未开始。
 
 当前 Core 已提供 SimulationSettings、SimulationPlan、同步 SimulationRunner 和不可变 SimulationRun。本设计覆盖建模到运行的完整工作流、命名结果、Workbench Variable、折线图和数据表。命名多 Run 与叠加比较属于基本结果管理；数组、参数扫描、批量实验和蒙特卡洛仍不提前混入首批实现。
 
@@ -151,7 +151,7 @@ NamedRun 发布后不可变；覆盖同名结果也创建新 RunId 和新结果�
 - 完成后 UI 接收 `shared_ptr<const SimulationRun>`；Worker 不保留可修改结果。
 - Cancel 只设置线程安全标志并请求 Runner 协作取消，不强制终止线程。
 - 新 Run 必须等待旧 Worker 完全退出；不并行覆盖 activeRequest。
-- 新建、打开、替换 Document 或关闭 MainWindow 时先取消并等待 Worker，再清理会话； queued signal 使用 Controller 作为 context，Controller 析构后不得访问窗口。
+- 新建、打开、替换 Document 或关闭 MainWindow 时先取消并等待 Worker，再清理会话； queued signal 使用 Controller 作为 context，Controller 析构后不得访问窗口。MainWindow 析构入口先断开 SimulationController 到窗口的连接，再取消并等待 Worker，防止 reset 状态通知访问正在销毁的 Dock 或状态栏。
 - 不用裸指针捕获 Worker、Controller 或 MainWindow 给长命 lambda。QThread 的 finished 与对象销毁顺序必须专门测试。
 
 首批 UI 不使用“在 UI 线程反复 processEvents”的伪异步方案，避免重入修改 Document 或关闭窗口。
@@ -186,7 +186,7 @@ NamedRun 发布后不可变；覆盖同名结果也创建新 RunId 和新结果�
 - 空选择显示提示，不生成空图片覆盖剪贴板；
 - PNG 导出使用离屏渲染，不截取屏幕。
 
-已确定使用官方 Qt Charts，不再引入 QCustomPlot 或维护通用自绘图表框架。Qt Charts 只进入应用层，Core 不依赖它；TimeSeriesChartWidget 继续隔离图表实现。10 万样本、10 条序列、连续缩放和 PNG 输出仍作为回归 profile 场景，用于发现异常，不设置当前不需要的极限性能门槛。置信区间带、Causes Strip 等领域图形可在 Qt Charts 基础上组合或少量自绘。
+已确定使用官方 Qt Charts，不再引入 QCustomPlot 或维护通用自绘图表框架。Qt Charts 只进入应用层，Core 不依赖它；TimeSeriesChartWidget 继续隔离图表实现。Graph/Table 共用 Simulation 菜单和工具栏 QAction，并切换结果 Dock 的 Chart/Data 标签。当前图表默认叠加全部已加载 Run，图例显示 Run Name 与变量名；滚轮缩放、左键拖动平移，双击同时恢复缩放和平移前的完整坐标范围。10 万样本、10 条序列、连续缩放和 PNG 输出仍作为回归 profile 场景，用于发现异常，不设置当前不需要的极限性能门槛。置信区间带、Causes Strip 等领域图形可在 Qt Charts 基础上组合或少量自绘。
 
 ### 4.2 数据表
 

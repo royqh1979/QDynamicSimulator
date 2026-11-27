@@ -2,7 +2,7 @@
 
 QDynamicSimulator 是一款跨平台系统动力学建模与仿真软件。项目采用 C++17、Qt 5 Widgets 和 CMake，以 QDS 为原生模型格式，支持 XMILE 导入/导出，许可证为 GPL v3。
 
-当前已实现 SFD 编辑闭环：创建存量、流量、辅助变量、常量、Data（数据）、云团和注释，移动、框选、删除与连线，编辑名称和方程，以及打开和保存 QDS 文件。`.qds` 是 ZIP deflate 容器，内部只有一个 `document.xml`；XMILE 1.1 仅作为未压缩 XML 导入/导出。尚未实现仿真。完整需求见 [requirement.md](requirement.md)。
+当前已实现 SFD 编辑闭环：创建存量、流量、辅助变量、常量、Data（数据）、云团和注释，移动、框选、删除与连线，编辑名称和方程，以及打开和保存 QDS 文件。`.qds` 是 ZIP deflate 容器，内部只有一个 `document.xml`；XMILE 1.1 仅作为未压缩 XML 导入/导出。当前还支持标量模型的 Euler/RK4 模拟、命名 Run、结果表格和多 Run 折线图。完整需求见 [requirement.md](requirement.md)。
 
 ## 基本操作
 
@@ -20,12 +20,13 @@ QDynamicSimulator 是一款跨平台系统动力学建模与仿真软件。项�
 - 支持复制、剪切、粘贴、Duplicate、最近文件、搜索定位、缩略导航图和定时恢复副本。
 - Ctrl+O 打开，Ctrl+S 保存；打开和拖放均支持 `.qds` 与未压缩 `.xmile`，按内容选择加载通道。Save As 只生成 `.qds`，Export XMILE 生成未压缩 XML。
 - 打开缺少视图或路径的纯 XMILE 时自动补齐可见变量、Flow 和 Cloud；原生 QDS 通过 uid 保持相同内容 Comment 的各自连接关系。
+- Simulation 菜单设置起止时间、DT/SAVEPER 和 Euler/RK4，命名并运行模型；Run results 支持 Workbench Variable、Datasets 加载状态、时间表及多 Run 折线图。
 
 ## 环境要求
 
 - CMake 3.16 或更高版本
 - 支持 C++17 的编译器
-- Qt 5.12 或更高版本（Widgets、Svg、LinguistTools 模块）
+- Qt 5.12 或更高版本（Widgets、Svg、Charts、LinguistTools 模块）
 
 ## 构建
 

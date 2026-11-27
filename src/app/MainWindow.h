@@ -17,6 +17,7 @@ class DiagramView;
 class DocumentController;
 class PropertyPanel;
 class SimulationController;
+class SimulationResultsWidget;
 
 namespace qds::io {
 struct Workspace;
@@ -28,6 +29,7 @@ class MainWindow : public QMainWindow
 
 public:
     explicit MainWindow(QWidget *parent = nullptr);
+    ~MainWindow() override;
     bool openFile(const QString &fileName);
     bool exportPng(const QString &fileName);
     void copyPng();
@@ -69,6 +71,8 @@ private:
 
     DocumentController *m_controller;
     SimulationController *m_simulation;
+    SimulationResultsWidget *m_results = nullptr;
+    QDockWidget *m_resultsDock = nullptr;
     DiagramScene *m_scene;
     DiagramView *m_view;
     PropertyPanel *m_propertyPanel = nullptr;
