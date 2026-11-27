@@ -341,7 +341,9 @@ AnalysisReport analyzeDocument(const Document &document)
             result.addStructuralUse(flow.endpoints().to);
             result.addStructuralUse(flow.id());
         }
-        result.commit(element.id(), resolveFormula(document, result, element.id(), element.formula()));
+        const Formula &formula = element.kind() == ElementKind::Stock
+            ? static_cast<const Stock &>(element).initialFormula() : element.formula();
+        result.commit(element.id(), resolveFormula(document, result, element.id(), formula));
         for (const ArrayElementFormula &entry : element.elementEquations())
             result.commit(element.id(), resolveFormula(document, result, element.id(), entry.formula()));
         if (!element.elementEquations().empty()) {

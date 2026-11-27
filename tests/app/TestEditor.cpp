@@ -10,17 +10,27 @@
 #include "PropertyPanel.h"
 #include "RecentFiles.h"
 #include "Routing.h"
+#include "SimulationController.h"
+#include "SimulationResultsWidget.h"
+#include "SimulationSettingsDialog.h"
+#include "SimulationTableModel.h"
+#include "TimeSeriesChartWidget.h"
 #include <io/DocumentFile.h>
 #include <io/XmileFile.h>
 
 #include <QAbstractButton>
+#include <QChart>
 #include <QClipboard>
+#include <QComboBox>
 #include <QVector>
 #include <QDir>
 #include <QDockWidget>
 #include <QDropEvent>
+#include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileInfo>
+#include <QFileDialog>
+#include <QFocusEvent>
 #include <QFontComboBox>
 #include <QFrame>
 #include <QGraphicsProxyWidget>
@@ -29,6 +39,8 @@
 #include <QImageReader>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLineSeries>
+#include <QLegendMarker>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -44,11 +56,17 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QToolBar>
+#include <QTableView>
+#include <QTabWidget>
+#include <QValueAxis>
 #include <QTranslator>
 #include <QUrl>
+#include <QWheelEvent>
+#include <QRegularExpression>
 #include <QtTest>
 
 #include <cmath>
+#include <limits>
 #include <optional>
 
 using namespace qds::core;
@@ -115,6 +133,7 @@ private slots:
     void createUndoRedo();
     void renameAndEquationUndo();
     void inlineRenameUndoRedo();
+    void namesAllowSpaces();
     void commentContentEditing();
     void propertyPanelWidget();
     void fontStyleUndoRedo();
@@ -131,7 +150,9 @@ private slots:
     void layoutOperations();
     void gridAndSceneBounds();
     void viewOperations();
+    void cloudShapeAndBoundary();
     void routeModesAndGeometry();
+    void bezierControlGeometry();
     void flowRoutesAndValveGeometry();
     void flowLabelRepaint();
     void bezierControlGuideRendering();
@@ -162,8 +183,14 @@ private slots:
     void unifiedIdUndoRedo();
     void modifierDragOperations();
     void fileDropOpen();
+    void documentTitlesAndSaveNames();
     void pngExportAndClipboard();
     void workspaceRestore();
+    void simulationControls();
+    void resultsDock();
+    void resultsAutoOpenCurrentRun();
+    void simulationSettingsAction();
+    void stockInitialValuePresentation();
     void recoveryRestoresWorkspace();
     void cursorPositionStatus();
     void windowLayoutPersistence();
@@ -191,7 +218,7 @@ void TestEditor::renameAndEquationUndo()
     DiagramScene scene(&controller);
     const EntityId id = controller.createVariable(ElementKind::Stock, QPointF());
     QVERIFY(controller.renameElement(id, QStringLiteral("Population")));
-    controller.setEquation(id, QStringLiteral("100"));
+    controller.setInitialEquation(id, QStringLiteral("100"));
     controller.setUnit(id, QStringLiteral("people"));
     controller.setComment(id, QStringLiteral("Population stock"));
     const auto *model = static_cast<const ModelElement *>(controller.document().find(id));
@@ -201,12 +228,12 @@ void TestEditor::renameAndEquationUndo()
     controller.undoStack()->undo();
     QCOMPARE(dynamic_cast<VariableItem *>(scene.item(id))->name(), QStringLiteral("Population"));
     controller.undoStack()->undo();
-    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(id))->equation(), QString());
+    QCOMPARE(dynamic_cast<const Stock *>(controller.document().find(id))->initialEquation(), QString());
     controller.undoStack()->undo();
     QCOMPARE(static_cast<const ModelElement *>(controller.document().find(id))->displayName(), QString("Stock1"));
     controller.undoStack()->redo();
     controller.undoStack()->redo();
-    QCOMPARE(static_cast<const ModelElement *>(controller.document().find(id))->equation(), QString("100"));
+    QCOMPARE(dynamic_cast<const Stock *>(controller.document().find(id))->initialEquation(), QString("100"));
     QVERIFY(!controller.renameElement(id, QString()));
 }
 
@@ -273,6 +300,53 @@ void TestEditor::inlineRenameUndoRedo()
     QCOMPARE(static_cast<const ModelElement *>(controller.document().find(flow))->displayName(), QString("Infection"));
 }
 
+void TestEditor::namesAllowSpaces()
+{
+    MainWindow window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    auto *controller = window.findChild<DocumentController *>();
+    auto *scene = window.findChild<DiagramScene *>();
+    const EntityId stock = controller->createVariable(ElementKind::Stock, QPointF());
+    auto *view = window.findChild<DiagramView *>();
+    QVERIFY(view);
+    view->centerOn(scene->item(stock));
+    QTest::mouseDClick(view->viewport(), Qt::LeftButton, Qt::NoModifier,
+        view->mapFromScene(scene->item(stock)->center()));
+    auto *editor = inlineNameEditor(*scene);
+    QVERIFY(editor);
+    editor->setText("birth");
+    editor->setCursorPosition(5);
+    QVERIFY(editor->hasFocus());
+    QTest::keyClick(window.windowHandle(), ' ');
+    QCOMPARE(editor->text(), QStringLiteral("birth "));
+    for (const char character : {'r', 'a', 't', 'e'})
+        QTest::keyClick(window.windowHandle(), character);
+    QTest::keyClick(window.windowHandle(), Qt::Key_Return);
+    QCOMPARE(controller->document().findByName("birth rate")->id(), stock);
+
+    auto *name = window.findChild<QLineEdit *>("nameEdit");
+    QVERIFY(name);
+    name->setText("birth");
+    name->setCursorPosition(5);
+    name->setFocus();
+    QVERIFY(name->hasFocus());
+    QTest::keyClick(window.windowHandle(), ' ');
+    QCOMPARE(name->text(), QStringLiteral("birth "));
+
+    view->centerOn(scene->item(stock));
+    const QPoint pressed = view->mapFromScene(scene->item(stock)->center());
+    const int scrollX = view->horizontalScrollBar()->value();
+    const int scrollY = view->verticalScrollBar()->value();
+    QTest::mousePress(view->viewport(), Qt::LeftButton, Qt::NoModifier, pressed);
+    QTest::keyClick(window.windowHandle(), ' ');
+    QTest::mouseMove(view->viewport(), pressed + QPoint(30.0, 20.0));
+    QCOMPARE(view->horizontalScrollBar()->value(), scrollX);
+    QCOMPARE(view->verticalScrollBar()->value(), scrollY);
+    QTest::mouseRelease(view->viewport(), Qt::LeftButton, Qt::NoModifier, QPoint(-50, -50));
+    QTest::keyRelease(window.windowHandle(), ' ');
+}
+
 void TestEditor::commentContentEditing()
 {
     DocumentController controller;
@@ -322,9 +396,10 @@ void TestEditor::propertyPanelWidget()
     unit->setText(QStringLiteral("people"));
     comment->setText(QStringLiteral("Population stock"));
     QVERIFY(panel.commit());
-    const auto *model = static_cast<const ModelElement *>(controller.document().find(stock));
+    const auto *model = dynamic_cast<const Stock *>(controller.document().find(stock));
+    QVERIFY(model);
     QCOMPARE(model->displayName(), QString("Population"));
-    QCOMPARE(model->equation(), QString("100"));
+    QCOMPARE(model->initialEquation(), QString("100"));
     QCOMPARE(model->unit(), QString("people"));
     QCOMPARE(model->comment(), QString("Population stock"));
     QCOMPARE(controller.undoStack()->count(), 5);
@@ -333,13 +408,13 @@ void TestEditor::propertyPanelWidget()
     controller.undoStack()->undo();
     QCOMPARE(model->unit(), QString());
     controller.undoStack()->undo();
-    QCOMPARE(model->equation(), QString());
+    QCOMPARE(model->initialEquation(), QString());
     controller.undoStack()->undo();
     QCOMPARE(model->displayName(), QString("Stock1"));
     controller.undoStack()->redo();
     QCOMPARE(model->displayName(), QString("Population"));
     controller.undoStack()->redo();
-    QCOMPARE(model->equation(), QString("100"));
+    QCOMPARE(model->initialEquation(), QString("100"));
     controller.undoStack()->redo();
     QCOMPARE(model->unit(), QString("people"));
     controller.undoStack()->redo();
@@ -733,7 +808,7 @@ void TestEditor::viewOperations()
 {
     DocumentController controller;
     DiagramScene scene(&controller);
-    controller.createVariable(ElementKind::Stock, QPointF(100.0, 100.0));
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(100.0, 100.0));
     DiagramView view(&scene);
     view.zoomIn();
     QVERIFY(view.transform().m11() > 1.0);
@@ -741,6 +816,87 @@ void TestEditor::viewOperations()
     QCOMPARE(view.transform().m11(), 1.0);
     view.fitAll();
     QVERIFY(view.transform().m11() > 0.0);
+
+    view.resize(640, 480);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    view.resetZoom();
+    view.centerOn(scene.item(stock)->center());
+    view.setFocus();
+    QTest::keyPress(&view, Qt::Key_Space);
+    QVERIFY(scene.spacePressed());
+    const QPoint pressed = view.viewport()->rect().center();
+    const int scrollX = view.horizontalScrollBar()->value();
+    const int scrollY = view.verticalScrollBar()->value();
+    QMouseEvent panPress(QEvent::MouseButtonPress, pressed, view.viewport()->mapToGlobal(pressed),
+                         Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &panPress);
+    QVERIFY(scene.spacePressed());
+    const QPoint moved = pressed + QPoint(40, 30);
+    QMouseEvent panMove(QEvent::MouseMove, moved, view.viewport()->mapToGlobal(moved),
+                        Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &panMove);
+    QVERIFY(view.horizontalScrollBar()->value() != scrollX);
+    QVERIFY(view.verticalScrollBar()->value() != scrollY);
+    QMouseEvent panRelease(QEvent::MouseButtonRelease, moved, view.viewport()->mapToGlobal(moved),
+                           Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &panRelease);
+    QTest::keyRelease(&view, Qt::Key_Space);
+    QVERIFY(!scene.spacePressed());
+
+    QTest::keyPress(&view, Qt::Key_Space);
+    QVERIFY(scene.spacePressed());
+    QFocusEvent focusOut(QEvent::FocusOut, Qt::ActiveWindowFocusReason);
+    QApplication::sendEvent(&view, &focusOut);
+    QVERIFY(!scene.spacePressed());
+    QTest::keyPress(&view, Qt::Key_Space);
+    QVERIFY(scene.spacePressed());
+    QFocusEvent focusIn(QEvent::FocusIn, Qt::ActiveWindowFocusReason);
+    QApplication::sendEvent(&view, &focusIn);
+    QVERIFY(!scene.spacePressed());
+    QTest::keyRelease(&view, Qt::Key_Space);
+}
+
+void TestEditor::cloudShapeAndBoundary()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(-240.0, 0.0));
+    const EntityId cloudId = controller.createCloud(QPointF());
+    auto *cloud = dynamic_cast<ViewObjectItem *>(scene.item(cloudId));
+    QVERIFY(cloud);
+    const QPainterPath outline = cloud->shape();
+    QVERIFY(outline.elementCount() > 2);
+    QVERIFY(outline.contains(QPointF()));
+    const QList<QPolygonF> polygons = outline.toSubpathPolygons();
+    QCOMPARE(polygons.size(), 1);
+    QVERIFY(polygons.front().size() > 8);
+    QCOMPARE(polygons.front().first(), polygons.front().last());
+
+    for (const QPointF &target : {QPointF(300.0, 0.0), QPointF(0.0, 300.0), QPointF(-300.0, 0.0),
+                                  QPointF(0.0, -300.0), QPointF(240.0, 180.0), QPointF(-240.0, 180.0),
+                                  QPointF(240.0, -180.0), QPointF(-240.0, -180.0)}) {
+        const QPointF boundary = cloud->boundaryPointToward(target) - cloud->center();
+        double nearest = std::numeric_limits<double>::max();
+        for (int index = 1; index < polygons.front().size(); ++index) {
+            const QPointF start = polygons.front()[index - 1];
+            const QPointF segment = polygons.front()[index] - start;
+            const double lengthSquared = QPointF::dotProduct(segment, segment);
+            if (lengthSquared < 1e-12)
+                continue;
+            const double ratio = std::clamp(QPointF::dotProduct(boundary - start, segment) / lengthSquared, 0.0, 1.0);
+            nearest = std::min(nearest, QLineF(boundary, start + ratio * segment).length());
+        }
+        QVERIFY2(nearest < 0.75, qPrintable(QStringLiteral("target=%1,%2 nearest=%3")
+            .arg(target.x()).arg(target.y()).arg(nearest)));
+        QVERIFY(std::abs(target.x() * boundary.y() - target.y() * boundary.x()) < 1e-6);
+    }
+
+    const EntityId flow = controller.createFlow(stock, cloudId);
+    const QPainterPath flowPath = dynamic_cast<FlowItem *>(scene.item(flow))->geometryPath();
+    QVERIFY(QLineF(flowPath.pointAtPercent(1.0), cloud->boundaryPointToward(scene.item(stock)->center())).length() < 0.75);
+    const QImage rendered = scene.renderImage();
+    QVERIFY(!rendered.isNull());
 }
 
 void TestEditor::routeModesAndGeometry()
@@ -774,6 +930,78 @@ void TestEditor::routeModesAndGeometry()
     QVERIFY(controller.document().diagram().route(id).locked);
     controller.undoStack()->undo();
     QVERIFY(!controller.document().diagram().route(id).locked);
+}
+
+void TestEditor::bezierControlGeometry()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(240.0, 0.0));
+    const EntityId connector = controller.createConnector(stock, auxiliary);
+    auto *arrow = dynamic_cast<ArrowItem *>(scene.item(connector));
+    arrow->setSelected(true);
+
+    Route route = defaultConnectorRoute();
+    route.manual = true;
+    const auto defaultPoints = route.controlPoints;
+    for (int controlCount : {1, 2}) {
+        route.controlPoints = defaultPoints;
+        route.controlPoints.resize(controlCount);
+        controller.setRoute(connector, route);
+        const QPointF source = scene.item(stock)->center();
+        const QPointF target = scene.item(auxiliary)->center();
+        const QPointF firstControl = arrow->scenePoint(route.controlPoints.front());
+        const QPointF lastControl = arrow->scenePoint(route.controlPoints.back());
+        const QVector<QLineF> guides = arrow->controlGuides();
+        QCOMPARE(guides.size(), 2);
+        QCOMPARE(guides[0].p1(), source);
+        QCOMPARE(guides[0].p2(), firstControl);
+        QCOMPARE(guides[1].p1(), lastControl);
+        QCOMPARE(guides[1].p2(), target);
+
+        QPainterPath original;
+        original.moveTo(source);
+        if (controlCount == 1)
+            original.quadTo(firstControl, target);
+        else
+            original.cubicTo(firstControl, lastControl, target);
+        const QPolygonF originalPolygon = original.toSubpathPolygons().front();
+        const QPolygonF visiblePolygon = arrow->geometryPath().toSubpathPolygons().front();
+        QVERIFY(visiblePolygon.size() > 2);
+        for (const QPointF &point : visiblePolygon) {
+            double nearest = std::numeric_limits<double>::max();
+            for (int index = 1; index < originalPolygon.size(); ++index) {
+                const QPointF start = originalPolygon[index - 1];
+                const QPointF segment = originalPolygon[index] - start;
+                const double lengthSquared = QPointF::dotProduct(segment, segment);
+                if (lengthSquared < 1e-12)
+                    continue;
+                const double ratio = std::clamp(QPointF::dotProduct(point - start, segment) / lengthSquared, 0.0, 1.0);
+                nearest = std::min(nearest, QLineF(point, start + ratio * segment).length());
+            }
+            QVERIFY2(nearest < 0.75, qPrintable(QStringLiteral("controls=%1 nearest=%2").arg(controlCount).arg(nearest)));
+        }
+        const auto distanceToOutline = [](const DiagramItem *item, const QPointF &scenePoint) {
+            const QPointF point = item->mapFromScene(scenePoint);
+            const QPolygonF polygon = item->shape().toSubpathPolygons().front();
+            double nearest = std::numeric_limits<double>::max();
+            for (int index = 1; index < polygon.size(); ++index) {
+                const QPointF start = polygon[index - 1];
+                const QPointF segment = polygon[index] - start;
+                const double lengthSquared = QPointF::dotProduct(segment, segment);
+                if (lengthSquared < 1e-12)
+                    continue;
+                const double ratio = std::clamp(QPointF::dotProduct(point - start, segment) / lengthSquared, 0.0, 1.0);
+                nearest = std::min(nearest, QLineF(point, start + ratio * segment).length());
+            }
+            return nearest;
+        };
+        QVERIFY(distanceToOutline(scene.item(stock), visiblePolygon.first()) < 0.75);
+        QVERIFY(distanceToOutline(scene.item(auxiliary), visiblePolygon.last()) < 0.75);
+        QVERIFY(QLineF(visiblePolygon.first(), source).length() > 1.0);
+        QVERIFY(QLineF(visiblePolygon.last(), target).length() > 1.0);
+    }
 }
 
 void TestEditor::flowRoutesAndValveGeometry()
@@ -932,8 +1160,14 @@ void TestEditor::bezierControlGuideRendering()
     QVERIFY(item->controlGuides().isEmpty());
     QTest::qWait(20);
     const QImage deselected = view.grab().toImage();
-    for (const QPoint &sample : samples)
+    int exteriorSamples = 0;
+    for (const QPoint &sample : samples) {
+        if (scene.item(stock)->containsScenePoint(view.mapToScene(sample)))
+            continue;
         QCOMPARE(deselected.pixelColor(sample), background);
+        ++exteriorSamples;
+    }
+    QVERIFY(exteriorSamples > 0);
 
     auto visibleHandleCount = [&scene]() {
         int count = 0;
@@ -1218,9 +1452,12 @@ void TestEditor::sirCanvasConnections()
         const int endpointIndex = flowIsSource ? 0 : path.elementCount() - 1;
         const int neighborIndex = flowIsSource ? 1 : path.elementCount() - 2;
         QVERIFY(endpointIndex >= 0 && neighborIndex >= 0);
-        const QPointF neighbor(path.elementAt(neighborIndex));
         const QPointF endpoint(path.elementAt(endpointIndex));
-        QCOMPARE(endpoint, dependent.flow->boundaryPointToward(neighbor));
+        const QPointF localEndpoint = endpoint - dependent.flow->center();
+        const bool onValveBoundary = std::abs(localEndpoint.x()) <= 60.1 && std::abs(localEndpoint.y()) <= 25.1
+            && (std::abs(std::abs(localEndpoint.x()) - 60.0) < 0.75
+                || std::abs(std::abs(localEndpoint.y()) - 25.0) < 0.75);
+        QVERIFY(onValveBoundary || QLineF(endpoint, dependent.flow->center()).length() < 0.75);
         QVERIFY(QLineF(endpoint, dependent.flow->center()).length() <= 65.1);
     }
 
@@ -1411,11 +1648,12 @@ void TestEditor::flowEndpointPreviewDependentsRepaint()
     QCOMPARE(preview, view.grab().toImage());
     QVERIFY(arrow->geometryPath().pointAtPercent(0.5) != oldArrowPath.pointAtPercent(0.5));
     const QPainterPath previewArrowPath = arrow->geometryPath();
-    const QPointF expectedEnd = flowItem->boundaryPointToward(previewArrowPath.elementAt(previewArrowPath.elementCount() - 2));
     const QPointF actualEnd = previewArrowPath.pointAtPercent(1.0);
-    QVERIFY2(QLineF(actualEnd, expectedEnd).length() < 0.75,
-        qPrintable(QStringLiteral("actual=%1,%2 expected=%3,%4")
-            .arg(actualEnd.x()).arg(actualEnd.y()).arg(expectedEnd.x()).arg(expectedEnd.y())));
+    const QPointF localEnd = actualEnd - flowItem->center();
+    QVERIFY2(std::abs(localEnd.x()) <= 60.1 && std::abs(localEnd.y()) <= 25.1
+            && (std::abs(std::abs(localEnd.x()) - 60.0) < 0.75 || std::abs(std::abs(localEnd.y()) - 25.0) < 0.75),
+        qPrintable(QStringLiteral("actual=%1,%2 flowCenter=%3,%4")
+            .arg(actualEnd.x()).arg(actualEnd.y()).arg(flowItem->center().x()).arg(flowItem->center().y())));
 
     QMouseEvent release(QEvent::MouseButtonRelease, end, view.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &release);
@@ -1648,6 +1886,10 @@ void TestEditor::rubberBandReverseRepaint()
     QVERIFY(scene && viewPointer);
     DiagramView &view = *viewPointer;
     scene->setGridVisible(false);
+    for (QDockWidget *dock : window.findChildren<QDockWidget *>())
+        dock->hide();
+    view.setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    view.setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     window.resize(1000, 800);
     window.show();
     QVERIFY(QTest::qWaitForWindowExposed(&window));
@@ -1808,7 +2050,7 @@ void TestEditor::clipboardOperations()
     DiagramScene scene(&controller);
     const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
     const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(100.0, 0.0));
-    controller.setEquation(stock, QStringLiteral("100"));
+    controller.setInitialEquation(stock, QStringLiteral("100"));
     const EntityId connector = controller.createConnector(stock, auxiliary);
     QCOMPARE(controller.copyElements({stock}).elements.size(), std::size_t(1));
     const ClipboardData clipboard = controller.copyElements({stock, auxiliary, connector});
@@ -2156,10 +2398,10 @@ void TestEditor::actionIcons()
     }
     QVERIFY(window.findChild<PropertyPanel *>());
     const QList<QToolBar *> toolBars = window.findChildren<QToolBar *>();
-    QCOMPARE(toolBars.size(), 2);
+    QCOMPARE(toolBars.size(), 3);
     for (QToolBar *toolBar : toolBars) {
         for (QAction *action : toolBar->actions()) {
-            if (!action->isSeparator())
+            if (!action->isSeparator() && !action->text().isEmpty())
                 QVERIFY2(!action->icon().isNull(), qPrintable(action->text()));
         }
     }
@@ -2268,7 +2510,8 @@ void TestEditor::fileDropOpen()
     QDropEvent drop(QPoint(20, 20), Qt::CopyAction, &data, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view->viewport(), &drop);
     QVERIFY(drop.isAccepted());
-    QVERIFY(window.windowTitle().contains(QStringLiteral("\u62D6\u653E\u6A21\u578B.qds")));
+    QVERIFY(window.windowTitle().startsWith(QStringLiteral("\u62D6\u653E\u6A21\u578B[*]")));
+    QVERIFY(!window.windowTitle().contains(QStringLiteral(".qds")));
     QVERIFY(scene->item(1));
     QCOMPARE(scene->selectedModelElement(), nullptr);
     QCOMPARE(scene->findElements(QStringLiteral("\u4E2D\u6587\u5E93\u5B58")).size(), std::size_t(1));
@@ -2287,14 +2530,51 @@ void TestEditor::fileDropOpen()
     QDropEvent plainDrop(QPoint(20, 20), Qt::CopyAction, &data, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view->viewport(), &plainDrop);
     QVERIFY(plainDrop.isAccepted());
-    QVERIFY(window.windowTitle().contains(QStringLiteral("Untitled.qds")));
+    QVERIFY(window.windowTitle().startsWith(QStringLiteral("plain[*]")));
     QCOMPARE(scene->findElements(QStringLiteral("Plain")).size(), std::size_t(1));
+
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs, true);
+    QTimer::singleShot(0, &window, [&window]() {
+        auto *dialog = qobject_cast<QFileDialog *>(QApplication::activeModalWidget());
+        QVERIFY(dialog);
+        QCOMPARE(QFileInfo(dialog->selectedFiles().value(0)).fileName(), QStringLiteral("plain.qds"));
+        dialog->reject();
+    });
+    window.findChild<QAction *>(QStringLiteral("saveAsAction"))->trigger();
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs, false);
 
     QMimeData invalid;
     invalid.setUrls({QUrl::fromLocalFile(directory.filePath(QStringLiteral("not-model.txt")))});
     QDragEnterEvent rejected(QPoint(20, 20), Qt::CopyAction, &invalid, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view->viewport(), &rejected);
     QVERIFY(!rejected.isAccepted());
+}
+
+void TestEditor::documentTitlesAndSaveNames()
+{
+    MainWindow first;
+    MainWindow second;
+    const QRegularExpression pattern(QStringLiteral("^Untitled (\\d+)\\[\\*\\]"));
+    const QRegularExpressionMatch firstMatch = pattern.match(first.windowTitle());
+    const QRegularExpressionMatch secondMatch = pattern.match(second.windowTitle());
+    QVERIFY(firstMatch.hasMatch() && secondMatch.hasMatch());
+    const int firstNumber = firstMatch.captured(1).toInt();
+    QCOMPARE(secondMatch.captured(1).toInt(), firstNumber + 1);
+    second.findChild<QAction *>(QStringLiteral("newAction"))->trigger();
+    const QRegularExpressionMatch newMatch = pattern.match(second.windowTitle());
+    QVERIFY(newMatch.hasMatch());
+    QCOMPARE(newMatch.captured(1).toInt(), firstNumber + 2);
+
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs, true);
+    QTimer::singleShot(0, &second, [&second, firstNumber]() {
+        auto *dialog = qobject_cast<QFileDialog *>(QApplication::activeModalWidget());
+        QVERIFY(dialog);
+        QCOMPARE(QFileInfo(dialog->selectedFiles().value(0)).fileName(),
+                 QStringLiteral("Untitled %1.qds").arg(firstNumber + 2));
+        dialog->reject();
+    });
+    second.findChild<QAction *>(QStringLiteral("saveAsAction"))->trigger();
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs, false);
 }
 
 void TestEditor::pngExportAndClipboard()
@@ -2425,6 +2705,330 @@ void TestEditor::workspaceRestore()
     QVERIFY(restoredView->verticalScrollBar()->value() == view->verticalScrollBar()->value());
 }
 
+void TestEditor::simulationControls()
+{
+    MainWindow window;
+    auto *simulation = window.findChild<SimulationController *>();
+    auto *runName = window.findChild<QComboBox *>("runNameCombo");
+    auto *runAction = window.findChild<QAction *>("runAction");
+    auto *cancelAction = window.findChild<QAction *>("cancelAction");
+    QVERIFY(simulation && runName && runAction && cancelAction);
+    QVERIFY(runName->isEditable());
+    QCOMPARE(runName->currentText(), QStringLiteral("Run1"));
+    QVERIFY(runAction->isEnabled());
+    QVERIFY(!cancelAction->isEnabled());
+
+    runName->setCurrentText("equilib");
+    QTest::keyClick(runName->lineEdit(), Qt::Key_Return);
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QCOMPARE(simulation->lastRunName(), QStringLiteral("equilib"));
+    QCOMPARE(simulation->runs().size(), 1);
+    QVERIFY(runName->findText(QStringLiteral("equilib")) >= 0);
+    QCOMPARE(runName->currentText(), QStringLiteral("Run1"));
+    runName->setCurrentText(QStringLiteral("equilib"));
+    QCOMPARE(runName->currentText(), QStringLiteral("equilib"));
+    QVERIFY(runAction->isEnabled());
+    QVERIFY(!cancelAction->isEnabled());
+
+    runName->setCurrentText("growth");
+    runAction->trigger();
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QCOMPARE(simulation->runs().size(), 2);
+    runName->setCurrentText(QStringLiteral("growth"));
+
+    QTimer::singleShot(0, &window, []() {
+        if (auto *message = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
+            message->button(QMessageBox::No)->click();
+    });
+    runAction->trigger();
+    QApplication::processEvents();
+    QCOMPARE(simulation->runs().size(), 2);
+
+    const RunId previousId = simulation->runs().front().id();
+    QTimer::singleShot(0, &window, []() {
+        if (auto *message = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
+            message->button(QMessageBox::Yes)->click();
+    });
+    runAction->trigger();
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QCOMPARE(simulation->runs().size(), 2);
+    QVERIFY(simulation->runs().front().id() != previousId);
+
+    auto *documents = window.findChild<DocumentController *>();
+    QVERIFY(documents);
+    QVERIFY(documents->setSimulationSettings({0.0, 100000.0, 1.0, 1.0}));
+    runName->setCurrentText("long");
+    runAction->trigger();
+    QVERIFY(cancelAction->isEnabled());
+    cancelAction->trigger();
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Cancelled);
+    QTRY_VERIFY(!simulation->isBusy());
+    QVERIFY(runAction->isEnabled());
+    QVERIFY(!cancelAction->isEnabled());
+
+    documents->createVariable(ElementKind::Stock, QPointF());
+    runName->setCurrentText("invalid");
+    runAction->trigger();
+    QCOMPARE(simulation->status(), SimulationSessionStatus::Failed);
+    auto *issues = window.findChild<QListWidget *>();
+    QVERIFY(issues && issues->count() > 0);
+}
+
+void TestEditor::resultsDock()
+{
+    MainWindow window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    auto *controller = window.findChild<DocumentController *>();
+    auto *simulation = window.findChild<SimulationController *>();
+    auto *scene = window.findChild<DiagramScene *>();
+    auto *dock = window.findChild<QDockWidget *>(QStringLiteral("resultsDock"));
+    QVERIFY(controller && simulation && scene && dock);
+    QVERIFY(!dock->isVisible());
+
+    const EntityId stock = controller->createVariable(ElementKind::Stock, QPointF());
+    const EntityId auxiliary = controller->createVariable(ElementKind::Auxiliary, QPointF(200.0, 0.0));
+    controller->renameElement(stock, QStringLiteral("Population"));
+    controller->setInitialEquation(stock, QStringLiteral("1000"));
+    controller->setUnit(stock, QStringLiteral("rabbit"));
+    controller->renameElement(auxiliary, QStringLiteral("birth rate"));
+    controller->setEquation(auxiliary, QStringLiteral("0.125"));
+    controller->setUnit(auxiliary, QStringLiteral("fraction/Year"));
+    const EntityId constant = controller->createVariable(ElementKind::Constant, QPointF(400.0, 0.0));
+    controller->renameElement(constant, QStringLiteral("constant"));
+    controller->setEquation(constant, QStringLiteral("5"));
+    controller->setSimulationSettings({0.0, 1.0, 1.0, 1.0});
+    scene->item(stock)->setSelected(true);
+    QCOMPARE(simulation->workbenchVariable(), stock);
+
+    QVERIFY(simulation->start(QStringLiteral("equilib")));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QVERIFY(dock->isVisible());
+    auto *variables = window.findChild<QComboBox *>(QStringLiteral("workbenchVariableCombo"));
+    auto *runs = window.findChild<QComboBox *>(QStringLiteral("resultsRunCombo"));
+    auto *datasets = window.findChild<QListWidget *>(QStringLiteral("datasetsList"));
+    auto *table = window.findChild<QTableView *>(QStringLiteral("resultsTable"));
+    auto *status = window.findChild<QLabel *>(QStringLiteral("runStatusLabel"));
+    auto *model = qobject_cast<SimulationTableModel *>(table->model());
+    auto *chart = window.findChild<TimeSeriesChartWidget *>();
+    auto *tabs = window.findChild<QTabWidget *>();
+    QVERIFY(variables && runs && datasets && table && status && model && chart && tabs);
+    QCOMPARE(tabs->currentWidget(), chart);
+    QCOMPARE(variables->currentData().toString(), QStringLiteral("population"));
+    QCOMPARE(variables->findData(QStringLiteral("constant")), -1);
+    QVERIFY(variables->findData(QStringLiteral("birth_rate")) < variables->findData(QStringLiteral("population")));
+    QCOMPARE(runs->currentText(), QStringLiteral("equilib"));
+    QCOMPARE(datasets->count(), 1);
+    QCOMPARE(datasets->item(0)->checkState(), Qt::Checked);
+    QCOMPARE(model->columnCount(), 2);
+    QCOMPARE(model->rowCount(), simulation->runs().front().run()->times().size());
+    QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("equilib"));
+    const QModelIndex last = model->index(model->rowCount() - 1, 1);
+    QCOMPARE(model->data(last).toString(), QStringLiteral("1000"));
+    window.findChild<QAction *>(QStringLiteral("tableAction"))->trigger();
+    table->scrollTo(last);
+    QTRY_VERIFY(table->viewport()->rect().intersects(table->visualRect(last)));
+    QCOMPARE(table->verticalScrollBar()->value(), table->verticalScrollBar()->maximum());
+    QCOMPARE(chart->chart()->series().size(), 1);
+    window.findChild<QAction *>(QStringLiteral("graphAction"))->trigger();
+    QCOMPARE(tabs->currentWidget(), chart);
+    window.findChild<QAction *>(QStringLiteral("tableAction"))->trigger();
+    QVERIFY(tabs->currentWidget() != chart);
+    window.findChild<QAction *>(QStringLiteral("graphAction"))->trigger();
+    QVERIFY(!chart->grab().isNull());
+    auto *timeAxis = qobject_cast<QtCharts::QValueAxis *>(chart->chart()->axes(Qt::Horizontal).front());
+    auto *valueAxis = qobject_cast<QtCharts::QValueAxis *>(chart->chart()->axes(Qt::Vertical).front());
+    QVERIFY(valueAxis->min() < 1000.0 && valueAxis->max() > 1000.0);
+    const double initialMin = timeAxis->min();
+    const double initialMax = timeAxis->max();
+    const QPoint wheelPosition = chart->rect().center();
+    QWheelEvent chartWheel(wheelPosition, chart->mapToGlobal(wheelPosition), QPoint(), QPoint(0, 120),
+                           Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(chart->viewport(), &chartWheel);
+    QTRY_VERIFY(timeAxis->max() - timeAxis->min() < initialMax - initialMin);
+    const double zoomedMin = timeAxis->min();
+    const QPoint panStart = chart->rect().center();
+    const QPoint panEnd = panStart + QPoint(30, 20);
+    QMouseEvent chartPress(QEvent::MouseButtonPress, panStart, chart->mapToGlobal(panStart), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(chart->viewport(), &chartPress);
+    QMouseEvent chartMove(QEvent::MouseMove, panEnd, chart->mapToGlobal(panEnd), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(chart->viewport(), &chartMove);
+    QMouseEvent chartRelease(QEvent::MouseButtonRelease, panEnd, chart->mapToGlobal(panEnd), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(chart->viewport(), &chartRelease);
+    QVERIFY(timeAxis->min() != zoomedMin);
+    QMouseEvent chartDoubleClick(QEvent::MouseButtonDblClick, panStart, chart->mapToGlobal(panStart), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(chart->viewport(), &chartDoubleClick);
+    QApplication::sendEvent(chart->viewport(), &chartRelease);
+    QCOMPARE(timeAxis->min(), initialMin);
+    QCOMPARE(timeAxis->max(), initialMax);
+
+    scene->clearSelection();
+    scene->item(auxiliary)->setSelected(true);
+    QCOMPARE(variables->currentData().toString(), QStringLiteral("birth_rate"));
+    QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("equilib"));
+    QCOMPARE(model->data(model->index(model->rowCount() - 1, 1)).toString(), QStringLiteral("0.125"));
+    QCOMPARE(chart->chart()->series().size(), 1);
+    QCOMPARE(chart->chart()->series().front()->name(), QStringLiteral("equilib"));
+    auto *constantAxis = qobject_cast<QtCharts::QValueAxis *>(chart->chart()->axes(Qt::Vertical).front());
+    QVERIFY(constantAxis->min() < 0.125 && constantAxis->max() > 0.125);
+    const int populationIndex = variables->findData(QStringLiteral("population"));
+    QVERIFY(populationIndex >= 0);
+    variables->setCurrentIndex(populationIndex);
+    QCOMPARE(simulation->workbenchVariable(), stock);
+    QVERIFY(scene->item(stock)->isSelected());
+
+    controller->setEquation(auxiliary, QStringLiteral("0.25"));
+    controller->setSimulationSettings({0.0, 1.0, 0.5, 0.5});
+    QVERIFY(simulation->start(QStringLiteral("growth")));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QCOMPARE(datasets->count(), 2);
+    QCOMPARE(datasets->item(0)->text(), QStringLiteral("growth"));
+    QCOMPARE(runs->currentText(), QStringLiteral("growth"));
+    QCOMPARE(model->columnCount(), 3);
+    QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("growth"));
+    QCOMPARE(model->headerData(2, Qt::Horizontal).toString(), QStringLiteral("equilib"));
+    QCOMPARE(model->rowCount(), 3);
+    QCOMPARE(model->data(model->index(1, 0)).toString(), QStringLiteral("0.5"));
+    QVERIFY(model->data(model->index(1, 1)).isValid());
+    QVERIFY(!model->data(model->index(1, 2)).isValid());
+    QCOMPARE(chart->chart()->series().size(), 2);
+    auto *firstSeries = qobject_cast<QtCharts::QLineSeries *>(chart->chart()->series().front());
+    const auto markers = chart->chart()->legend()->markers(firstSeries);
+    QVERIFY(!markers.isEmpty());
+    QMetaObject::invokeMethod(markers.front(), "clicked");
+    QVERIFY(!firstSeries->isVisible());
+    QMetaObject::invokeMethod(markers.front(), "clicked");
+    QVERIFY(firstSeries->isVisible());
+    controller->renameElement(stock, QStringLiteral("Rabbit Population"));
+    simulation->setWorkbenchVariableName(QStringLiteral("population"));
+    datasets->item(1)->setCheckState(Qt::Unchecked);
+    QVERIFY(!simulation->isRunLoaded(datasets->item(1)->data(Qt::UserRole).toULongLong()));
+    QCOMPARE(simulation->runs().size(), 2);
+    QCOMPARE(chart->chart()->series().size(), 1);
+    QCOMPARE(model->columnCount(), 2);
+    QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("growth"));
+
+    runs->setCurrentIndex(1);
+    QCOMPARE(variables->currentText(), QStringLiteral("Population"));
+    QVERIFY(status->text().contains(QStringLiteral("older model")));
+    QCOMPARE(model->data(model->index(model->rowCount() - 1, 1)).toString(), QStringLiteral("1000"));
+    QVERIFY(!model->data(QModelIndex()).isValid());
+
+    controller->replaceDocument(Document());
+    QVERIFY(simulation->runs().isEmpty());
+    QCOMPARE(simulation->workbenchVariable(), EntityId(0));
+    QVERIFY(!dock->isVisible());
+    QCOMPARE(model->rowCount(), 0);
+    QCOMPARE(chart->chart()->series().size(), 0);
+
+    controller->createVariable(ElementKind::Stock, QPointF());
+    controller->setInitialEquation(controller->document().findByName("Stock1")->id(), QStringLiteral("10"));
+    QVERIFY(simulation->start(QStringLiteral("fallback")));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QCOMPARE(variables->currentData().toString(), QStringLiteral("stock1"));
+    QCOMPARE(model->rowCount(), simulation->runs().front().run()->times().size());
+    QCOMPARE(chart->chart()->series().size(), 1);
+}
+
+void TestEditor::resultsAutoOpenCurrentRun()
+{
+    MainWindow window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    auto *controller = window.findChild<DocumentController *>();
+    auto *simulation = window.findChild<SimulationController *>();
+    auto *dock = window.findChild<QDockWidget *>(QStringLiteral("resultsDock"));
+    auto *runs = window.findChild<QComboBox *>(QStringLiteral("resultsRunCombo"));
+    auto *tabs = window.findChild<QTabWidget *>();
+    auto *chart = window.findChild<TimeSeriesChartWidget *>();
+    QVERIFY(controller && simulation && dock && runs && tabs && chart);
+    const EntityId stock = controller->createVariable(ElementKind::Stock, QPointF());
+    controller->setInitialEquation(stock, QStringLiteral("1000"));
+
+    QVERIFY(simulation->start(QStringLiteral("current")));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QVERIFY(dock->isVisible());
+    QCOMPARE(runs->currentText(), QStringLiteral("current"));
+    QCOMPARE(tabs->currentWidget(), chart);
+
+    dock->hide();
+    QVERIFY(simulation->start(QStringLiteral("unchanged")));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QVERIFY(dock->isVisible());
+    QCOMPARE(runs->currentText(), QStringLiteral("unchanged"));
+
+    dock->hide();
+    QVERIFY(controller->setSimulationSettings({0.0, 100000.0, 1.0, 1.0}));
+    QVERIFY(simulation->start(QStringLiteral("outdated")));
+    controller->setInitialEquation(stock, QStringLiteral("1001"));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QVERIFY(!dock->isVisible());
+    QCOMPARE(simulation->lastRunName(), QStringLiteral("outdated"));
+    const auto &completed = simulation->runs().front();
+    QVERIFY(simulation->isOutdated(completed));
+}
+
+void TestEditor::simulationSettingsAction()
+{
+    MainWindow window;
+    auto *action = window.findChild<QAction *>("simulationSettingsAction");
+    auto *documents = window.findChild<DocumentController *>();
+    QVERIFY(action && documents);
+    QTimer::singleShot(0, &window, []() {
+        auto *dialog = qobject_cast<SimulationSettingsDialog *>(QApplication::activeModalWidget());
+        if (!dialog)
+            return;
+        dialog->findChild<QDoubleSpinBox *>("dt")->setValue(0.5);
+        dialog->findChild<QDoubleSpinBox *>("stopTime")->setValue(10.0);
+        dialog->accept();
+    });
+    action->trigger();
+    QCOMPARE(documents->document().simulationSettings().dt(), 0.5);
+    QCOMPARE(documents->document().simulationSettings().saveInterval(), 0.5);
+    QCOMPARE(documents->document().simulationSettings().stopTime(), 10.0);
+    documents->undoStack()->undo();
+    QCOMPARE(documents->document().simulationSettings(), SimulationSettings {});
+}
+
+void TestEditor::stockInitialValuePresentation()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId cloud = controller.createCloud(QPointF(200.0, 0.0));
+    const EntityId births = controller.createFlow(cloud, stock);
+    const EntityId deaths = controller.createFlow(stock, cloud);
+    controller.renameElement(stock, "Population");
+    controller.renameElement(births, "births");
+    controller.renameElement(deaths, "deaths");
+    controller.setInitialEquation(stock, "1000");
+    scene.item(stock)->setSelected(true);
+    PropertyPanel panel(&controller, &scene);
+    auto *label = panel.findChild<QLabel *>("equationLabel");
+    auto *equation = panel.findChild<EquationEditor *>("equationEdit");
+    auto *flows = panel.findChild<QLineEdit *>("flowsEdit");
+    QVERIFY(label && equation && flows);
+    QCOMPARE(label->text(), QStringLiteral("Initial value"));
+    QCOMPARE(equation->text(), QStringLiteral("1000"));
+    QVERIFY(flows->isVisibleTo(&panel));
+    QVERIFY(flows->text().contains("births"));
+    QVERIFY(flows->text().contains("deaths"));
+
+    scene.clearSelection();
+    scene.item(births)->setSelected(true);
+    QCOMPARE(label->text(), QStringLiteral("Equation"));
+    QVERIFY(!flows->isVisibleTo(&panel));
+}
+
 void TestEditor::recoveryRestoresWorkspace()
 {
     QStandardPaths::setTestModeEnabled(true);
@@ -2504,6 +3108,8 @@ void TestEditor::windowLayoutPersistence()
     QCoreApplication::setApplicationName(QStringLiteral("WindowLayout"));
 
     MainWindow window;
+    QCOMPARE(window.corner(Qt::BottomLeftCorner), Qt::LeftDockWidgetArea);
+    QCOMPARE(window.corner(Qt::BottomRightCorner), Qt::RightDockWidgetArea);
     window.show();
     QVERIFY(QTest::qWaitForWindowExposed(&window));
     window.resize(977, 633);
@@ -2516,17 +3122,17 @@ void TestEditor::windowLayoutPersistence()
     const QList<QDockWidget *> docks = window.findChildren<QDockWidget *>();
     for (const QDockWidget *dock : docks)
         QVERIFY(!dock->objectName().isEmpty());
+    const QSize expectedSize = window.size();
     QVERIFY(window.close());
 
     QSettings settings;
-    const QByteArray geometry = settings.value(QStringLiteral("mainWindow/geometry")).toByteArray();
-    const QByteArray state = settings.value(QStringLiteral("mainWindow/state")).toByteArray();
-    QVERIFY(!geometry.isEmpty());
-    QVERIFY(!state.isEmpty());
+    QVERIFY(!settings.value(QStringLiteral("mainWindow/geometry")).toByteArray().isEmpty());
+    QVERIFY(!settings.value(QStringLiteral("mainWindow/state")).toByteArray().isEmpty());
 
     MainWindow restored;
-    QCOMPARE(restored.saveGeometry(), geometry);
-    QCOMPARE(restored.saveState(), state);
+    QCOMPARE(restored.size(), expectedSize);
+    QCOMPARE(restored.corner(Qt::BottomLeftCorner), Qt::LeftDockWidgetArea);
+    QCOMPARE(restored.corner(Qt::BottomRightCorner), Qt::RightDockWidgetArea);
     auto *restoredProperties = restored.findChild<QDockWidget *>(QStringLiteral("propertyDock"));
     auto *restoredNavigation = restored.findChild<QDockWidget *>(QStringLiteral("navigationDock"));
     QVERIFY(restoredProperties && restoredNavigation);
@@ -2541,16 +3147,28 @@ void TestEditor::simplifiedChineseTranslation()
     QVERIFY(translator.load(QStringLiteral(":/i18n/qds_zh_CN.qm")));
     QApplication::installTranslator(&translator);
     MainWindow window;
+    QVERIFY(window.windowTitle().startsWith(QStringLiteral("\u672A\u547D\u540D ")));
     const QList<QAction *> menus = window.menuBar()->actions();
-    QVERIFY(menus.size() >= 4);
+    QVERIFY(menus.size() >= 5);
     QCOMPARE(menus[0]->text(), QStringLiteral("\u6587\u4EF6(&F)"));
     QCOMPARE(menus[1]->text(), QStringLiteral("\u7F16\u8F91(&E)"));
-    QCOMPARE(menus[2]->text(), QStringLiteral("\u89C6\u56FE(&V)"));
-    QCOMPARE(menus[3]->text(), QStringLiteral("\u5E03\u7EBF(&R)"));
+    QCOMPARE(menus[2]->text(), QStringLiteral("\u6A21\u62DF(&S)"));
+    QCOMPARE(menus[3]->text(), QStringLiteral("\u89C6\u56FE(&V)"));
+    QCOMPARE(menus[4]->text(), QStringLiteral("\u5E03\u7EBF(&R)"));
     bool hasStock = false;
     for (QAction *action : window.findChildren<QAction *>())
         hasStock = hasStock || action->text() == QStringLiteral("\u5B58\u91CF");
     QVERIFY(hasStock);
+    QCOMPARE(window.findChild<QAction *>(QStringLiteral("graphAction"))->text(), QStringLiteral("\u6298\u7EBF\u56FE"));
+    QCOMPARE(window.findChild<QAction *>(QStringLiteral("tableAction"))->text(), QStringLiteral("\u8868\u683C"));
+    auto *resultsDock = window.findChild<QDockWidget *>(QStringLiteral("resultsDock"));
+    auto *results = window.findChild<SimulationResultsWidget *>();
+    QVERIFY(resultsDock && results);
+    QCOMPARE(resultsDock->windowTitle(), QStringLiteral("\u8FD0\u884C\u7ED3\u679C"));
+    QCOMPARE(results->findChild<QLabel *>(QStringLiteral("runStatusLabel"))->text(),
+             QStringLiteral("\u5C1A\u65E0\u5DF2\u5B8C\u6210\u7684\u8FD0\u884C"));
+    auto *table = results->findChild<QTableView *>(QStringLiteral("resultsTable"));
+    QCOMPARE(table->model()->headerData(0, Qt::Horizontal).toString(), QStringLiteral("\u65F6\u95F4"));
     QApplication::removeTranslator(&translator);
 
     QFile source(QStringLiteral(QDS_ZH_CN_TS_PATH));

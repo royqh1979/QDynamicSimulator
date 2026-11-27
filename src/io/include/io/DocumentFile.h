@@ -2,6 +2,7 @@
 
 #include <core/Document.h>
 
+class QByteArray;
 class QString;
 
 namespace qds::io {
@@ -25,6 +26,10 @@ struct Workspace {
 class DocumentFile
 {
 public:
+    static QByteArray toXml(const core::Document &document, const Workspace &workspace = {},
+        QString *errorMessage = nullptr);
+    static bool fromXml(const QByteArray &xml, core::Document &document, Workspace &workspace,
+        QString *errorMessage = nullptr);
     static bool save(const QString &fileName, const core::Document &document, const Workspace &workspace,
         QString *errorMessage = nullptr);
     static bool open(const QString &fileName, core::Document &document, Workspace &workspace,

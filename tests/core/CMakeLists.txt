@@ -5,6 +5,20 @@ target_link_libraries(test-document PRIVATE QDS::Core Qt5::Test)
 add_test(NAME core-document COMMAND test-document)
 add_dependencies(all-test-targets test-document)
 
+add_executable(test-simulation-settings
+    TestSimulationSettings.cpp
+)
+target_link_libraries(test-simulation-settings PRIVATE QDS::Core Qt5::Test)
+add_test(NAME core-simulation-settings COMMAND test-simulation-settings)
+add_dependencies(all-test-targets test-simulation-settings)
+
+add_executable(test-simulation
+    TestSimulation.cpp
+)
+target_link_libraries(test-simulation PRIVATE QDS::Core Qt5::Test)
+add_test(NAME core-simulation COMMAND test-simulation)
+add_dependencies(all-test-targets test-simulation)
+
 add_executable(test-formula
     TestFormula.cpp
 )

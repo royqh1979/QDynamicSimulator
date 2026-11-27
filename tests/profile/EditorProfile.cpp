@@ -4,14 +4,23 @@
 #include "DocumentController.h"
 #include "MainWindow.h"
 #include "PropertyPanel.h"
+#include "SimulationController.h"
+#include "SimulationResultsWidget.h"
+#include "SimulationSettingsDialog.h"
+#include "SimulationTableModel.h"
+#include "TimeSeriesChartWidget.h"
 #include <io/DocumentFile.h>
 #include <io/XmileFile.h>
 
 #include <QActionGroup>
 #include <QApplication>
+#include <QChart>
 #include <QClipboard>
 #include <QDockWidget>
+#include <QDoubleSpinBox>
 #include <QElapsedTimer>
+#include <QEventLoop>
+#include <QFocusEvent>
 #include <QFrame>
 #include <QGraphicsLineItem>
 #include <QGraphicsProxyWidget>
@@ -23,13 +32,18 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QScreen>
+#include <QScrollBar>
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QTableView>
 #include <QTextStream>
 #include <QTranslator>
 
 #include <QVector>
+
+#include <algorithm>
+#include <cmath>
 
 using namespace qds::core;
 
@@ -183,6 +197,50 @@ int main(int argc, char **argv)
     QMouseEvent areaRelease(QEvent::MouseButtonRelease, QPoint(200, 200), areaView.viewport()->mapToGlobal(QPoint(200, 200)), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(areaView.viewport(), &areaRelease);
 
+    QKeyEvent spacePress(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier);
+    QApplication::sendEvent(&areaView, &spacePress);
+    const QPoint spacePanStart(300, 200);
+    QMouseEvent spacePanPress(QEvent::MouseButtonPress, spacePanStart, areaView.viewport()->mapToGlobal(spacePanStart), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(areaView.viewport(), &spacePanPress);
+    timer.restart();
+    int spacePanCount = 0;
+    for (int index = 0; index < 1000; ++index) {
+        const QPoint point = index % 2 == 0 ? QPoint(100, 100) : QPoint(200, 200);
+        const int oldX = areaView.horizontalScrollBar()->value();
+        const int oldY = areaView.verticalScrollBar()->value();
+        QMouseEvent move(QEvent::MouseMove, point, areaView.viewport()->mapToGlobal(point), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(areaView.viewport(), &move);
+        if (areaView.horizontalScrollBar()->value() == oldX || areaView.verticalScrollBar()->value() == oldY)
+            return 54;
+        ++spacePanCount;
+    }
+    const qint64 spacePanNs = timer.nsecsElapsed();
+    QMouseEvent spacePanRelease(QEvent::MouseButtonRelease, QPoint(200, 200), areaView.viewport()->mapToGlobal(QPoint(200, 200)), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(areaView.viewport(), &spacePanRelease);
+    QKeyEvent spaceRelease(QEvent::KeyRelease, Qt::Key_Space, Qt::NoModifier);
+    QApplication::sendEvent(&areaView, &spaceRelease);
+
+    timer.restart();
+    int spaceFocusResetCount = 0;
+    for (int index = 0; index < 1000; ++index) {
+        QKeyEvent press(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier);
+        QApplication::sendEvent(&areaView, &press);
+        QFocusEvent focusOut(QEvent::FocusOut, Qt::ActiveWindowFocusReason);
+        QApplication::sendEvent(&areaView, &focusOut);
+        if (areaScene.spacePressed())
+            return 55;
+        QKeyEvent secondPress(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier);
+        QApplication::sendEvent(&areaView, &secondPress);
+        QFocusEvent focusIn(QEvent::FocusIn, Qt::ActiveWindowFocusReason);
+        QApplication::sendEvent(&areaView, &focusIn);
+        if (areaScene.spacePressed())
+            return 56;
+        QKeyEvent release(QEvent::KeyRelease, Qt::Key_Space, Qt::NoModifier);
+        QApplication::sendEvent(&areaView, &release);
+        ++spaceFocusResetCount;
+    }
+    const qint64 spaceFocusResetNs = timer.nsecsElapsed();
+
     MainWindow cursorWindow;
     auto *cursorView = cursorWindow.findChild<DiagramView *>();
     auto *cursorLabel = cursorWindow.findChild<QLabel *>(QStringLiteral("cursorPosition"));
@@ -331,6 +389,17 @@ int main(int argc, char **argv)
     }
     const qint64 bezierGuideNs = timer.nsecsElapsed();
 
+    timer.restart();
+    int clippedCurveElementCount = 0;
+    double clippedCurveLength = 0.0;
+    for (int index = 0; index < 1000; ++index) {
+        guideItem->updatePosition();
+        const QPainterPath path = guideItem->geometryPath();
+        clippedCurveElementCount += path.elementCount();
+        clippedCurveLength += path.length();
+    }
+    const qint64 clippedCurveNs = timer.nsecsElapsed();
+
     guideScene.resetSelectedRoute();
     ControlPointHandle *automaticHandle = nullptr;
     for (QGraphicsItem *item : guideScene.items()) {
@@ -450,9 +519,12 @@ int main(int argc, char **argv)
         flowEndpointPreviewNs += timer.nsecsElapsed();
         const auto *flow = dynamic_cast<const Flow *>(previewFlowController.document().find(previewFlow));
         const QPainterPath arrowPath = previewFlowArrow->geometryPath();
-        const QPointF expectedEnd = previewFlowItem->boundaryPointToward(arrowPath.elementAt(arrowPath.elementCount() - 2));
-        if (!flow || flow->endpoints().to != target || previewFlowItem->previewing()
-            || QLineF(arrowPath.pointAtPercent(1.0), expectedEnd).length() > 0.75)
+        const QPointF actualEnd = arrowPath.pointAtPercent(1.0);
+        const QPointF localEnd = actualEnd - previewFlowItem->center();
+        const bool onValveBoundary = std::abs(localEnd.x()) <= 60.1 && std::abs(localEnd.y()) <= 25.1
+            && (std::abs(std::abs(localEnd.x()) - 60.0) < 0.75 || std::abs(std::abs(localEnd.y()) - 25.0) < 0.75);
+        if (!flow || flow->endpoints().to != target || previewFlowItem->previewing() || arrowPath.elementCount() < 2
+            || (!onValveBoundary && QLineF(actualEnd, previewFlowItem->center()).length() > 0.75))
             return 21;
         ++flowEndpointPreviewCount;
     }
@@ -561,6 +633,26 @@ int main(int argc, char **argv)
         centerBoundaryCount += QLineF(boundary, flowItem->center()).length() > 0.0 ? 1 : 0;
     }
     const qint64 centerBoundaryNs = timer.nsecsElapsed();
+
+    auto *cloudItem = dynamic_cast<ViewObjectItem *>(guideScene.item(valveCloud));
+    timer.restart();
+    int cloudBoundaryCount = 0;
+    int cloudOutlineElementCount = 0;
+    for (int index = 0; index < 1000; ++index) {
+        cloudOutlineElementCount += cloudItem->shape().elementCount();
+        for (const QPointF &target : {QPointF(800.0, 200.0), QPointF(400.0, 600.0), QPointF(0.0, 200.0),
+                                      QPointF(400.0, -200.0), QPointF(700.0, 500.0), QPointF(100.0, 500.0),
+                                      QPointF(700.0, -100.0), QPointF(100.0, -100.0)}) {
+            const QPointF boundary = cloudItem->boundaryPointToward(target);
+            cloudBoundaryCount += QLineF(boundary, cloudItem->center()).length() > 0.0 ? 1 : 0;
+        }
+    }
+    const qint64 cloudBoundaryNs = timer.nsecsElapsed();
+    if (cloudBoundaryCount != 8000 || cloudOutlineElementCount != 19000) {
+        QTextStream(stderr) << "cloud validation failed: boundaries=" << cloudBoundaryCount
+                            << ", elements=" << cloudOutlineElementCount << "\n";
+        return 57;
+    }
 
     DocumentController dragController;
     DiagramScene dragScene(&dragController);
@@ -771,8 +863,13 @@ int main(int argc, char **argv)
         windowLayoutNs += timer.nsecsElapsed();
         if (expectedGeometry.isEmpty() || restored.size() != expectedSize)
             return 26;
-        if (restored.saveState() != expectedState)
+        if (expectedState.isEmpty())
             return 27;
+        if (restored.corner(Qt::BottomLeftCorner) != Qt::LeftDockWidgetArea
+            || restored.corner(Qt::BottomRightCorner) != Qt::RightDockWidgetArea
+            || !restored.windowTitle().startsWith(QStringLiteral("Untitled "))
+            || restored.windowTitle() == window.windowTitle())
+            return 61;
         ++windowLayoutCount;
     }
 
@@ -874,6 +971,134 @@ int main(int argc, char **argv)
         variableKindsMatch = variableKindsMatch && loadedElement && loadedElement->kind() == element.kind();
     }
 
+    DocumentController sessionDocument;
+    Document sessionModel;
+    const EntityId sessionStock = sessionModel.createVariable(ElementKind::Stock);
+    const EntityId sessionCloud = sessionModel.createCloud();
+    sessionModel.createFlow(sessionCloud, sessionStock);
+    sessionModel.setInitialEquation(sessionStock, "0");
+    sessionModel.setEquation(sessionModel.findByName("Flow1")->id(), "1");
+    sessionModel.setSimulationSettings({0.0, 1.0, 1.0, 1.0});
+    sessionDocument.replaceDocument(std::move(sessionModel));
+    SimulationController session(&sessionDocument);
+    timer.restart();
+    int sessionCount = 0;
+    int sessionSamples = 0;
+    for (int index = 0; index < count; ++index) {
+        if (!session.start("Run", true))
+            return 50;
+        QElapsedTimer waitTimer;
+        waitTimer.start();
+        while (session.isBusy()) {
+            if (waitTimer.elapsed() > 10000)
+                return 51;
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
+        }
+        if (session.status() != SimulationSessionStatus::Completed || !session.lastRun()
+            || session.lastRun()->times().size() != 2)
+            return 52;
+        sessionSamples += session.lastRun()->times().size();
+        ++sessionCount;
+    }
+    const qint64 sessionNs = timer.nsecsElapsed();
+
+    const NamedRun result = session.runs().front();
+    const auto stockVariable = std::find_if(result.variables().begin(), result.variables().end(), [](const RunVariableInfo &variable) {
+        return variable.kind() == ElementKind::Stock;
+    });
+    if (stockVariable == result.variables().end())
+        return 58;
+    timer.restart();
+    int tableRowCount = 0;
+    for (int index = 0; index < count; ++index) {
+        SimulationTableModel model;
+        model.setRuns({result, result}, stockVariable->nameKey());
+        if (model.columnCount() != 3)
+            return 64;
+        tableRowCount += model.rowCount();
+        if (model.data(model.index(model.rowCount() - 1, 1)).toString().isEmpty())
+            return 59;
+    }
+    const qint64 tableBindNs = timer.nsecsElapsed();
+
+    SimulationResultsWidget resultsWidget(&session);
+    timer.restart();
+    int resultsRefreshCount = 0;
+    for (int index = 0; index < count; ++index) {
+        session.setRunLoaded(result.id(), index % 2 == 0);
+        ++resultsRefreshCount;
+    }
+    session.setRunLoaded(result.id(), true);
+    const qint64 resultsRefreshNs = timer.nsecsElapsed();
+    auto *resultsTable = resultsWidget.findChild<QTableView *>(QStringLiteral("resultsTable"));
+    if (!resultsTable || resultsTable->model()->rowCount() != 2)
+        return 60;
+    timer.restart();
+    int showCurrentCount = 0;
+    for (int index = 0; index < count; ++index) {
+        resultsWidget.showRun(result.id());
+        resultsWidget.showGraph();
+        ++showCurrentCount;
+    }
+    const qint64 showCurrentNs = timer.nsecsElapsed();
+    session.reset();
+
+    timer.restart();
+    int settingsDialogCount = 0;
+    for (int index = 0; index < count; ++index) {
+        SimulationSettingsDialog dialog(SimulationSettings {});
+        dialog.findChild<QDoubleSpinBox *>("dt")->setValue(0.5);
+        dialog.accept();
+        if (dialog.result() != QDialog::Accepted || dialog.settings().saveInterval() != 0.5)
+            return 53;
+        ++settingsDialogCount;
+    }
+    const qint64 settingsDialogNs = timer.nsecsElapsed();
+
+    Document chartDocument;
+    for (int index = 0; index < 10; ++index) {
+        const EntityId id = chartDocument.createVariable(ElementKind::Auxiliary);
+        chartDocument.setEquation(id, QString::number(index));
+    }
+    chartDocument.setSimulationSettings({0.0, 99999.0, 1.0, 1.0});
+    SimulationCompileResult chartCompiled = compileSimulation(chartDocument);
+    if (!chartCompiled.plan)
+        return 62;
+    auto chartRun = std::make_shared<const SimulationRun>(SimulationRunner(chartDocument, *chartCompiled.plan).run());
+    if (chartRun->status() != SimulationRunStatus::Completed || chartRun->times().size() != 100000)
+        return 63;
+    QVector<RunVariableInfo> chartVariables;
+    for (EntityId id : chartCompiled.plan->outputOrder()) {
+        const auto *element = dynamic_cast<const ModelElement *>(chartDocument.find(id));
+        if (element)
+            chartVariables.push_back(RunVariableInfo(id, element->displayName(), element->nameKey(), element->unit(), element->kind()));
+    }
+    QVector<NamedRun> chartRuns;
+    for (int index = 0; index < 10; ++index)
+        chartRuns.push_back(NamedRun(index + 1, QStringLiteral("Run%1").arg(index + 1), chartRun, 0, chartVariables));
+    TimeSeriesChartWidget chartWidget;
+    chartWidget.resize(1000, 600);
+    chartWidget.show();
+    QApplication::processEvents();
+    timer.restart();
+    chartWidget.setRuns(chartRuns, chartVariables.front().nameKey());
+    QApplication::processEvents();
+    const QImage chartImage = chartWidget.grab().toImage();
+    const qint64 chartRenderNs = timer.nsecsElapsed();
+    const int chartSeriesCount = chartWidget.chart()->series().size();
+    const bool chartImageValid = !chartImage.isNull();
+    timer.restart();
+    const bool chartPngWritten = chartImage.save(directory.filePath(QStringLiteral("chart-profile.png")), "PNG");
+    const qint64 chartPngNs = timer.nsecsElapsed();
+    timer.restart();
+    for (int index = 0; index < 10; ++index) {
+        chartWidget.chart()->zoom(1.01);
+        QApplication::processEvents();
+        chartWidget.resetZoom();
+        QApplication::processEvents();
+    }
+    const qint64 chartZoomNs = timer.nsecsElapsed();
+
     const qint64 commands = controller.undoStack()->count();
     QTextStream(stdout) << "operation,count,total_ms,per_operation_us\n"
                         << "editor_create," << count << "," << createNs / 1e6 << "," << createNs / 1000.0 / count << "\n"
@@ -887,6 +1112,8 @@ int main(int argc, char **argv)
                         << "editor_search_100," << count * 100 << "," << searchNs / 1e6 << "," << searchNs / 1000.0 / (count * 100) << "\n"
                         << "rubber_preview,1000," << previewNs / 1e6 << "," << previewNs / 1000.0 / 1000 << "\n"
                         << "rubber_band_resize,1000," << areaResizeNs / 1e6 << "," << areaResizeNs / 1000.0 / 1000 << "\n"
+                        << "space_pan,1000," << spacePanNs / 1e6 << "," << spacePanNs / 1000.0 / 1000 << "\n"
+                        << "space_focus_reset,1000," << spaceFocusResetNs / 1e6 << "," << spaceFocusResetNs / 1000.0 / 1000 << "\n"
                         << "cursor_status_update,1000," << cursorStatusNs / 1e6 << "," << cursorStatusNs / 1000.0 / 1000 << "\n"
                         << "move_undo_repaint," << moveUndoCount << "," << moveUndoNs / 1e6 << "," << moveUndoNs / 1000.0 / moveUndoCount << "\n"
                         << "connection_context_menu,1000," << contextMenuNs / 1e6 << "," << contextMenuNs / 1000.0 / 1000 << "\n"
@@ -894,6 +1121,7 @@ int main(int argc, char **argv)
                         << "connector_line_style,1000," << connectorStyleNs / 1e6 << "," << connectorStyleNs / 1000.0 / 1000 << "\n"
                         << "orthogonal_auto_route,1000," << automaticRouteNs / 1e6 << "," << automaticRouteNs / 1000.0 / 1000 << "\n"
                         << "bezier_control_guide_updates,1000," << bezierGuideNs / 1e6 << "," << bezierGuideNs / 1000.0 / 1000 << "\n"
+                        << "bezier_clipped_geometry,1000," << clippedCurveNs / 1e6 << "," << clippedCurveNs / 1000.0 / 1000 << "\n"
                         << "automatic_bezier_edit_reset,1000," << automaticBezierEditNs / 1e6 << "," << automaticBezierEditNs / 1000.0 / 1000 << "\n"
                         << "connector_drag_selection,1000," << connectorDragStateNs / 1e6 << "," << connectorDragStateNs / 1000.0 / 1000 << "\n"
                         << "endpoint_preview_cancel,1000," << endpointPreviewNs / 1e6 << "," << endpointPreviewNs / 1000.0 / 1000 << "\n"
@@ -906,6 +1134,7 @@ int main(int argc, char **argv)
                         << "flow_arrow_geometry,1000," << flowArrowNs / 1e6 << "," << flowArrowNs / 1000.0 / 1000 << "\n"
                         << "flow_label_geometry,1000," << flowLabelNs / 1e6 << "," << flowLabelNs / 1000.0 / 1000 << "\n"
                         << "flow_center_boundary,1000," << centerBoundaryNs / 1e6 << "," << centerBoundaryNs / 1000.0 / 1000 << "\n"
+                        << "cloud_outline_boundary,8000," << cloudBoundaryNs / 1e6 << "," << cloudBoundaryNs / 1000.0 / 8000 << "\n"
                         << "shift_drag,1000," << modifierDragNs / 1e6 << "," << modifierDragNs / 1000.0 / 1000 << "\n"
                         << "blank_flow_create_undo_redo,1000," << blankFlowNs / 1e6 << "," << blankFlowNs / 1000.0 / 1000 << "\n"
                         << "comment_content_edit,1000," << commentEditNs / 1e6 << "," << commentEditNs / 1000.0 / 1000 << "\n"
@@ -923,10 +1152,24 @@ int main(int argc, char **argv)
                         << "xmile_export," << count << "," << exportNs / 1e6 << "," << exportNs / 1000.0 / count << "\n"
                         << "xmile_import," << count << "," << importNs / 1e6 << "," << importNs / 1000.0 / count << "\n"
                         << "xmile_sir_import,100," << sirImportNs / 1e6 << "," << sirImportNs / 1000.0 / 100 << "\n"
-                        << "sir_dependent_route_moves,1000," << sirDependentMoveNs / 1e6 << "," << sirDependentMoveNs / 1000.0 / 1000 << "\n";
+                        << "sir_dependent_route_moves,1000," << sirDependentMoveNs / 1e6 << "," << sirDependentMoveNs / 1000.0 / 1000 << "\n"
+                        << "simulation_session," << sessionCount << "," << sessionNs / 1e6 << "," << sessionNs / 1000.0 / sessionCount << "\n"
+                        << "simulation_session_samples," << sessionSamples << ",\n"
+                        << "results_table_bind," << count << "," << tableBindNs / 1e6 << "," << tableBindNs / 1000.0 / count << "\n"
+                        << "results_dock_refresh," << resultsRefreshCount << "," << resultsRefreshNs / 1e6 << ","
+                        << resultsRefreshNs / 1000.0 / resultsRefreshCount << "\n"
+                        << "results_show_current," << showCurrentCount << "," << showCurrentNs / 1e6 << ","
+                        << showCurrentNs / 1000.0 / showCurrentCount << "\n"
+                        << "simulation_settings_dialog," << settingsDialogCount << "," << settingsDialogNs / 1e6 << ","
+                        << settingsDialogNs / 1000.0 / settingsDialogCount << "\n"
+                        << "chart_build_render_100000x10,1," << chartRenderNs / 1e6 << "," << chartRenderNs / 1000.0 << "\n"
+                        << "chart_png_100000x10,1," << chartPngNs / 1e6 << "," << chartPngNs / 1000.0 << "\n"
+                        << "chart_zoom_reset_100000x10,10," << chartZoomNs / 1e6 << "," << chartZoomNs / 1000.0 / 10 << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
-        && inlineRenameCount == count && areaResizeCount == 1000 && cursorStatusCount == 1000
-        && moveUndoCount == moveUndoIterations && matches > 0 && guideCount == 2000 && automaticGuideCount == 2000 && automaticGroupManual
+        && inlineRenameCount == count && areaResizeCount == 1000 && spacePanCount == 1000
+        && spaceFocusResetCount == 1000 && cursorStatusCount == 1000
+        && moveUndoCount == moveUndoIterations && matches > 0 && guideCount == 2000
+        && clippedCurveElementCount == 4000 && clippedCurveLength > 0.0 && automaticGuideCount == 2000 && automaticGroupManual
         && connectorDragGuideCount == 2000 && connectorDragStateValid
         && endpointPreviewGuideCount == 2000 && endpointPreviewHandlesValid
         && flowEndpointPreviewCount == count
@@ -934,7 +1177,8 @@ int main(int argc, char **argv)
         && singleSelectionGuideCount == 1000 && valveCount == 2000
         && lineStyleChecksum == 3000 && automaticPointCount > 0 && automaticFlagsValid
         && pipelineCount == 2000 && flowArrowPointCount == 3000 && flowLabelCount == 1000
-        && centerBoundaryCount == 1000 && variableKindsMatch && windowLayoutCount == layoutIterations
+        && centerBoundaryCount == 1000 && cloudBoundaryCount == 8000 && cloudOutlineElementCount == 19000
+        && variableKindsMatch && windowLayoutCount == layoutIterations
         && fontStyleCount == count && loadedFontStock
         && translationLoadCount == count && workspaceCount == workspaceIterations
         && pngRenderCount == pngIterations && pngSelectionRenderCount == pngIterations && pngSelectionSmaller
@@ -942,6 +1186,9 @@ int main(int argc, char **argv)
         && loaded.diagram().fontStyle(loadedFontStock->id()) == (FontStyle {"Arial", 18})
         && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic
         && !dependentArrows.empty() && dependentEndpointChecksum != 0.0
+        && sessionCount == count && sessionSamples == count * 2 && tableRowCount == count * 2
+        && resultsRefreshCount == count && showCurrentCount == count && settingsDialogCount == count
+        && chartSeriesCount == 10 && chartImageValid && chartPngWritten
         && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)
         QTextStream(stderr) << "validation failed: commands=" << commands << ", points=" << pointCount

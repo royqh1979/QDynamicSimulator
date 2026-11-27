@@ -4,7 +4,10 @@ add_executable(test-xmile
     TestXmileFile.cpp
 )
 target_link_libraries(test-xmile PRIVATE QDS::IO Qt5::Test)
-target_compile_definitions(test-xmile PRIVATE QDS_SIR_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/SIR/SIR.xmile")
+target_compile_definitions(test-xmile PRIVATE
+    QDS_SIR_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/SIR/SIR.xmile"
+    QDS_SIR_RECIPROCAL_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/SIR/SIR_reciprocal-dt.xmile"
+)
 if(TARGET Qt5::Zlib)
     target_link_libraries(test-xmile PRIVATE Qt5::Zlib)
 else()
@@ -31,6 +34,25 @@ add_executable(test-macro-files
 target_link_libraries(test-macro-files PRIVATE QDS::IO Qt5::Test)
 add_test(NAME io-macro-files COMMAND test-macro-files)
 add_dependencies(all-test-targets test-macro-files)
+
+add_executable(test-simulation-results
+    TestSimulationResults.cpp
+)
+target_link_libraries(test-simulation-results PRIVATE QDS::IO Qt5::Test)
+target_compile_definitions(test-simulation-results PRIVATE
+    QDS_ABS_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/abs/test_abs.xmile"
+    QDS_ABS_OUTPUT_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/abs/output.csv"
+    QDS_EVAL_ORDER_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/eval_order/eval_order.xmile"
+    QDS_EVAL_ORDER_OUTPUT_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/eval_order/output.csv"
+    QDS_TEACUP_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/teacup/teacup.xmile"
+    QDS_TEACUP_OUTPUT_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/teacup/output.csv"
+    QDS_CHAINED_INIT_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/chained_initialization/test_chained_initialization.xmile"
+    QDS_CHAINED_INIT_OUTPUT_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/chained_initialization/output.tab"
+    QDS_SIR_MODEL_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/SIR/SIR.xmile"
+    QDS_SIR_MODEL_OUTPUT_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/SIR/output.csv"
+)
+add_test(NAME io-simulation-results COMMAND test-simulation-results)
+add_dependencies(all-test-targets test-simulation-results)
 
 if(QDS_ENABLE_XMILE_CORPUS_TESTS)
     add_executable(test-xmile-corpus TestXmileCorpus.cpp)

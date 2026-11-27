@@ -139,6 +139,7 @@ Document::Document(Document &&other) noexcept
     , m_nextId(other.m_nextId)
     , m_model(*this)
     , m_diagram(*this)
+    , m_simulationSettings(other.m_simulationSettings)
 {
     m_diagram.m_positions = std::move(other.m_diagram.m_positions);
     m_diagram.m_routes = std::move(other.m_diagram.m_routes);
@@ -159,6 +160,7 @@ Document &Document::operator=(Document &&other) noexcept
     m_diagram.m_positions = std::move(other.m_diagram.m_positions);
     m_diagram.m_routes = std::move(other.m_diagram.m_routes);
     m_diagram.m_fontStyles = std::move(other.m_diagram.m_fontStyles);
+    m_simulationSettings = other.m_simulationSettings;
     return *this;
 }
 
@@ -353,7 +355,11 @@ EntityId Document::createVariable(ElementKind kind, Vec2 position)
     if (kind != ElementKind::Stock && kind != ElementKind::Auxiliary && kind != ElementKind::Constant
         && kind != ElementKind::Data)
         return 0;
-    auto variable = std::make_unique<Variable>(m_nextId++, kind);
+    std::unique_ptr<ModelElement> variable;
+    if (kind == ElementKind::Stock)
+        variable = std::make_unique<Stock>(m_nextId++);
+    else
+        variable = std::make_unique<Variable>(m_nextId++, kind);
     const QString name = uniqueName(kind);
     variable->setName(name, normalizeIdentifier(name));
     return insert(std::move(variable), position);
@@ -460,6 +466,8 @@ std::optional<ElementData> Document::capture(EntityId id) const
         data.unit = model->unit();
         data.comment = model->comment();
     }
+    if (const auto *stock = dynamic_cast<const Stock *>(element))
+        data.initialEquation = stock->initialEquation();
     if (auto *comment = dynamic_cast<const Comment *>(element))
         data.content = comment->content();
     if (auto *flow = dynamic_cast<const Flow *>(element))
@@ -479,7 +487,8 @@ bool Document::restore(const ElementData &data)
     const QString normalized = normalizeIdentifier(data.displayName);
     if (data.kind <= ElementKind::Data && (normalized.isEmpty() || m_nameIndex.count(normalized)
             || m_dimensionIndex.count(normalized) || hasMacroName(normalized)
-            || !validArrayData(data.dimensions, data.elementEquations, data.equation)))
+            || !validArrayData(data.dimensions, data.elementEquations,
+                data.kind == ElementKind::Stock ? data.initialEquation : data.equation)))
         return false;
     if (!validFontData(data.kind, data.font))
         return false;
@@ -503,6 +512,8 @@ bool Document::restore(const ElementData &data)
         element = std::make_unique<Cloud>(id);
     } else if (data.kind == ElementKind::Comment) {
         element = std::make_unique<Comment>(id);
+    } else if (data.kind == ElementKind::Stock) {
+        element = std::make_unique<Stock>(id);
     } else if (data.kind <= ElementKind::Data) {
         element = std::make_unique<Variable>(id, data.kind);
     } else {
@@ -517,6 +528,8 @@ bool Document::restore(const ElementData &data)
         model->setFormulaData(data.equation, std::move(dimensions), data.elementEquations);
         model->setUnit(data.unit);
         model->setComment(data.comment);
+        if (auto *stock = dynamic_cast<Stock *>(element.get()))
+            stock->setInitialEquation(data.initialEquation);
     }
     if (auto *comment = dynamic_cast<Comment *>(element.get()))
         comment->setContent(data.content);
@@ -545,7 +558,9 @@ bool Document::apply(const ElementData &data)
         && !validRouteData(data.kind, data.route))
         return false;
     if (dynamic_cast<ModelElement *>(element)
-        && (!validArrayData(data.dimensions, data.elementEquations, data.equation) || !validRename(data.id, data.displayName)))
+        && (!validArrayData(data.dimensions, data.elementEquations,
+                data.kind == ElementKind::Stock ? data.initialEquation : data.equation)
+            || !validRename(data.id, data.displayName)))
         return false;
     if (dynamic_cast<Flow *>(element)
         && !validFlowConnection(data.id, data.flowEndpoints.from, data.flowEndpoints.to))
@@ -561,6 +576,8 @@ bool Document::apply(const ElementData &data)
         model->setFormulaData(data.equation, std::move(dimensions), data.elementEquations);
         model->setUnit(data.unit);
         model->setComment(data.comment);
+        if (auto *stock = dynamic_cast<Stock *>(element))
+            stock->setInitialEquation(data.initialEquation);
     }
     if (auto *comment = dynamic_cast<Comment *>(element))
         comment->setContent(data.content);
@@ -611,9 +628,18 @@ bool Document::rename(EntityId id, const QString &displayName)
 bool Document::setEquation(EntityId id, const QString &equation)
 {
     auto *model = dynamic_cast<ModelElement *>(findMutable(id));
-    if (!model)
+    if (!model || model->kind() == ElementKind::Stock)
         return false;
     model->setEquation(equation);
+    return true;
+}
+
+bool Document::setInitialEquation(EntityId id, const QString &equation)
+{
+    auto *stock = dynamic_cast<Stock *>(findMutable(id));
+    if (!stock)
+        return false;
+    stock->setInitialEquation(equation);
     return true;
 }
 
@@ -626,7 +652,8 @@ bool Document::setDimensions(EntityId id, const QVector<QString> &dimensions)
     keys.reserve(dimensions.size());
     for (const QString &name : dimensions)
         keys.push_back(normalizeIdentifier(name));
-    if (!validArrayData(keys, {}, model->equation()))
+    if (!validArrayData(keys, {}, model->kind() == ElementKind::Stock
+            ? static_cast<Stock *>(model)->initialEquation() : model->equation()))
         return false;
     model->setDimensions(std::move(keys));
     return true;
@@ -738,6 +765,14 @@ bool Document::setRoute(EntityId id, const Route &route)
     return true;
 }
 
+bool Document::setSimulationSettings(const SimulationSettings &settings)
+{
+    if (!settings.isValid())
+        return false;
+    m_simulationSettings = settings;
+    return true;
+}
+
 void Document::clear()
 {
     m_elements.clear();
@@ -749,6 +784,7 @@ void Document::clear()
     m_diagram.m_positions.clear();
     m_diagram.m_routes.clear();
     m_diagram.m_fontStyles.clear();
+    m_simulationSettings = {};
     m_nextId = 1;
 }
 
@@ -861,6 +897,9 @@ void Document::updateReferences(EntityId, const QString &oldName, const QString 
             for (ArrayElementEquation &element : elementEquations)
                 element.equation = replaceReference(element.equation, oldName, newName);
             model->setFormulaData(std::move(equation), model->dimensions(), std::move(elementEquations));
+            if (auto *stock = dynamic_cast<Stock *>(model)) {
+                stock->setInitialEquation(replaceReference(stock->initialEquation(), oldName, newName));
+            }
         }
     }
 }

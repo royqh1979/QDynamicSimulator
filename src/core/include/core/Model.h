@@ -110,6 +110,24 @@ private:
     QString m_comment;
 };
 
+class Stock final : public ModelElement
+{
+public:
+    explicit Stock(EntityId id)
+        : ModelElement(id, ElementKind::Stock)
+    {
+    }
+
+    const QString &initialEquation() const { return m_initialFormula.source(); }
+    const Formula &initialFormula() const { return m_initialFormula; }
+
+private:
+    friend class Document;
+    void setInitialEquation(QString equation) { m_initialFormula = analyzeFormula(std::move(equation)); }
+
+    Formula m_initialFormula;
+};
+
 class Variable final : public ModelElement
 {
 public:

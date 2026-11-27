@@ -451,14 +451,30 @@ QByteArray writeNativeXml(const core::Document &document, const Workspace &works
             writeNativeRoute(writer, document.diagram().route(element.id()));
         }
         writeNativeArrayDefinition(writer, document, element);
-        if (element.elementEquations().empty())
-            writer.writeTextElement(QStringLiteral("eqn"), (element.equation()));
+        if (element.elementEquations().empty()) {
+            if (element.kind() == core::ElementKind::Stock)
+                writer.writeTextElement(QStringLiteral("initial"), static_cast<const core::Stock &>(element).initialEquation());
+            else
+                writer.writeTextElement(QStringLiteral("eqn"), (element.equation()));
+        }
         if (!element.unit().isEmpty())
             writer.writeTextElement(QStringLiteral("units"), (element.unit()));
         if (!element.comment().isEmpty())
             writer.writeTextElement(QStringLiteral("doc"), (element.comment()));
         writer.writeEndElement();
     }
+    writer.writeEndElement();
+
+    const core::SimulationSettings &simulation = document.simulationSettings();
+    writer.writeStartElement(QStringLiteral("simulation"));
+    writer.writeAttribute(QStringLiteral("start"), QString::number(simulation.startTime(), 'g', 15));
+    writer.writeAttribute(QStringLiteral("stop"), QString::number(simulation.stopTime(), 'g', 15));
+    writer.writeAttribute(QStringLiteral("dt"), QString::number(simulation.dt(), 'g', 15));
+    writer.writeAttribute(QStringLiteral("save-interval"), QString::number(simulation.saveInterval(), 'g', 15));
+    writer.writeAttribute(QStringLiteral("method"),
+        simulation.integrationMethod() == core::IntegrationMethod::RungeKutta4 ? QStringLiteral("rk4") : QStringLiteral("euler"));
+    if (!simulation.timeUnit().isEmpty())
+        writer.writeAttribute(QStringLiteral("time-unit"), simulation.timeUnit());
     writer.writeEndElement();
 
     writer.writeStartElement(QStringLiteral("diagram"));
@@ -666,6 +682,8 @@ bool parseNativeElement(QXmlStreamReader &reader, NativeRecord &record)
         const QString child = reader.name().toString();
         if (child == QStringLiteral("eqn"))
             record.data.equation = reader.readElementText();
+        else if (child == QStringLiteral("initial"))
+            record.data.initialEquation = reader.readElementText();
         else if (child == QStringLiteral("dimensions")) {
             if (!parseNativeVariableDimensions(reader, record.data.dimensions))
                 return false;
@@ -729,6 +747,45 @@ bool parseNativeXml(const QByteArray &xml, core::Document &document, Workspace &
                 setError(errorMessage, translate("The QDS dimensions are invalid."));
                 return false;
             }
+            continue;
+        }
+        if (reader.name() == QStringLiteral("simulation")) {
+            const QXmlStreamAttributes attributes = reader.attributes();
+            const core::SimulationSettings &current = parsed.simulationSettings();
+            double start = current.startTime();
+            double stop = current.stopTime();
+            double dt = current.dt();
+            double saveInterval = current.saveInterval();
+            bool startOk = true;
+            bool stopOk = true;
+            bool dtOk = true;
+            bool saveIntervalOk = true;
+            if (attributes.hasAttribute(QStringLiteral("start")))
+                start = attributes.value(QStringLiteral("start")).toDouble(&startOk);
+            if (attributes.hasAttribute(QStringLiteral("stop")))
+                stop = attributes.value(QStringLiteral("stop")).toDouble(&stopOk);
+            if (attributes.hasAttribute(QStringLiteral("dt")))
+                dt = attributes.value(QStringLiteral("dt")).toDouble(&dtOk);
+            if (attributes.hasAttribute(QStringLiteral("save-interval")))
+                saveInterval = attributes.value(QStringLiteral("save-interval")).toDouble(&saveIntervalOk);
+            const QString method = attributes.value(QStringLiteral("method")).toString().trimmed();
+            core::IntegrationMethod integrationMethod = current.integrationMethod();
+            if (method.compare(QStringLiteral("euler"), Qt::CaseInsensitive) == 0) {
+                integrationMethod = core::IntegrationMethod::Euler;
+            } else if (method.compare(QStringLiteral("rk4"), Qt::CaseInsensitive) == 0) {
+                integrationMethod = core::IntegrationMethod::RungeKutta4;
+            } else if (!method.isEmpty()) {
+                setError(errorMessage, translate("The QDS integration method is invalid."));
+                return false;
+            }
+            const QString timeUnit = attributes.hasAttribute(QStringLiteral("time-unit"))
+                ? attributes.value(QStringLiteral("time-unit")).toString() : current.timeUnit();
+            if (!startOk || !stopOk || !dtOk || !saveIntervalOk
+                || !parsed.setSimulationSettings({start, stop, dt, saveInterval, integrationMethod, timeUnit})) {
+                setError(errorMessage, translate("The QDS simulation settings are invalid."));
+                return false;
+            }
+            reader.skipCurrentElement();
             continue;
         }
         if (reader.name() == QStringLiteral("workspace")) {
@@ -853,14 +910,27 @@ bool writeFileBytes(const QString &fileName, const QByteArray &contents, QString
 
 } // namespace
 
-bool DocumentFile::save(const QString &fileName, const core::Document &document, const Workspace &workspace,
-    QString *errorMessage)
+QByteArray DocumentFile::toXml(const core::Document &document, const Workspace &workspace, QString *errorMessage)
 {
     if (!validWorkspace(workspace)) {
         setError(errorMessage, translate("The QDS workspace is invalid."));
-        return false;
+        return {};
     }
-    const QByteArray archive = makeZip(writeNativeXml(document, workspace));
+    return writeNativeXml(document, workspace);
+}
+
+bool DocumentFile::fromXml(const QByteArray &xml, core::Document &document, Workspace &workspace, QString *errorMessage)
+{
+    return parseNativeXml(xml, document, workspace, errorMessage);
+}
+
+bool DocumentFile::save(const QString &fileName, const core::Document &document, const Workspace &workspace,
+    QString *errorMessage)
+{
+    const QByteArray xml = toXml(document, workspace, errorMessage);
+    if (xml.isEmpty())
+        return false;
+    const QByteArray archive = makeZip(xml);
     if (archive.isEmpty()) {
         setError(errorMessage, translate("Could not create the QDS ZIP container."));
         return false;
@@ -886,7 +956,7 @@ bool DocumentFile::open(const QString &fileName, core::Document &document, Works
     }
 
     QByteArray xml;
-    if (!readZip(contents, xml, errorMessage) || !parseNativeXml(xml, document, workspace, errorMessage))
+    if (!readZip(contents, xml, errorMessage) || !fromXml(xml, document, workspace, errorMessage))
         return false;
     if (nativeFormat)
         *nativeFormat = true;

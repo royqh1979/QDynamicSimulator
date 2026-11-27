@@ -36,7 +36,7 @@
 
 ```text
 core::Document
-├── core::Model                  模型变量的只读门面
+├── core::Model                  模型变量的只读门面；Stock 独立保存 initialEquation
 │   ├── Stock                    Vensim Level / XMILE stock
 │   ├── Flow                     Vensim Rate / XMILE flow
 │   ├── Auxiliary                XMILE aux
@@ -80,7 +80,7 @@ MainWindow / DiagramView
 | 文件 | 职责 |
 | --- | --- |
 | `Element.h` | EntityId、ElementKind 和不携带其他语义的 DocumentElement 基类 |
-| `Model.h/.cpp` | ModelElement、Variable、Flow、ModelRange 和 Model 只读门面 |
+| `Model.h/.cpp` | ModelElement、Stock、Variable、Flow、ModelRange 和 Model 只读门面；Stock 初值独立于 equation |
 | `Diagram.h/.cpp` | Vec2、Route、FontStyle、ViewElement 及其派生类、ViewRange、DiagramDefinition |
 | `Dimension.h/.cpp` | Dimension、DimensionElement 及维度元素查找 |
 | `Macro.h` | MacroDefinitionData、MacroDefinition、MacroParameter 和参数个数规则 |
@@ -277,7 +277,7 @@ ArrowItem 与 FlowItem 都保存 EntityId 并复用 RoutedItem 的路径能力�
 - 响应端点移动和路径变化。
 - 管理选中时显示的控制句柄。
 
-连接线固定在实体上方、控制句柄下方。贝塞尔辅助线及控制句柄仅在单独选中一条曲线时显示，多选和区域选择过程中隐藏。左键从空白或不可移动 RoutedItem 开始时都进入同一个 area-selecting 状态，不能只在空白按下时设置；释放后清除该状态、按最终选择同步句柄并刷新最后一次框选区域。路径预览必须先调用 `prepareGeometryChange()` 通知旧区域，再替换路由数据，确保拖动时旧轨迹被清除。
+连接线固定在实体上方、控制句柄下方。贝塞尔原始路径以端点实体的 center 为数学端点，辅助线连接数学端点和实际控制点；可见曲线是原始二次/三次贝塞尔经实体实际 shape 裁剪后的 de Casteljau 子曲线，不得把边界端点重新代入新曲线。裁剪使用每条曲线只构造一次的 sceneShape；普通实体映射实际 shape，RoutedItem/Flow 则提供与阀门边界一致的矩形，不能把可点击管线当作填充区域。若两个端点的裁剪区域重叠以致起止参数反转，保留完整原始曲线，不生成空路径。可见路径按 Route、端点和预览状态缓存并在 prepareGeometryChange 后失效，避免绘制、命中、箭头、阀门和标签重复裁剪。端点句柄仍位于可见路径首尾，辅助线延伸到实体内属于预期行为。贝塞尔辅助线及控制句柄仅在单独选中一条曲线时显示，多选和区域选择过程中隐藏。左键从空白或不可移动 RoutedItem 开始时都进入同一个 area-selecting 状态，不能只在空白按下时设置；释放后清除该状态、按最终选择同步句柄并刷新最后一次框选区域。路径预览必须先调用 `prepareGeometryChange()` 通知旧区域，再替换路由数据，确保拖动时旧轨迹被清除。
 
 它不直接修改核心连接关系，不承担自动避障、吸附决策和撤销命令职责。Flow 默认使用直线；Arrow 默认使用带两个自动相对控制点的贝塞尔曲线，也可显式选择直线或直角自动布线。
 
@@ -348,7 +348,7 @@ FlowItem 的名称使用独立 `labelRect()` 计算，`boundingRect()` 必须同
 
 I/O 职责按格式拆分为独立类和源码文件：`DocumentFile` 负责 QDS/ZIP，`XmileFile` 只负责未压缩 XMILE 导入/导出，不共享格式兼容层。原生文件使用 `.qds` 后缀，ZIP 容器中只有一个 `document.xml`。XML 根元素为 `<qds-document version="1">`，内部以 `<model>`、`<diagram>` 和可选 `<workspace>` 分区；代码模型与视图分层不要求拆成多个文件。开发阶段不读取旧版 model.xmile/workspace.xml ZIP，也不为其设置兼容层。
 
-`model` 保存 Stock、Flow、Auxiliary、Constant、Data 及方程、单位、说明和 Flow 端点；`diagram` 保存 Cloud、Comment、Connector、位置和 Route。所有对象使用文件内 uid 引用，加载时重新分配 EntityId 并建立 uid→EntityId 映射。displayName 持久化，nameKey 加载时派生；Comment 保存 content，Cloud 不使用名称。
+`model` 保存 Stock、Flow、Auxiliary、Constant、Data 及方程、单位、说明和 Flow 端点；Stock 初值使用独立 `<initial>`，不写入普通 `<eqn>`；`diagram` 保存 Cloud、Comment、Connector、位置和 Route。所有对象使用文件内 uid 引用，加载时重新分配 EntityId 并建立 uid→EntityId 映射。displayName 持久化，nameKey 加载时派生；Comment 保存 content，Cloud 不使用名称。
 
 原生读取采用两阶段构建：先建立非路由对象，再按映射建立 Flow、Connector。原生往返必须完整保留 ElementKind、重复 Comment、Cloud、端点、路径模式、控制点和锁定状态。ZIP 中缺少 document.xml、XML 损坏或引用无效时加载失败并保留原 Document。XMILE 导入通道遇到 ZIP 直接报错，不尝试猜测旧格式。
 

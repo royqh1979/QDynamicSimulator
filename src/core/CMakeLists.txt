@@ -14,6 +14,8 @@ add_library(qds-core STATIC
     include/core/Identifier.h
     include/core/Macro.h
     include/core/Model.h
+    include/core/SimulationSettings.h
+    include/core/simulation/Simulation.h
     include/core/Validation.h
     src/Diagram.cpp
     src/Dimension.cpp
@@ -24,6 +26,8 @@ add_library(qds-core STATIC
     src/formula/Function.cpp
     src/Identifier.cpp
     src/Model.cpp
+    src/SimulationSettings.cpp
+    src/simulation/Simulation.cpp
     src/Validation.cpp
 )
 add_library(QDS::Core ALIAS qds-core)

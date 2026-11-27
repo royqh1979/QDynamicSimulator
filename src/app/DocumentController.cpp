@@ -34,6 +34,27 @@ private:
     bool m_firstRedo = true;
 };
 
+class SimulationSettingsCommand : public QUndoCommand
+{
+public:
+    using Apply = std::function<void(const SimulationSettings &)>;
+
+    SimulationSettingsCommand(const Apply &apply, const SimulationSettings &before, const SimulationSettings &after)
+        : m_apply(apply)
+        , m_before(before)
+        , m_after(after)
+    {
+    }
+
+    void undo() override { m_apply(m_before); }
+    void redo() override { m_apply(m_after); }
+
+private:
+    Apply m_apply;
+    SimulationSettings m_before;
+    SimulationSettings m_after;
+};
+
 ChangeRecord addedRecord(const Document &document, EntityId id)
 {
     ChangeRecord record;
@@ -80,6 +101,22 @@ QString uniqueCopyName(const Document &document, const QString &base)
         if (!document.findByName(candidate))
             return candidate;
     }
+}
+
+bool affectsSimulation(const ChangeRecord &record)
+{
+    if (record.kind >= ElementKind::Connector)
+        return false;
+    if (record.before.has_value() != record.after.has_value())
+        return true;
+    if (!record.before)
+        return false;
+    const ElementData &before = *record.before;
+    const ElementData &after = *record.after;
+    return before.kind != after.kind || before.displayName != after.displayName
+        || before.equation != after.equation || before.dimensions != after.dimensions
+        || before.elementEquations != after.elementEquations || before.unit != after.unit
+        || before.initialEquation != after.initialEquation || before.flowEndpoints != after.flowEndpoints;
 }
 
 } // namespace
@@ -240,6 +277,20 @@ void DocumentController::setEquation(EntityId id, const QString &equation)
     pushChanges(ChangeSet {{std::move(record)}}, true);
 }
 
+void DocumentController::setInitialEquation(EntityId id, const QString &equation)
+{
+    if (!m_document.find(id))
+        return;
+    ChangeRecord record;
+    record.id = id;
+    record.kind = m_document.find(id)->kind();
+    record.before = m_document.capture(id);
+    if (!m_document.setInitialEquation(id, equation))
+        return;
+    record.after = m_document.capture(id);
+    pushChanges(ChangeSet {{std::move(record)}}, true);
+}
+
 void DocumentController::setUnit(EntityId id, const QString &unit)
 {
     if (!m_document.find(id))
@@ -281,6 +332,24 @@ void DocumentController::setCommentContent(EntityId id, const QString &content)
         return;
     record.after = m_document.capture(id);
     pushChanges(ChangeSet {{std::move(record)}}, true);
+}
+
+bool DocumentController::setSimulationSettings(const SimulationSettings &settings)
+{
+    if (!settings.isValid())
+        return false;
+    const SimulationSettings before = m_document.simulationSettings();
+    if (before == settings)
+        return true;
+    m_undoStack.push(new SimulationSettingsCommand(
+        [this](const SimulationSettings &value) {
+            if (!m_document.setSimulationSettings(value))
+                return;
+            ++m_simulationRevision;
+            notify(ChangeNotification {});
+        },
+        before, settings));
+    return true;
 }
 
 void DocumentController::setFontStyle(EntityId id, const QFont &font)
@@ -374,6 +443,7 @@ void DocumentController::setRoute(EntityId id, const Route &route)
 void DocumentController::replaceDocument(Document document)
 {
     m_document = std::move(document);
+    ++m_simulationRevision;
     m_undoStack.clear();
     ChangeNotification notification;
     notification.documentReset = true;
@@ -465,6 +535,8 @@ QVector<EntityId> DocumentController::pasteClipboard(const ClipboardData &clipbo
 
 void DocumentController::pushChanges(const ChangeSet &changes, bool alreadyApplied)
 {
+    if (std::any_of(changes.records.begin(), changes.records.end(), affectsSimulation))
+        ++m_simulationRevision;
     m_undoStack.push(new ChangeCommand(
         [this](const ChangeSet &value, bool after) {
             applyChanges(value, after);
@@ -487,6 +559,8 @@ void DocumentController::pushChanges(const ChangeSet &changes, bool alreadyAppli
 
 void DocumentController::applyChanges(const ChangeSet &changes, bool after)
 {
+    if (std::any_of(changes.records.begin(), changes.records.end(), affectsSimulation))
+        ++m_simulationRevision;
     ChangeNotification notification;
     const auto applyRecord = [this, after, &notification](const ChangeRecord &record) {
         const auto &value = after ? record.after : record.before;

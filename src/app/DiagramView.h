@@ -27,8 +27,8 @@ protected:
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
-    void keyPressEvent(QKeyEvent *event) override;
-    void keyReleaseEvent(QKeyEvent *event) override;
+    void focusInEvent(QFocusEvent *event) override;
+    void focusOutEvent(QFocusEvent *event) override;
     void dragEnterEvent(QDragEnterEvent *event) override;
     void dragMoveEvent(QDragMoveEvent *event) override;
     void dropEvent(QDropEvent *event) override;
@@ -39,7 +39,6 @@ private:
     void finishSelection();
 
     bool m_panning = false;
-    bool m_spacePressed = false;
     QPoint m_lastPanPosition;
     QFrame *m_selectionFrame = nullptr;
     QPoint m_selectionStart;

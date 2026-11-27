@@ -4,6 +4,7 @@
 #include <core/Dimension.h>
 #include <core/Macro.h>
 #include <core/Model.h>
+#include <core/SimulationSettings.h>
 
 #include <map>
 #include <memory>
@@ -21,6 +22,7 @@ struct ElementData {
     ElementKind kind = ElementKind::Stock;
     QString displayName;
     QString equation;
+    QString initialEquation;
     QVector<QString> dimensions;
     QVector<ArrayElementEquation> elementEquations;
     QString unit;
@@ -36,7 +38,7 @@ struct ElementData {
     bool operator==(const ElementData &other) const
     {
         return id == other.id && kind == other.kind && displayName == other.displayName && equation == other.equation
-            && dimensions == other.dimensions && elementEquations == other.elementEquations
+            && dimensions == other.dimensions && elementEquations == other.elementEquations && initialEquation == other.initialEquation
             && unit == other.unit && comment == other.comment && content == other.content
             && flowEndpoints == other.flowEndpoints && from == other.from && to == other.to
             && position == other.position && route == other.route && font == other.font;
@@ -69,6 +71,8 @@ public:
     DocumentRange elements() const { return DocumentRange(m_elements); }
     const Model &model() const { return m_model; }
     const DiagramDefinition &diagram() const { return m_diagram; }
+    const SimulationSettings &simulationSettings() const { return m_simulationSettings; }
+    bool setSimulationSettings(const SimulationSettings &settings);
 
     EntityId createVariable(ElementKind kind, Vec2 position = {});
     EntityId createFlow(EntityId from, EntityId to);
@@ -84,6 +88,7 @@ public:
 
     bool rename(EntityId id, const QString &displayName);
     bool setEquation(EntityId id, const QString &equation);
+    bool setInitialEquation(EntityId id, const QString &equation);
     bool setDimensions(EntityId id, const QVector<QString> &dimensions);
     bool setElementEquation(EntityId id, const QVector<std::size_t> &indices, const QString &equation);
     bool setUnit(EntityId id, const QString &unit);
@@ -129,6 +134,7 @@ private:
     EntityId m_nextId = 1;
     Model m_model;
     DiagramDefinition m_diagram;
+    SimulationSettings m_simulationSettings;
 };
 
 } // namespace qds::core

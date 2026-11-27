@@ -71,6 +71,10 @@ Document
 8. 未被 Stock 引用或没有视图的 XMILE Flow 仍须保留在 Model，并由导入器补建可见 Flow 及必要 Cloud；所有语义变量都必须出现在当前视图中。
 9. 语义变量默认名称按类型递增生成，并通过集中式 nameKey 索引排除冲突；Cloud/Comment 不参与该命名体系。
 
+### 4.1 Stock 初值与外部公式边界
+
+内部 Stock 独立保存 `initialEquation`，FlowEndpoints 是净流入关系的唯一权威。Vensim Level 的 `INTEG(inflows - outflows, initial)` 在使用时派生；XMILE Stock `<eqn>` 是仅初始化求值的初始方程，只在导入/导出适配层映射。普通 ModelElement::equation 不保存 Stock 初值。XMILE 同名 `<eqn>` 的上下文歧义是外部格式弱点，QDS 使用显式 `<initial>`，不得据此建立第二份可写净流入公式。
+
 ## 5. 后续设计审查清单
 
 - 每个面板名称是否能在上表中找到明确对应。

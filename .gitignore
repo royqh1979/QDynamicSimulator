@@ -8,3 +8,4 @@ CMakeUserPresets.json
 *.user.*
 .DS_Store
 docs/env/local/
+docs/references/vensim/

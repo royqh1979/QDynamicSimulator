@@ -6,6 +6,9 @@
 #include "EntityPalette.h"
 #include "MiniMapView.h"
 #include "PropertyPanel.h"
+#include "SimulationController.h"
+#include "SimulationResultsWidget.h"
+#include "SimulationSettingsDialog.h"
 #include <io/DocumentFile.h>
 #include <io/XmileFile.h>
 #include <core/Validation.h>
@@ -15,7 +18,9 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QDir>
+#include <QDialog>
 #include <QDockWidget>
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -33,12 +38,15 @@
 #include <QMimeData>
 #include <QScrollBar>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
 #include <QUrl>
+
+#include <algorithm>
 
 namespace {
 
@@ -67,11 +75,14 @@ bool isDocumentFileDrop(const QMimeData *mime)
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_controller(new DocumentController(this))
+    , m_simulation(new SimulationController(m_controller))
     , m_scene(new DiagramScene(m_controller, this))
     , m_view(new DiagramView(m_scene, this))
 {
     Q_INIT_RESOURCE(icons);
     setAcceptDrops(true);
+    setCorner(Qt::BottomLeftCorner, Qt::LeftDockWidgetArea);
+    setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
     setCentralWidget(m_view);
     connect(m_view, &DiagramView::fileOpenRequested, this, [this](const QString &fileName) {
         if (maybeSave())
@@ -84,6 +95,35 @@ MainWindow::MainWindow(QWidget *parent)
         setDirty(!clean);
     });
     connect(m_controller, &DocumentController::documentChanged, this, &MainWindow::refreshValidation);
+    connect(m_simulation, &SimulationController::statusChanged, this,
+        [this](SimulationSessionStatus status) {
+            QString text;
+            switch (status) {
+            case SimulationSessionStatus::Idle: text = tr("Ready"); break;
+            case SimulationSessionStatus::Compiling: text = tr("Compiling"); break;
+            case SimulationSessionStatus::Running: text = tr("Running"); break;
+            case SimulationSessionStatus::Cancelling: text = tr("Cancelling"); break;
+            case SimulationSessionStatus::Completed: text = tr("Completed"); break;
+            case SimulationSessionStatus::Cancelled: text = tr("Cancelled"); break;
+            case SimulationSessionStatus::Failed: text = tr("Failed"); break;
+            }
+            statusBar()->showMessage(text, 5000);
+        });
+    connect(m_simulation, &SimulationController::busyChanged, this, [this](bool) {
+        updateSimulationControls();
+    });
+    connect(m_simulation, &SimulationController::runTerminated, this,
+        [this](const std::shared_ptr<const qds::core::SimulationRun> &run) {
+            if (run->status() == qds::core::SimulationRunStatus::Completed) {
+                statusBar()->showMessage(tr("Completed %1: %2 samples")
+                    .arg(m_simulation->lastRunName()).arg(run->times().size()), 10000);
+                m_runName->setCurrentText(nextAvailableRunName());
+            }
+        });
+    connect(m_simulation, &SimulationController::compilationFailed, this, &MainWindow::showCompilationIssues);
+    connect(m_simulation, &SimulationController::errorOccurred, this, [this](const QString &message) {
+        statusBar()->showMessage(message, 10000);
+    });
     connect(m_scene, &DiagramScene::editingFinished, this, [this]() {
         setTool(DiagramScene::Tool::Select);
         m_selectAction->setChecked(true);
@@ -98,7 +138,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_autoSaveTimer, &QTimer::timeout, this, &MainWindow::autoSave);
     m_autoSaveTimer->start(10000);
 
-    setCurrentFile(QString());
+    setCurrentFile(QString(), nextUntitledTitle());
     statusBar()->showMessage(tr("Drag elements with Select; zoom with the mouse wheel"), 5000);
     m_cursorPosition = new QLabel(this);
     m_cursorPosition->setObjectName(QStringLiteral("cursorPosition"));
@@ -113,6 +153,18 @@ MainWindow::MainWindow(QWidget *parent)
     updateCursorStatus();
     resize(1200, 800);
     restoreWindowLayout();
+    if (m_simulation->runs().isEmpty()) {
+        if (QDockWidget *resultsDock = findChild<QDockWidget *>(QStringLiteral("resultsDock")))
+            resultsDock->hide();
+    }
+}
+
+MainWindow::~MainWindow()
+{
+    if (m_simulation) {
+        disconnect(m_simulation, nullptr, this, nullptr);
+        m_simulation->reset();
+    }
 }
 
 bool MainWindow::openFile(const QString &fileName)
@@ -127,7 +179,7 @@ bool MainWindow::openFile(const QString &fileName)
     }
 
     m_controller->replaceDocument(std::move(document));
-    setCurrentFile(nativeFormat ? fileName : QString());
+    setCurrentFile(nativeFormat ? fileName : QString(), QFileInfo(fileName).completeBaseName());
     setDirty(!nativeFormat);
     m_recentFiles.add(fileName);
     updateRecentFiles();
@@ -141,6 +193,7 @@ bool MainWindow::openFile(const QString &fileName)
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     if (maybeSave()) {
+        m_simulation->reset();
         saveWindowLayout();
         if (!m_dirty)
             QFile::remove(recoveryFileName());
@@ -172,6 +225,7 @@ void MainWindow::createActions()
     fileToolBar->setObjectName(QStringLiteral("fileToolBar"));
 
     QAction *newAction = new QAction(actionIcon("new"), tr("&New"), this);
+    newAction->setObjectName(QStringLiteral("newAction"));
     newAction->setShortcut(QKeySequence::New);
     connect(newAction, &QAction::triggered, this, &MainWindow::newFile);
     fileMenu->addAction(newAction);
@@ -193,6 +247,7 @@ void MainWindow::createActions()
     fileToolBar->addAction(saveAction);
 
     QAction *saveAsAction = new QAction(actionIcon("save-as"), tr("Save &As..."), this);
+    saveAsAction->setObjectName(QStringLiteral("saveAsAction"));
     saveAsAction->setShortcut(QKeySequence::SaveAs);
     connect(saveAsAction, &QAction::triggered, this, [this]() {
         saveAs();
@@ -341,6 +396,52 @@ void MainWindow::createActions()
     });
     editMenu->addAction(distributeVertical);
 
+    QMenu *simulationMenu = menuBar()->addMenu(tr("&Simulation"));
+    QToolBar *simulationToolBar = addToolBar(tr("Simulation"));
+    simulationToolBar->setObjectName(QStringLiteral("simulationToolBar"));
+    QLabel *runNameLabel = new QLabel(tr("Run name:"), simulationToolBar);
+    simulationToolBar->addWidget(runNameLabel);
+    m_runName = new QComboBox(simulationToolBar);
+    m_runName->setObjectName(QStringLiteral("runNameCombo"));
+    m_runName->setEditable(true);
+    m_runName->setInsertPolicy(QComboBox::NoInsert);
+    m_runName->addItem(QStringLiteral("Run1"));
+    m_runName->setMaximumWidth(180);
+    simulationToolBar->addWidget(m_runName);
+    m_runAction = new QAction(actionIcon("run"), tr("Run"), this);
+    m_runAction->setObjectName(QStringLiteral("runAction"));
+    m_runAction->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
+    m_cancelAction = new QAction(actionIcon("cancel"), tr("Cancel"), this);
+    m_cancelAction->setObjectName(QStringLiteral("cancelAction"));
+    m_cancelAction->setShortcut(QKeySequence(Qt::Key_Escape));
+    QAction *graphAction = new QAction(actionIcon("graph"), tr("Graph"), this);
+    graphAction->setObjectName(QStringLiteral("graphAction"));
+    QAction *tableAction = new QAction(actionIcon("table"), tr("Table"), this);
+    tableAction->setObjectName(QStringLiteral("tableAction"));
+    connect(graphAction, &QAction::triggered, this, [this]() {
+        if (m_resultsDock && m_results) {
+            m_resultsDock->show();
+            m_results->showGraph();
+        }
+    });
+    connect(tableAction, &QAction::triggered, this, [this]() {
+        if (m_resultsDock && m_results) {
+            m_resultsDock->show();
+            m_results->showTable();
+        }
+    });
+    m_simulationSettingsAction = new QAction(actionIcon("simulation-settings"), tr("Simulation settings"), this);
+    m_simulationSettingsAction->setObjectName(QStringLiteral("simulationSettingsAction"));
+    for (QAction *action : {m_runAction, m_cancelAction, graphAction, tableAction, m_simulationSettingsAction}) {
+        simulationMenu->addAction(action);
+        simulationToolBar->addAction(action);
+    }
+    connect(m_runAction, &QAction::triggered, this, &MainWindow::runSimulation);
+    connect(m_runName->lineEdit(), &QLineEdit::returnPressed, this, &MainWindow::runSimulation);
+    connect(m_cancelAction, &QAction::triggered, m_simulation, &SimulationController::cancel);
+    connect(m_simulationSettingsAction, &QAction::triggered, this, &MainWindow::openSimulationSettings);
+    updateSimulationControls();
+
     QMenu *viewMenu = menuBar()->addMenu(tr("&View"));
     auto addViewAction = [this, viewMenu](const QString &text, const QKeySequence &shortcut,
                                           void (DiagramView::*method)(), const char *iconName) {
@@ -446,6 +547,52 @@ void MainWindow::createPropertyPanel()
             }
         }
     });
+    m_resultsDock = new QDockWidget(tr("Run results"), this);
+    m_resultsDock->setObjectName(QStringLiteral("resultsDock"));
+    m_results = new SimulationResultsWidget(m_simulation, m_resultsDock);
+    m_resultsDock->setWidget(m_results);
+    addDockWidget(Qt::BottomDockWidgetArea, m_resultsDock);
+    m_resultsDock->hide();
+    connect(m_simulation, &SimulationController::runTerminated, this,
+        [this](const std::shared_ptr<const qds::core::SimulationRun> &run) {
+            if (run->status() != qds::core::SimulationRunStatus::Completed)
+                return;
+            const auto &runs = m_simulation->runs();
+            const auto completed = std::find_if(runs.begin(), runs.end(), [this](const NamedRun &candidate) {
+                return candidate.id() == m_simulation->lastRunId();
+            });
+            if (completed != runs.end() && !m_simulation->isOutdated(*completed)) {
+                m_resultsDock->show();
+                m_results->showRun(completed->id());
+                m_results->showGraph();
+            }
+        });
+    connect(m_simulation, &SimulationController::namedRunsChanged, this, [this]() {
+        updateRunNameChoices();
+        if (m_simulation->runs().isEmpty()) {
+            m_runName->setCurrentText(nextAvailableRunName());
+            m_resultsDock->hide();
+        }
+    });
+    connect(m_scene, &QGraphicsScene::selectionChanged, this, [this]() {
+        const QList<QGraphicsItem *> selection = m_scene->selectedItems();
+        if (selection.size() != 1)
+            return;
+        const auto *item = dynamic_cast<const DiagramItem *>(selection.front());
+        if (item && dynamic_cast<const qds::core::ModelElement *>(m_controller->document().find(item->id())))
+            m_simulation->setWorkbenchVariable(item->id());
+    });
+    connect(m_simulation, &SimulationController::workbenchVariableChanged, this, [this]() {
+        DiagramItem *item = m_scene->item(m_simulation->workbenchVariable());
+        if (!item)
+            return;
+        const QList<QGraphicsItem *> selection = m_scene->selectedItems();
+        if (selection.size() == 1 && selection.front() == item)
+            return;
+        m_scene->clearSelection();
+        item->setSelected(true);
+    });
+
     m_propertyPanel->refresh();
     refreshValidation();
 }
@@ -501,12 +648,78 @@ void MainWindow::applyWorkspace(const qds::io::Workspace &workspace)
     }
 }
 
+void MainWindow::runSimulation()
+{
+    const QString name = m_runName->currentText().trimmed();
+    const bool overwrite = m_simulation->hasRunName(name);
+    if (overwrite) {
+        const auto choice = QMessageBox::question(this, tr("Overwrite run"),
+            tr("Run '%1' already exists. Overwrite its dataset?").arg(name));
+        if (choice != QMessageBox::Yes)
+            return;
+    }
+    m_simulation->start(name, overwrite);
+}
+
+void MainWindow::openSimulationSettings()
+{
+    SimulationSettingsDialog dialog(m_controller->document().simulationSettings(), this);
+    if (dialog.exec() == QDialog::Accepted)
+        m_controller->setSimulationSettings(dialog.settings());
+}
+
+void MainWindow::updateSimulationControls()
+{
+    const bool busy = m_simulation->isBusy();
+    if (m_runAction)
+        m_runAction->setEnabled(!busy);
+    if (m_cancelAction)
+        m_cancelAction->setEnabled(busy);
+}
+
+void MainWindow::updateRunNameChoices()
+{
+    const QString current = m_runName->currentText();
+    const QSignalBlocker blocker(m_runName);
+    m_runName->clear();
+    for (const NamedRun &run : m_simulation->runs())
+        m_runName->addItem(run.name());
+    m_runName->setCurrentText(current);
+}
+
+QString MainWindow::nextAvailableRunName() const
+{
+    int number = 1;
+    while (m_simulation->hasRunName(QStringLiteral("Run%1").arg(number)))
+        ++number;
+    return QStringLiteral("Run%1").arg(number);
+}
+
+void MainWindow::showCompilationIssues(const QVector<qds::core::ModelIssue> &issues)
+{
+    if (!m_issueList)
+        return;
+    m_issueList->clear();
+    for (const qds::core::ModelIssue &issue : issues) {
+        const auto *element = dynamic_cast<const qds::core::ModelElement *>(m_controller->document().find(issue.entityId));
+        const QString name = element ? element->displayName() : tr("Model");
+        auto *item = new QListWidgetItem(tr("%1: %2").arg(name, issue.message), m_issueList);
+        item->setData(Qt::UserRole, issue.entityId);
+    }
+    if (!issues.isEmpty()) {
+        m_issueList->setCurrentRow(0);
+        if (QDockWidget *dock = qobject_cast<QDockWidget *>(m_issueList->parentWidget()))
+            dock->show();
+    }
+    statusBar()->showMessage(tr("Simulation compilation failed"), 10000);
+}
+
 void MainWindow::newFile()
 {
     if (!maybeSave())
         return;
     m_controller->replaceDocument(qds::core::Document());
-    setCurrentFile(QString());
+    setCurrentFile(QString(), nextUntitledTitle());
     setDirty(false);
     m_propertyPanel->refresh();
 }
@@ -536,7 +749,7 @@ bool MainWindow::saveAs()
     QString fileName = QFileDialog::getSaveFileName(
         this,
         tr("Save QDS document"),
-        m_fileName,
+        m_fileName.isEmpty() ? m_documentTitle + QStringLiteral(".qds") : m_fileName,
         tr("QDS documents (*.qds);;All files (*)"));
     if (fileName.isEmpty())
         return false;
@@ -637,12 +850,18 @@ bool MainWindow::maybeSave()
     return choice == QMessageBox::Discard;
 }
 
-void MainWindow::setCurrentFile(const QString &fileName)
+void MainWindow::setCurrentFile(const QString &fileName, const QString &documentTitle)
 {
     m_fileName = fileName;
-    const QString displayName = fileName.isEmpty() ? tr("Untitled.qds") : QFileInfo(fileName).fileName();
-    setWindowTitle(tr("%1[*] - QDynamicSimulator").arg(displayName));
+    m_documentTitle = fileName.isEmpty() ? documentTitle : QFileInfo(fileName).completeBaseName();
+    setWindowTitle(tr("%1[*] - QDynamicSimulator").arg(m_documentTitle));
     setWindowModified(false);
+}
+
+QString MainWindow::nextUntitledTitle()
+{
+    static int number = 0;
+    return tr("Untitled %1").arg(++number);
 }
 
 void MainWindow::setDirty(bool dirty)
@@ -740,7 +959,7 @@ void MainWindow::offerRecovery()
     }
     m_controller->replaceDocument(std::move(document));
     applyWorkspace(workspace);
-    setCurrentFile(QString());
+    setCurrentFile(QString(), nextUntitledTitle());
     setDirty(true);
 }
 

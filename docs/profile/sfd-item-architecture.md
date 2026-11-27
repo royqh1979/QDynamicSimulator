@@ -153,7 +153,7 @@
 | --- | ---: | ---: | ---: |
 | window_layout_restore | 100 | 13777.2 | 137772 |
 
-单元测试使用隔离 QSettings 目录，覆盖窗口 geometry 原始字节、Dock 隐藏/浮动状态、稳定 objectName 和第二次启动恢复，不读写开发者真实配置。profile 的尺寸断言使用关闭前实际尺寸，避免不同平台窗口管理器对未显示窗口 frame 的调整影响结果。
+单元测试使用隔离 QSettings 目录，验证 geometry/state 确实写入，并检查恢复后的窗口尺寸、Dock 隐藏/浮动状态、稳定 objectName 和角落归属，不比较 Qt 不透明布局字节，也不依赖固定面板宽度。profile 的尺寸断言使用关闭前实际尺寸，避免不同平台窗口管理器对未显示窗口 frame 的调整影响结果。窗口构造同时校验左右底部角落归属、Untitled 标题及编号递增；真实 Save As 对话框的默认 documentTitle.qds 由编辑器单元测试覆盖，不另设无意义的对话框计时指标。
 
 ## 元素字体编辑
 
@@ -223,3 +223,41 @@ CMake 使用 `qt5_create_translation` 更新 TS 并生成 QM，再通过 RCC 内
 | 操作 | 数量 | 总耗时 ms | 每操作 μs |
 | --- | ---: | ---: | ---: |
 | workspace_roundtrip | 100 | 232.992 | 2329.92 |
+
+## 模拟运行会话
+
+`simulation_session` 覆盖不可变 XML 副本、编译、QThread Worker、结果交付和命名 Run 覆盖；每个 Run 有两个样本。1000 次会话共交付 2000 个样本，总耗时 1892.76 ms，每会话 1892.76 μs。该值包含调度和事件处理，不与 Core 的纯积分 self-time 混合。
+
+取消、重置、析构和文档替换的线程生命周期由 `test-simulation-controller` 验证。一次本机 Editor profile 出现系统剪贴板占用警告，但进程退出码和全部校验通过；该警告不属于模拟会话指标。
+
+`simulation_settings_dialog` 独立构建设置对话框、将 DT 从 0.25 改为 0.5、检查 SAVEPER 联动并接受。1000 次总耗时 3171.97 ms，每次 3171.97 μs。该指标只覆盖设置 Widget，不包含 Worker 或积分。
+
+## 空格输入、平移与窗口焦点状态
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`space_pan` 使用真实 DiagramView 和显式 QKeyEvent/QMouseEvent，每轮执行带 LeftButton 状态的交替方向平移并校验两个滚动条均变化；`space_focus_reset` 每轮分别在 `ActiveWindowFocusReason` 的 FocusOut 和 FocusIn 前按下空格，并校验两种事件均清空 Scene 状态。默认 Scene 按键转发、内联及属性面板名称中的空格输入、拖动中不按空格平移和移出后释放由编辑器单元测试覆盖。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| space_pan | 1000 | 1.5013 | 1.5013 |
+| space_focus_reset | 1000 | 1.0027 | 1.0027 |
+
+## Cloud 云形与边界
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`cloud_outline_boundary` 每轮获取一次 Cloud 的实际 shape，并计算水平、垂直和四个斜向的中心射线边界交点；共 8000 次边界计算，逐轮校验轮廓元素数量和非退化交点。单元测试另校验封闭多段路径、八个方向交点到实际轮廓的距离、射线共线、Flow 末端一致性及 QImage 实际渲染。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| cloud_outline_boundary | 8000 | 9.9499 | 1.24374 |
+
+## 贝塞尔原始路径与可见子曲线
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`bezier_clipped_geometry` 每轮通过 `updatePosition()` 使几何缓存失效，再计算原始三次贝塞尔的实体边界裁剪和 de Casteljau 子曲线，因此测量的是实际重算而不是缓存命中。`bezier_control_guide_updates` 同时覆盖 Route 更新、辅助线和相关 Scene 同步。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| bezier_clipped_geometry | 1000 | 13.8712 | 13.8712 |
+| bezier_control_guide_updates | 1000 | 13.5479 | 13.5479 |
+| editor_connect | 667 | 48.7311 | 73.0601 |
+| route_edit | 667 | 117.004 | 175.418 |
+
+初版逐采样分配向量并重建场景轮廓时，裁剪为 39.1645 ms/1000 次。改为解析求值、每条曲线一次场景轮廓和按修改失效的几何缓存后，667 条连接创建为 48.7311 ms，667 次路径编辑为 117.004 ms；同帧重复几何读取由缓存覆盖。测试验证辅助线连接中心数学端点、二次/三次可见点属于原始曲线、实际轮廓交点、Flow 阀门、预览、重叠回退、undo/redo 和重绘。profile 进程退出码为 0；本机系统剪贴板被其他进程占用，产生 OpenClipboard 警告，该指标不用于几何性能判断。

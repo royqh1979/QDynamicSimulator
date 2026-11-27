@@ -46,6 +46,17 @@
 - 使用 FullViewportUpdate 修复移动带连接线实体后 undo 时旧路径在 Windows backing store 中残留的问题，并加入真实屏幕像素回归。
 - 接入 Qt LinguistTools 和完整简体中文翻译，TS 在构建时生成 QM 并内嵌，系统中文语言下自动加载。
 - QDS 工作区 XML 保存并恢复缩放比例、视口中心和滚动位置；视口由 DiagramView 持有并经独立 I/O DTO 交换，覆盖保存、另存、恢复副本和无保存视口文件。
+- 新增不可变仿真设置，支持起止时间、DT、SAVEPER、Euler/RK4 和时间单位校验；QDS 完整往返，XMILE 支持 sim_specs、倒数 DT、方法回退及模型级覆盖，并附独立性能 profile。
+- 新增标量模拟编译与同步 Euler/RK4 执行：初值/运行期拓扑排序、Stock 净流入、不可变 Run、取消、失败前缀和按保存间隔采样；解析解、Euler/RK4 阶数、不变量及 SDXorg ABS/Teacup/SIR 等参考结果纳入自动验证。
+- 新增模拟设置对话框、设置 undo/redo、可输入并选择已有名称的 Run Name ComboBox/Enter、Run/Cancel、同名覆盖确认及编译诊断定位；Worker 使用不可变内存 XML 副本，模型修改保留旧 Run 并标记过期。时间参数去除多余小数零，DT/SAVEPER 使用 0.1 步长。
+- 新增 Run results Dock：Workbench Variable 与画布单选双向同步，支持最新优先的命名 Datasets 和加载状态；变量列表排除 Constant 并按名称排序，时间表为每个已加载 Run 提供独立列并合并时间并集，保留历史名称和旧模型提示。
+- 新增基于 Qt Charts 的 Graph/Table：叠加全部已加载 Run，Run 名直接作为图例，支持图例显隐、常量水平线、滚轮缩放、拖动平移和双击恢复完整范围。运行完成且模型未变时自动打开此次运行的 Graph；过期结果不自动弹出。
+- 修复含运行结果的主窗口析构时，模拟状态回调可能访问正在销毁的 Dock 或状态栏的问题。
+- 左右 Dock 占据各自侧边全部高度；文档标题使用无后缀文件名，新建按 Untitled N 编号，首次保存默认使用标题加 .qds。
+- Stock 使用独立 initialEquation，QDS 以 `<initial>` 保存；属性面板显示 Initial value 和只读流入/流出摘要，普通 equation 不再承担 Stock 初值语义。
+- 修复名称编辑无法输入空格的问题；编辑、实体拖动、框选和连线期间空格不再误触发画布平移，窗口失焦或获焦时清除空格按下状态。
+- Cloud 改为封闭实线云形，绘制、鼠标命中和 Flow 边界端点共用实际轮廓，不再使用椭圆近似。
+- 贝塞尔辅助线现在连接实体中心处的数学端点与实际控制点；可见曲线由原路径在实体边界裁剪，保持端点、箭头和重连一致，并缓存重复几何计算。
 - 新增标量公式 AST、UTF-8 名称与注释 Lexer、Pratt Parser、运算符优先级、函数/条件/下标节点和 SourceSpan 诊断，附 SDXorg 语料结构检查与性能基线。
 - 新增 nameKey 符号解析、XMILE 内置函数签名、公式依赖图与代数环检查；Validation 统一使用 AST 分析并区分公式依赖和结构使用关系。
 - 新增无全局状态的标量公式求值，支持已解析变量、时间常量、基本运算、条件分支和无状态数学函数；Analysis 与 Evaluator 共用函数签名注册表。

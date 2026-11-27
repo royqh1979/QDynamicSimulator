@@ -37,6 +37,8 @@ public:
 
     void setTool(Tool tool);
     Tool tool() const;
+    bool spacePressed() const { return m_spacePressed; }
+    void clearSpacePressed() { m_spacePressed = false; }
     qds::core::EntityId createElementAt(qds::core::ElementKind kind, const QPointF &position);
 
 signals:
@@ -67,6 +69,8 @@ public:
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
+    void keyReleaseEvent(QKeyEvent *event) override;
     void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
     void mouseMoveEvent(QGraphicsSceneMouseEvent *event) override;
     void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
@@ -108,6 +112,7 @@ private:
     OrthogonalRouter m_router;
     bool m_gridVisible = true;
     bool m_snapEnabled = true;
+    bool m_spacePressed = false;
     bool m_areaSelecting = false;
     bool m_variableDragging = false;
     QPointF m_dragStart;

@@ -20,6 +20,8 @@ public:
     virtual QPointF center() const { return pos(); }
     virtual QRectF labelRect() const { return {}; }
     virtual QPointF boundaryPointToward(const QPointF &target) const;
+    virtual QPainterPath sceneShape() const;
+    bool containsScenePoint(const QPointF &position) const;
     void setEndpointTargetHighlighted(bool highlighted);
     bool isEndpointTargetHighlighted() const { return m_endpointTargetHighlighted; }
     void setFontStyle(const qds::core::FontStyle &font);
@@ -49,6 +51,7 @@ public:
 
     int type() const override;
     QRectF boundingRect() const override;
+    QPainterPath shape() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
     qds::core::EntityId id() const override { return m_id; }
@@ -73,6 +76,7 @@ public:
 
     int type() const override;
     QRectF boundingRect() const override;
+    QPainterPath shape() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     qds::core::EntityId id() const override { return m_id; }
     qds::core::ElementKind kind() const { return m_kind; }
@@ -96,6 +100,7 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
     bool connects(qds::core::EntityId id) const;
+    QPainterPath sceneShape() const override;
     DiagramItem *from() const { return m_from; }
     DiagramItem *to() const { return m_to; }
     const qds::core::Route &route() const { return m_route; }
@@ -119,12 +124,14 @@ public:
     void updatePosition();
 
 protected:
-    QVector<QPointF> points() const;
+    QVector<QPointF> points(bool visible) const;
     void routeFrame(QPointF &from, QPointF &delta, QPointF &normal) const;
 
     DiagramItem *m_from;
     DiagramItem *m_to;
     qds::core::Route m_route;
+    mutable QPainterPath m_geometryCache;
+    mutable bool m_geometryCacheValid = false;
     QPointF m_fallbackPosition;
     bool m_controlGuidesVisible = false;
     int m_previewEndpoint = 0;
