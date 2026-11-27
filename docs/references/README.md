@@ -20,3 +20,8 @@ XMILE 文件为原始 HTML。Vensim 官方文档不提交下载副本；用户�
 - 许可证：MIT，见子模块中的 `LICENSE`；使用时保留上游版权和许可声明。
 - 初始化或更新到项目固定提交：`git submodule update --init 3rdparty/test-models`。
 - 子模块内容不作为普通项目文件逐个提交；需要变更上游版本时单独审核并提交 gitlink。
+
+## 项目测试模型
+
+- `tests/data/wfinv.mdl`：用户提供的 Vensim Workforce and Inventory 示例，从本机 `R:/WFINV.MDL` 原样复制，用于 Flow 端点、开放 Cloud 和 Sketch 回归。入库文件与源文件的 SHA-256 均为 `95c41a97d3c3c897f802469aba4844ab47570483442323a37b42f0ae20a5f719`。
+- 该文件是独立测试夹具，不属于 SDXorg 子模块，不作为代码、图标或界面素材；权利归原模型作者所有。

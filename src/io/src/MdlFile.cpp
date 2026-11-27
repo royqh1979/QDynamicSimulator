@@ -46,6 +46,11 @@ struct NetTerm {
     int sign = 1;
 };
 
+struct FlowConnection {
+    EntityId stock = 0;
+    int sign = 1;
+};
+
 struct Assignment {
     QString left;
     QString right;
@@ -1253,58 +1258,72 @@ bool MdlFile::importText(const QString &text, Document &document, QString *error
     }
     QHash<QString, EntityId> ids;
     for (const VariableDef &definition : definitions) {
-        if (definition.data.kind == ElementKind::Stock)
-            continue;
-        ElementData data = definition.data;
-        data.kind = flowNames.contains(normalizeIdentifier(definition.baseName)) ? ElementKind::Flow : ElementKind::Variable;
-        if (data.kind == ElementKind::Flow) {
-            data.flowEndpoints = {parsed.createCloud(), parsed.createCloud()};
-            if (data.flowEndpoints.from == 0 || data.flowEndpoints.to == 0)
-                return fail(errorMessage, QStringLiteral("Cannot create open flow endpoints"));
-        }
-        if (!restoreElement(parsed, data, ids, errorMessage))
+        if (definition.data.kind == ElementKind::Stock
+            && !restoreElement(parsed, definition.data, ids, errorMessage))
             return false;
     }
     for (const VariableDef &definition : definitions) {
         if (definition.data.kind == ElementKind::Stock
-            && !restoreElement(parsed, definition.data, ids, errorMessage))
+            || flowNames.contains(normalizeIdentifier(definition.baseName)))
+            continue;
+        if (!restoreElement(parsed, definition.data, ids, errorMessage))
             return false;
+    }
+
+    QHash<QString, FlowConnection> connections;
+    for (const VariableDef &definition : definitions) {
+        if (definition.data.kind != ElementKind::Stock)
+            continue;
+        const EntityId stock = ids.value(normalizeIdentifier(definition.baseName));
+        for (const QString &net : definition.netExpressions) {
+            for (const NetTerm &term : netTerms(net)) {
+                if (connections.contains(term.nameKey))
+                    return fail(errorMessage, QStringLiteral("Flow is used by multiple INTEG terms: %1").arg(term.nameKey));
+                connections.insert(term.nameKey, {stock, term.sign});
+            }
+        }
+    }
+    for (const VariableDef &definition : definitions) {
+        const QString nameKey = normalizeIdentifier(definition.baseName);
+        if (definition.data.kind == ElementKind::Stock || !flowNames.contains(nameKey))
+            continue;
+        ElementData data = definition.data;
+        data.kind = ElementKind::Flow;
+        const FlowConnection connection = connections.value(nameKey);
+        const EntityId open = parsed.createCloud();
+        if (open == 0)
+            return fail(errorMessage, QStringLiteral("Cannot create open flow endpoint"));
+        if (connection.stock != 0) {
+            data.flowEndpoints = connection.sign > 0 ? FlowEndpoints {open, connection.stock}
+                : FlowEndpoints {connection.stock, open};
+        } else {
+            const EntityId otherOpen = parsed.createCloud();
+            if (otherOpen == 0)
+                return fail(errorMessage, QStringLiteral("Cannot create second open flow endpoint"));
+            data.flowEndpoints = {open, otherOpen};
+        }
+        if (!restoreElement(parsed, data, ids, errorMessage))
+            return false;
+    }
+    for (auto connection = connections.constBegin(); connection != connections.constEnd(); ++connection) {
+        const EntityId flowId = ids.value(connection.key());
+        if (!dynamic_cast<const Flow *>(parsed.find(flowId)))
+            return fail(errorMessage, QStringLiteral("Unknown or non-flow rate in INTEG: %1").arg(connection.key()));
     }
     for (const VariableDef &definition : definitions) {
         if (definition.data.kind != ElementKind::Stock)
             continue;
         const EntityId stock = ids.value(normalizeIdentifier(definition.baseName));
         for (const QString &net : definition.netExpressions) {
-            const QVector<NetTerm> terms = netTerms(net);
-            if (terms.isEmpty()) {
-                ElementData flow;
-                flow.kind = ElementKind::Flow;
-                flow.displayName = uniqueFlowName(parsed, definition.baseName);
-                flow.equation = net;
-                flow.flowEndpoints = {parsed.createCloud(), stock};
-                if (!parsed.restore(flow))
-                    return fail(errorMessage, QStringLiteral("Cannot create net flow for %1").arg(definition.baseName));
+            if (!netTerms(net).isEmpty())
                 continue;
-            }
-            for (const NetTerm &term : terms) {
-                const EntityId flowId = ids.value(term.nameKey);
-                const Flow *flow = dynamic_cast<const Flow *>(parsed.find(flowId));
-                if (!flow)
-                    return fail(errorMessage, QStringLiteral("Unknown or non-flow rate in INTEG: %1 (id=%2, kind=%3)")
-                        .arg(term.nameKey).arg(flowId).arg(parsed.find(flowId) ? static_cast<int>(parsed.find(flowId)->kind()) : -1));
-                ElementData updated = *parsed.capture(flowId);
-                if (term.sign > 0) {
-                    if (parsed.find(updated.flowEndpoints.to)->kind() != ElementKind::Cloud)
-                        return fail(errorMessage, QStringLiteral("Flow is connected to multiple stocks: %1").arg(term.nameKey));
-                    updated.flowEndpoints.to = stock;
-                } else {
-                    if (parsed.find(updated.flowEndpoints.from)->kind() != ElementKind::Cloud)
-                        return fail(errorMessage, QStringLiteral("Flow is connected to multiple stocks: %1").arg(term.nameKey));
-                    updated.flowEndpoints.from = stock;
-                }
-                if (!parsed.apply(updated))
-                    return fail(errorMessage, QStringLiteral("Cannot connect flow %1").arg(term.nameKey));
-            }
+            ElementData flow;
+            flow.kind = ElementKind::Flow;
+            flow.displayName = uniqueFlowName(parsed, definition.baseName);
+            flow.equation = net;
+            flow.flowEndpoints = {parsed.createCloud(), stock};
+            if (!parsed.restore(flow))
+                return fail(errorMessage, QStringLiteral("Cannot create net flow for %1").arg(definition.baseName));
         }
     }
 

@@ -6,6 +6,7 @@
 
 - `small_abs`：SDXorg ABS 模型，含 Stock、Flow、Connector 和 Sketch。
 - `small_teacup`：SDXorg Teacup 模型，含带空格名称、单位/范围 warning 和仿真设置。
+- `wfinv`：仓库内的 `tests/data/wfinv.mdl`，覆盖两个 Stock、三条 Flow、三个开放 Cloud 和 Sketch，验证不遗留孤立 Cloud。
 - `medium_300_variables`：程序内确定性生成的 60 组 Stock、流入、流出、参数和辅助变量，共 300 个语义变量；开放端点计入输出元素数。
 - 可选自定义路径：用于额外本机模型验证，不作为仓库测试依赖。
 
@@ -35,8 +36,9 @@ operation,count,total_ms,per_operation_us,model_elements,warnings
 
 | operation | count | total_ms | per_operation_us | model_elements | warnings |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| small_abs | 50 | 7.628 | 152.56 | 6 | 0 |
-| small_teacup | 50 | 12.0442 | 240.884 | 9 | 3 |
-| medium_300_variables | 50 | 353.517 | 7070.35 | 540 | 0 |
+| small_abs | 50 | 7.7118 | 154.236 | 5 | 0 |
+| small_teacup | 50 | 12.5195 | 250.39 | 8 | 3 |
+| wfinv | 50 | 45.104 | 902.08 | 32 | 1 |
+| medium_300_variables | 50 | 316.257 | 6325.14 | 420 | 0 |
 
-额外以 `profile-mdl.exe 1 R:/WFINV.MDL` 验证本机模型，成功导入 35 个元素并产生 1 条 warning，本次耗时 1.008 ms；该路径不进入自动测试或基线输入。
+WFINV 使用仓库夹具 `tests/data/wfinv.mdl`，不再依赖本机 `R:/WFINV.MDL`。

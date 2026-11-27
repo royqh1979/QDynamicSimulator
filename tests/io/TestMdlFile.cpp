@@ -34,6 +34,7 @@ private slots:
     void macroModel();
     void specialCharacterModel();
     void complexNetRate();
+    void openCloudLifecycle();
     void invalidInput_data();
     void invalidInput();
     void documentFileRoundTrip();
@@ -83,6 +84,32 @@ int connectorCount(const Document &document)
     int result = 0;
     for (const ViewElement &element : document.diagram().elements())
         result += element.kind() == ElementKind::Connector ? 1 : 0;
+    return result;
+}
+
+int cloudCount(const Document &document)
+{
+    int result = 0;
+    for (const DocumentElement &element : document.elements())
+        result += element.kind() == ElementKind::Cloud ? 1 : 0;
+    return result;
+}
+
+int unconnectedCloudCount(const Document &document)
+{
+    int result = 0;
+    for (const DocumentElement &element : document.elements()) {
+        if (element.kind() != ElementKind::Cloud)
+            continue;
+        bool connected = false;
+        for (const ModelElement &candidate : document.model().elements()) {
+            if (candidate.kind() != ElementKind::Flow)
+                continue;
+            const FlowEndpoints endpoints = static_cast<const Flow &>(candidate).endpoints();
+            connected = connected || endpoints.from == element.id() || endpoints.to == element.id();
+        }
+        result += connected ? 0 : 1;
+    }
     return result;
 }
 
@@ -168,6 +195,8 @@ void TestMdlFile::absModel()
     QCOMPARE(testAbs->equation(), QString("ABS(StockA)"));
     QVERIFY(connector(document, stock->id(), testAbs->id()));
     QCOMPARE(connectorCount(document), 1);
+    QCOMPARE(cloudCount(document), 1);
+    QCOMPARE(unconnectedCloudCount(document), 0);
     QCOMPARE(document.simulationSettings().stopTime(), 20.0);
     QCOMPARE(document.simulationSettings().dt(), 1.0);
     QCOMPARE(document.simulationSettings().saveInterval(), 1.0);
@@ -198,6 +227,8 @@ void TestMdlFile::teacupModel()
     QVERIFY(connector(document, room->id(), heatLoss->id()));
     QVERIFY(connector(document, characteristic->id(), heatLoss->id()));
     QCOMPARE(connectorCount(document), 3);
+    QCOMPARE(cloudCount(document), 1);
+    QCOMPARE(unconnectedCloudCount(document), 0);
     QCOMPARE(document.simulationSettings().stopTime(), 30.0);
     QCOMPARE(document.simulationSettings().dt(), 0.125);
     QCOMPARE(document.simulationSettings().saveInterval(), 0.125);
@@ -243,6 +274,8 @@ void TestMdlFile::rabbitModel()
     QVERIFY(connector(document, population->id(), births->id()));
     QVERIFY(connector(document, population->id(), deaths->id()));
     QCOMPARE(connectorCount(document), 4);
+    QCOMPARE(cloudCount(document), 2);
+    QCOMPARE(unconnectedCloudCount(document), 0);
     QCOMPARE(document.diagram().position(births->endpoints().from).x, 91.0);
     QCOMPARE(document.diagram().position(deaths->endpoints().to).x, 487.0);
     int comments = 0;
@@ -444,6 +477,25 @@ void TestMdlFile::complexNetRate()
     const SimulationRun run = SimulationRunner(document, *compiled.plan).run();
     QCOMPARE(run.status(), SimulationRunStatus::Completed);
     QCOMPARE(run.series(stock->id())->front(), 10.0);
+}
+
+void TestMdlFile::openCloudLifecycle()
+{
+    Document document = importFile(QStringLiteral(QDS_WFINV_MDL_PATH));
+    QCOMPARE(cloudCount(document), 3);
+    QCOMPARE(unconnectedCloudCount(document), 0);
+    const ModelElement *inventory = document.findByName("Inventory");
+    const ModelElement *workforce = document.findByName("Workforce");
+    const Flow *production = flow(document, "production");
+    const Flow *sales = flow(document, "sales");
+    const Flow *hiring = flow(document, "net hire rate");
+    QVERIFY(inventory && workforce && production && sales && hiring);
+    QCOMPARE(document.find(production->endpoints().from)->kind(), ElementKind::Cloud);
+    QCOMPARE(document.find(production->endpoints().to)->id(), inventory->id());
+    QCOMPARE(document.find(sales->endpoints().from)->id(), inventory->id());
+    QCOMPARE(document.find(sales->endpoints().to)->kind(), ElementKind::Cloud);
+    QCOMPARE(document.find(hiring->endpoints().from)->kind(), ElementKind::Cloud);
+    QCOMPARE(document.find(hiring->endpoints().to)->id(), workforce->id());
 }
 
 void TestMdlFile::invalidInput_data()

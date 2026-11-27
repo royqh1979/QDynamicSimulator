@@ -23,6 +23,7 @@ target_link_libraries(profile-mdl PRIVATE QDS::IO Qt5::Core)
 target_compile_definitions(profile-mdl PRIVATE
     QDS_ABS_MDL_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/abs/test_abs.mdl"
     QDS_TEACUP_MDL_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/teacup/teacup.mdl"
+    QDS_WFINV_MDL_PATH="${CMAKE_SOURCE_DIR}/tests/data/wfinv.mdl"
 )
 add_dependencies(all-profile-targets profile-mdl)
 

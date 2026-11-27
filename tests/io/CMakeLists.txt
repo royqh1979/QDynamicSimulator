@@ -28,6 +28,7 @@ target_compile_definitions(test-mdl PRIVATE
     QDS_SPECIAL_MDL_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/special_characters/test_special_variable_names.mdl"
     QDS_ARRAY_1D_MDL_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/subscript_individually_defined_1d_arrays/subscript_individually_defined_1d_arrays.mdl"
     QDS_ARRAY_2D_MDL_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/subscript_2d_arrays/test_subscript_2d_arrays.mdl"
+    QDS_WFINV_MDL_PATH="${CMAKE_SOURCE_DIR}/tests/data/wfinv.mdl"
 )
 add_test(NAME io-mdl COMMAND test-mdl)
 add_dependencies(all-test-targets test-mdl)

@@ -86,6 +86,7 @@ int main(int argc, char **argv)
     }
     if (!profileFile("small_abs", QStringLiteral(QDS_ABS_MDL_PATH), count)
         || !profileFile("small_teacup", QStringLiteral(QDS_TEACUP_MDL_PATH), count)
+        || !profileFile("wfinv", QStringLiteral(QDS_WFINV_MDL_PATH), count)
         || !profileText("medium_300_variables", mediumModel(), count))
         return 4;
     return 0;

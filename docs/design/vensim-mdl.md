@@ -58,7 +58,7 @@ Heat Loss to Room / Characteristic Time
 
 - Stock、Flow、Variable 分别对应 Level、Rate 和广义 Variable。
 - 简单净导数按标识符符号连接已有 Flow；无法映射为现有 Flow 的净导数使用确定性的合成 Flow 表达，不能丢失 Stock 方程。
-- 每个 Flow 都必须有不同的有效 Stock/Cloud 端点。未连接 Stock 的 Flow 使用两个 Cloud 表示开放端；连接已有 Flow 时复用其开放 Cloud，不遗留无意义端点对象。
+- 每个 Flow 都必须有不同的有效 Stock/Cloud 端点。导入时先建立 Stock 和普通 Variable，再根据全部 INTEG 净导数计算每条 Flow 的最终端点，最后一次性创建 Flow 及实际需要的开放 Cloud。不得为了绕过端点校验先创建两个占位 Cloud 再替换；真正未连接 Stock 的开放 Flow 才使用两个 Cloud，任何导入结果都不得遗留未连接的占位 Cloud。
 - FINAL TIME、INITIAL TIME、SAVEPER 和 TIME STEP 映射 SimulationSettings；`SAVEPER=TIME STEP` 必须在全部记录读取后跟随最终 DT，不能受记录顺序影响。时间单位只取控制记录的单位并剥离范围，默认 Euler。
 - 只读元数据、分组、视图默认样式和非模型对象不得进入仿真变量索引。
 
@@ -76,7 +76,7 @@ Heat Loss to Room / Characteristic Time
 
 ## 验收与 profile
 
-- Rabbit/Teacup/ABS 的方程、单位、初值、端点、设置、Sketch 和实际模拟。
+- Rabbit/Teacup/ABS 的方程、单位、初值、端点、设置、Sketch 和实际模拟；WFINV 仓库夹具验证三条 Flow 只产生三个实际开放 Cloud，且无孤立占位 Cloud。
 - Unicode 名称、引号、续行、注释、数组、数值范围、宏、多方程归并、重复定义及损坏输入。
 - 带空格名称转换后的公式必须通过现有 Formula 分析，并在适用模型上完成实际仿真。
 - 测试保存/加载往返保持语义，QDS 使用统一 Variable。
