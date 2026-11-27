@@ -20,7 +20,7 @@ void SimulationTableModel::setRuns(const QVector<SimulationRun> &runs, const QSt
         });
         if (variable == run.variables().end())
             continue;
-        const QVector<double> *values = run.series(variable->id());
+        const QVector<double> *values = run.series(nameKey);
         if (!values)
             continue;
         m_columns.push_back({run.name(), std::make_shared<const SimulationRun>(run), values});

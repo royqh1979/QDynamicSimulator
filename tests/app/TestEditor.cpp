@@ -3134,14 +3134,8 @@ void TestEditor::causesStripGraph()
     QVERIFY(simulation->start(QStringLiteral("base")));
     QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
     const SimulationRun base = simulation->runs().front();
-    const auto runVariableId = [](const SimulationRun &run, const QString &nameKey) {
-        const auto found = std::find_if(run.variables().begin(), run.variables().end(), [&nameKey](const RunVariableInfo &variable) {
-            return variable.nameKey() == nameKey;
-        });
-        return found == run.variables().end() ? EntityId(0) : found->id();
-    };
-    QCOMPARE(base.causes(runVariableId(base, QStringLiteral("population"))).size(), 2);
-    QCOMPARE(base.causes(runVariableId(base, QStringLiteral("births"))).size(), 2);
+    QCOMPARE(base.causes(QStringLiteral("population")).size(), 2);
+    QCOMPARE(base.causes(QStringLiteral("births")).size(), 2);
 
     window.findChild<QAction *>(QStringLiteral("causesStripAction"))->trigger();
     auto charts = strip->charts();
@@ -3162,8 +3156,8 @@ void TestEditor::causesStripGraph()
     QVERIFY(simulation->start(QStringLiteral("expanded")));
     QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
     QCOMPARE(simulation->runs().size(), 2);
-    QCOMPARE(simulation->runs().at(0).causes(runVariableId(simulation->runs().at(0), QStringLiteral("population"))).size(), 3);
-    QCOMPARE(simulation->runs().at(1).causes(runVariableId(simulation->runs().at(1), QStringLiteral("population"))).size(), 2);
+    QCOMPARE(simulation->runs().at(0).causes(QStringLiteral("population")).size(), 3);
+    QCOMPARE(simulation->runs().at(1).causes(QStringLiteral("population")).size(), 2);
     QTRY_VERIFY(strip->charts().size() == 4);
     charts = strip->charts();
     const QStringList expandedTitles {QStringLiteral("Population"), QStringLiteral("births"),

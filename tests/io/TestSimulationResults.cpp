@@ -70,7 +70,7 @@ void compareReference(const Document &document, const SimulationRun &run, const 
             continue;
         const ModelElement *element = document.model().findByName(column.key());
         QVERIFY2(element, qPrintable("Missing model column: " + column.key()));
-        const QVector<double> *actual = run.series(element->id());
+        const QVector<double> *actual = run.series(element->nameKey());
         QVERIFY(actual);
         QCOMPARE(actual->size(), reference.times.size());
         for (int row = 0; row < actual->size(); ++row) {
@@ -142,9 +142,9 @@ void TestSimulationResults::sirModel()
     const SimulationCompileResult compiled = compileSimulation(document);
     QVERIFY(compiled.plan);
     const SimulationRun run = SimulationRunner(document, *compiled.plan).run();
-    const QVector<double> *susceptible = run.series(document.findByName("susceptible")->id());
-    const QVector<double> *infectious = run.series(document.findByName("infectious")->id());
-    const QVector<double> *recovered = run.series(document.findByName("recovered")->id());
+    const QVector<double> *susceptible = run.series("susceptible");
+    const QVector<double> *infectious = run.series("infectious");
+    const QVector<double> *recovered = run.series("recovered");
     const double initialPopulation = susceptible->front() + infectious->front() + recovered->front();
     QCOMPARE(initialPopulation, 1005.0);
     for (int index = 0; index < run.times().size(); ++index) {

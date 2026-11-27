@@ -41,9 +41,9 @@ Document exponentialDocument(double dt)
     const EntityId stock = document.createVariable(ElementKind::Stock);
     const EntityId cloud = document.createCloud();
     const EntityId flow = document.createFlow(cloud, stock);
-    document.rename(stock, "Stock");
+    document.rename(stock, "stock");
     document.setInitialEquation(stock, "1");
-    document.setEquation(flow, "Stock");
+    document.setEquation(flow, "stock");
     document.setSimulationSettings({0.0, 1.0, dt, dt});
     return document;
 }
@@ -78,9 +78,9 @@ void TestSimulation::initializationAndEvaluationOrder()
     const EntityId auxiliary = document.createVariable(ElementKind::Variable);
     const EntityId offset = document.createVariable(ElementKind::Variable);
     const EntityId base = document.createVariable(ElementKind::Variable);
-    document.rename(stock, "Stock");
-    document.rename(auxiliary, "Twice");
-    document.rename(offset, "Offset");
+    document.rename(stock, "stock");
+    document.rename(auxiliary, "twice");
+    document.rename(offset, "offset");
     document.rename(base, "Base");
     document.setInitialEquation(stock, "Offset + Base");
     document.setEquation(auxiliary, "Stock * 2");
@@ -92,10 +92,14 @@ void TestSimulation::initializationAndEvaluationOrder()
     QCOMPARE(run.status(), SimulationRunStatus::Completed);
     QCOMPARE(run.times(), QVector<double> {0.0});
     QCOMPARE(run.endTime(), std::optional<double>(0.0));
-    QCOMPARE(*run.series(stock), QVector<double> {5.0});
-    QCOMPARE(*run.series(auxiliary), QVector<double> {10.0});
-    QCOMPARE(*run.series(offset), QVector<double> {3.0});
-    QVERIFY(run.series(99999) == nullptr);
+    const auto *stockSeries = run.series("stock");
+    const auto *twiceSeries = run.series("twice");
+    const auto *offsetSeries = run.series("offset");
+    QVERIFY(stockSeries && twiceSeries && offsetSeries);
+    QCOMPARE(*stockSeries, QVector<double> {5.0});
+    QCOMPARE(*twiceSeries, QVector<double> {10.0});
+    QCOMPARE(*offsetSeries, QVector<double> {3.0});
+    QVERIFY(run.series("missing") == nullptr);
 }
 
 void TestSimulation::stockFlowsAndConservation()
@@ -104,8 +108,8 @@ void TestSimulation::stockFlowsAndConservation()
     const EntityId source = document.createVariable(ElementKind::Stock);
     const EntityId target = document.createVariable(ElementKind::Stock);
     const EntityId flow = document.createFlow(source, target);
-    document.rename(source, "Source");
-    document.rename(target, "Target");
+    document.rename(source, "source");
+    document.rename(target, "target");
     document.setInitialEquation(source, "10");
     document.setInitialEquation(target, "0");
     document.setEquation(flow, "2");
@@ -114,11 +118,11 @@ void TestSimulation::stockFlowsAndConservation()
     const SimulationRun run = runModel(document);
     QCOMPARE(run.status(), SimulationRunStatus::Completed);
     QCOMPARE(run.times(), (QVector<double> {0.0, 1.0, 2.0}));
-    QCOMPARE(*run.series(source), (QVector<double> {10.0, 8.0, 6.0}));
-    QCOMPARE(*run.series(target), (QVector<double> {0.0, 2.0, 4.0}));
-    QCOMPARE(*run.series(flow), (QVector<double> {2.0, 2.0, 2.0}));
+    QCOMPARE(*run.series("source"), (QVector<double> {10.0, 8.0, 6.0}));
+    QCOMPARE(*run.series("target"), (QVector<double> {0.0, 2.0, 4.0}));
+    QCOMPARE(*run.series("flow1"), (QVector<double> {2.0, 2.0, 2.0}));
     for (int index = 0; index < run.times().size(); ++index)
-        QCOMPARE(run.series(source)->at(index) + run.series(target)->at(index), 10.0);
+        QCOMPARE(run.series("source")->at(index) + run.series("target")->at(index), 10.0);
 }
 
 void TestSimulation::exponentialEulerAndConvergence()
@@ -127,17 +131,17 @@ void TestSimulation::exponentialEulerAndConvergence()
     const SimulationRun coarse = runModel(coarseDocument);
     QCOMPARE(coarse.status(), SimulationRunStatus::Completed);
     QCOMPARE(coarse.times().size(), 11);
-    const auto stocks = coarseDocument.model().findByName("Stock");
+    const auto stocks = coarseDocument.model().findByName("stock");
     QVERIFY(stocks);
     const double expected = std::pow(1.1, 10);
-    expectNear(coarse.series(stocks->id())->back(), expected, 1e-12);
+    expectNear(coarse.series("stock")->back(), expected, 1e-12);
 
     const Document fineDocument = exponentialDocument(0.05);
     const SimulationRun fine = runModel(fineDocument);
     QCOMPARE(fine.times().size(), 21);
     const double analytic = std::exp(1.0);
-    const double coarseError = std::abs(coarse.series(stocks->id())->back() - analytic);
-    const double fineError = std::abs(fine.series(stocks->id())->back() - analytic);
+    const double coarseError = std::abs(coarse.series("stock")->back() - analytic);
+    const double fineError = std::abs(fine.series("stock")->back() - analytic);
     QVERIFY(coarseError > fineError * 1.8);
     QVERIFY(coarseError < fineError * 2.2);
 }
@@ -148,14 +152,14 @@ void TestSimulation::logisticAndOscillatorBenchmarks()
     const EntityId logisticStock = logistic.createVariable(ElementKind::Stock);
     const EntityId logisticCloud = logistic.createCloud();
     const EntityId logisticFlow = logistic.createFlow(logisticCloud, logisticStock);
-    logistic.rename(logisticStock, "Stock");
+    logistic.rename(logisticStock, "stock");
     logistic.setInitialEquation(logisticStock, "1");
     logistic.setEquation(logisticFlow, "Stock * (1 - Stock / 10)");
     logistic.setSimulationSettings({0.0, 1.0, 0.01, 0.01});
     const SimulationRun logisticRun = runModel(logistic);
     QCOMPARE(logisticRun.status(), SimulationRunStatus::Completed);
     const double logisticExpected = 10.0 / (1.0 + 9.0 * std::exp(-1.0));
-    expectNear(logisticRun.series(logisticStock)->back(), logisticExpected, 0.01);
+    expectNear(logisticRun.series("stock")->back(), logisticExpected, 0.01);
 
     Document oscillator;
     const EntityId position = oscillator.createVariable(ElementKind::Stock);
@@ -163,11 +167,11 @@ void TestSimulation::logisticAndOscillatorBenchmarks()
     const EntityId cloud = oscillator.createCloud();
     const EntityId positionFlow = oscillator.createFlow(cloud, position);
     const EntityId velocityFlow = oscillator.createFlow(cloud, velocity);
-    oscillator.rename(position, "Position");
-    oscillator.rename(velocity, "Velocity");
+    oscillator.rename(position, "position");
+    oscillator.rename(velocity, "velocity");
     oscillator.setInitialEquation(position, "1");
     oscillator.setInitialEquation(velocity, "0");
-    oscillator.setEquation(positionFlow, "Velocity");
+    oscillator.setEquation(positionFlow, "velocity");
     oscillator.setEquation(velocityFlow, "-Position - 0.2 * Velocity");
     oscillator.setSimulationSettings({0.0, 1.0, 0.01, 0.01});
     const SimulationRun oscillatorRun = runModel(oscillator);
@@ -177,8 +181,8 @@ void TestSimulation::logisticAndOscillatorBenchmarks()
     const double velocityExpected = std::exp(-0.1)
         * (-0.1 * (std::cos(omega) + 0.1 / omega * std::sin(omega))
             - omega * std::sin(omega) + 0.1 * std::cos(omega));
-    expectNear(oscillatorRun.series(position)->back(), positionExpected, 0.006);
-    expectNear(oscillatorRun.series(velocity)->back(), velocityExpected, 0.006);
+    expectNear(oscillatorRun.series("position")->back(), positionExpected, 0.006);
+    expectNear(oscillatorRun.series("velocity")->back(), velocityExpected, 0.006);
 }
 
 void TestSimulation::saveIntervalsAndTimeBounds()
@@ -193,13 +197,15 @@ void TestSimulation::saveIntervalsAndTimeBounds()
     SimulationRun run = runModel(document);
     QCOMPARE(run.status(), SimulationRunStatus::Completed);
     QCOMPARE(run.times(), (QVector<double> {0.0, 0.6, 1.0}));
-    QCOMPARE(*run.series(stock), (QVector<double> {0.0, 0.6, 1.0}));
+    QVERIFY(run.series("stock1"));
+    QCOMPARE(*run.series("stock1"), (QVector<double> {0.0, 0.6, 1.0}));
 
     QVERIFY(document.setSimulationSettings({2.0, 2.0, 0.3, 0.6}));
     run = runModel(document);
     QCOMPARE(run.status(), SimulationRunStatus::Completed);
     QCOMPARE(run.times(), QVector<double> {2.0});
-    QCOMPARE(*run.series(stock), QVector<double> {0.0});
+    QVERIFY(run.series("stock1"));
+    QCOMPARE(*run.series("stock1"), QVector<double> {0.0});
 }
 
 void TestSimulation::macrosAndResultAccess()
@@ -213,14 +219,14 @@ void TestSimulation::macrosAndResultAccess()
     const EntityId stock = document.createVariable(ElementKind::Stock);
     const EntityId cloud = document.createCloud();
     const EntityId flow = document.createFlow(cloud, stock);
-    document.rename(stock, "Stock");
+    document.rename(stock, "stock");
     document.setInitialEquation(stock, "1");
     document.setEquation(flow, "Scale(Stock)");
     document.setSimulationSettings({0.0, 1.0, 1.0, 1.0});
     const SimulationRun run = runModel(document);
     QCOMPARE(run.status(), SimulationRunStatus::Completed);
-    QCOMPARE(*run.series(flow), (QVector<double> {2.0, 6.0}));
-    QCOMPARE(*run.series(stock), (QVector<double> {1.0, 3.0}));
+    QCOMPARE(*run.series("flow1"), (QVector<double> {2.0, 6.0}));
+    QCOMPARE(*run.series("stock"), (QVector<double> {1.0, 3.0}));
 }
 
 void TestSimulation::arrayStockEulerAndResults()
@@ -230,8 +236,8 @@ void TestSimulation::arrayStockEulerAndResults()
     const EntityId stock = document.createVariable(ElementKind::Stock);
     const EntityId cloud = document.createCloud();
     const EntityId flow = document.createFlow(cloud, stock);
-    document.rename(stock, "Stock");
-    document.rename(flow, "Rate");
+    document.rename(stock, "stock");
+    document.rename(flow, "rate");
     document.setDimensions(stock, {"N"});
     document.setDimensions(flow, {"N"});
     document.setInitialEquation(stock, "1");
@@ -240,9 +246,9 @@ void TestSimulation::arrayStockEulerAndResults()
 
     const SimulationRun run = runModel(document);
     QCOMPARE(run.status(), SimulationRunStatus::Completed);
-    QVERIFY(run.series(stock) == nullptr);
-    const QVector<ArrayValue> *stocks = run.arraySeries(stock);
-    const QVector<ArrayValue> *rates = run.arraySeries(flow);
+    QVERIFY(run.series("stock") == nullptr);
+    const QVector<ArrayValue> *stocks = run.arraySeries("stock");
+    const QVector<ArrayValue> *rates = run.arraySeries("rate");
     QVERIFY(stocks && rates);
     QCOMPARE(stocks->size(), 2);
     QCOMPARE(rates->size(), 2);
@@ -252,7 +258,7 @@ void TestSimulation::arrayStockEulerAndResults()
     QCOMPARE(stocks->at(1).values, (QVector<double> {2.0, 3.0}));
     QCOMPARE(rates->at(0).values, (QVector<double> {1.0, 2.0}));
     QCOMPARE(rates->at(1).values, (QVector<double> {2.0, 6.0}));
-    QVERIFY(run.arraySeries(99999) == nullptr);
+    QVERIFY(run.arraySeries("missing") == nullptr);
 }
 
 void TestSimulation::arrayElementEquationsAndBroadcast()
@@ -260,12 +266,12 @@ void TestSimulation::arrayElementEquationsAndBroadcast()
     Document document;
     QVERIFY(document.defineDimension("N", 2));
     const EntityId rate = document.createVariable(ElementKind::Variable);
-    document.rename(rate, "Rate");
+    document.rename(rate, "rate");
     document.setDimensions(rate, {"N"});
     document.setElementEquation(rate, {0}, "0.01");
     document.setElementEquation(rate, {1}, "0.2");
     const EntityId stock = document.createVariable(ElementKind::Stock);
-    document.rename(stock, "Stock");
+    document.rename(stock, "stock");
     document.setDimensions(stock, {"N"});
     document.setElementEquation(stock, {0}, "1");
     document.setElementEquation(stock, {1}, "2");
@@ -277,8 +283,8 @@ void TestSimulation::arrayElementEquationsAndBroadcast()
 
     const SimulationRun run = runModel(document);
     QCOMPARE(run.status(), SimulationRunStatus::Completed);
-    const QVector<ArrayValue> *stocks = run.arraySeries(stock);
-    const QVector<ArrayValue> *flows = run.arraySeries(flow);
+    const QVector<ArrayValue> *stocks = run.arraySeries("stock");
+    const QVector<ArrayValue> *flows = run.arraySeries("flow1");
     QVERIFY(stocks && flows);
     QCOMPARE(stocks->at(0).values, (QVector<double> {1.0, 2.0}));
     QCOMPARE(stocks->at(1).values, (QVector<double> {2.01, 3.2}));
@@ -293,8 +299,8 @@ void TestSimulation::arrayRungeKutta4AndConservation()
     const EntityId source = document.createVariable(ElementKind::Stock);
     const EntityId target = document.createVariable(ElementKind::Stock);
     const EntityId flow = document.createFlow(source, target);
-    document.rename(source, "Source");
-    document.rename(target, "Target");
+    document.rename(source, "source");
+    document.rename(target, "target");
     document.setDimensions(source, {"N"});
     document.setDimensions(target, {"N"});
     document.setDimensions(flow, {"N"});
@@ -306,8 +312,8 @@ void TestSimulation::arrayRungeKutta4AndConservation()
 
     const SimulationRun run = runModel(document);
     QCOMPARE(run.status(), SimulationRunStatus::Completed);
-    const QVector<ArrayValue> *sources = run.arraySeries(source);
-    const QVector<ArrayValue> *targets = run.arraySeries(target);
+    const QVector<ArrayValue> *sources = run.arraySeries("source");
+    const QVector<ArrayValue> *targets = run.arraySeries("target");
     QVERIFY(sources && targets);
     QCOMPARE(sources->at(0).values, (QVector<double> {10.0, 20.0}));
     QCOMPARE(sources->at(1).values, (QVector<double> {8.0, 18.0}));
@@ -342,8 +348,8 @@ void TestSimulation::arrayDimensionReordering()
 
     const SimulationRun run = runModel(document);
     QCOMPARE(run.status(), SimulationRunStatus::Completed);
-    const QVector<ArrayValue> *stocks = run.arraySeries(stock);
-    const QVector<ArrayValue> *flows = run.arraySeries(flow);
+    const QVector<ArrayValue> *stocks = run.arraySeries("stock1");
+    const QVector<ArrayValue> *flows = run.arraySeries("flow1");
     QVERIFY(stocks && flows);
     QCOMPARE(stocks->at(0).dimensions, (QVector<QString> {"b", "a"}));
     QCOMPARE(stocks->at(0).shape, (QVector<std::size_t> {2, 2}));
@@ -371,7 +377,7 @@ void TestSimulation::arrayDimensionFailures()
     QCOMPARE(run.status(), SimulationRunStatus::Failed);
     QVERIFY(!run.issues().isEmpty());
     QCOMPARE(run.issues().front().code, QStringLiteral("incompatible-stock-flow"));
-    const QVector<ArrayValue> *stocks = run.arraySeries(stock);
+    const QVector<ArrayValue> *stocks = run.arraySeries("stock1");
     QVERIFY(stocks);
     QCOMPARE(stocks->size(), 1);
     QCOMPARE(stocks->front().values, (QVector<double> {1.0, 1.0}));
@@ -385,16 +391,16 @@ void TestSimulation::rungeKutta4()
     QCOMPARE(coarse.status(), SimulationRunStatus::Completed);
     QCOMPARE(coarse.settings().integrationMethod(), IntegrationMethod::RungeKutta4);
     QCOMPARE(coarse.times().size(), 5);
-    const EntityId stock = coarseDocument.findByName("Stock")->id();
+    const EntityId stock = coarseDocument.findByName("stock")->id();
     const double analytic = std::exp(1.0);
-    expectNear(coarse.series(stock)->back(), analytic, 0.001);
+    expectNear(coarse.series("stock")->back(), analytic, 0.001);
 
     Document fineDocument = exponentialDocument(0.125);
     QVERIFY(fineDocument.setSimulationSettings({0.0, 1.0, 0.125, 0.125, IntegrationMethod::RungeKutta4}));
     const SimulationRun fine = runModel(fineDocument);
     QCOMPARE(fine.times().size(), 9);
-    const double coarseError = std::abs(coarse.series(stock)->back() - analytic);
-    const double fineError = std::abs(fine.series(stock)->back() - analytic);
+    const double coarseError = std::abs(coarse.series("stock")->back() - analytic);
+    const double fineError = std::abs(fine.series("stock")->back() - analytic);
     QVERIFY(coarseError > fineError * 14.0);
     QVERIFY(coarseError < fineError * 18.0);
 
@@ -407,7 +413,7 @@ void TestSimulation::rungeKutta4()
     QVERIFY(timeDocument.setSimulationSettings({0.0, 1.0, 1.0, 1.0, IntegrationMethod::RungeKutta4}));
     const SimulationRun timeRun = runModel(timeDocument);
     QCOMPARE(timeRun.status(), SimulationRunStatus::Completed);
-    QCOMPARE(*timeRun.series(timeStock), (QVector<double> {0.0, 0.5}));
+    QCOMPARE(*timeRun.series("stock1"), (QVector<double> {0.0, 0.5}));
 }
 
 void TestSimulation::rungeKutta4StageFailure()
@@ -422,7 +428,7 @@ void TestSimulation::rungeKutta4StageFailure()
     const SimulationRun run = runModel(document);
     QCOMPARE(run.status(), SimulationRunStatus::Failed);
     QCOMPARE(run.times(), (QVector<double> {0.0}));
-    QCOMPARE(*run.series(stock), (QVector<double> {1.0}));
+    QCOMPARE(*run.series("stock1"), (QVector<double> {1.0}));
     QCOMPARE(run.endTime(), std::optional<double>(0.5));
     QVERIFY(!run.issues().isEmpty());
     QCOMPARE(run.issues().front().code, QStringLiteral("non-finite-simulation-value"));
@@ -432,30 +438,31 @@ void TestSimulation::unifiedRunMetadata()
 {
     const Document document = exponentialDocument(1.0);
     const SimulationRun numerical = runModel(document);
-    const EntityId stock = document.findByName("Stock")->id();
-    const EntityId flow = document.findByName("Flow1")->id();
+    const EntityId stock = document.findByName("stock")->id();
+    const EntityId flow = document.findByName("flow1")->id();
     SimulationRunMetadata metadata;
     metadata.id = 42;
     metadata.name = "experiment";
     metadata.modelRevision = 7;
-    metadata.variables = {RunVariableInfo(stock, "Stock", "stock", "unit", ElementKind::Stock, false)};
+    metadata.variables = {RunVariableInfo(stock, "stock", "stock", "unit", ElementKind::Stock, false),
+        RunVariableInfo(flow, "Flow1", "flow1", "unit", ElementKind::Flow, false)};
     metadata.causes.insert(stock, {flow});
     const SimulationRun identified = numerical.withMetadata(std::move(metadata));
 
     QCOMPARE(identified.id(), RunId(42));
     QCOMPARE(identified.name(), QString("experiment"));
     QCOMPARE(identified.modelRevision(), quint64(7));
-    QCOMPARE(identified.variables().size(), 1);
+    QCOMPARE(identified.variables().size(), 2);
     QCOMPARE(identified.variables().front().nameKey(), QString("stock"));
-    QCOMPARE(identified.causes(stock), QVector<EntityId> {flow});
+    QCOMPARE(identified.causes("stock"), QVector<QString> {"flow1"});
     QCOMPARE(identified.status(), numerical.status());
     QCOMPARE(identified.times(), numerical.times());
-    QCOMPARE(identified.series(stock), numerical.series(stock));
+    QCOMPARE(identified.series("stock"), numerical.series("stock"));
     QCOMPARE(numerical.id(), RunId(0));
     QVERIFY(numerical.name().isEmpty());
     QCOMPARE(numerical.modelRevision(), quint64(0));
-    QVERIFY(numerical.variables().isEmpty());
-    QVERIFY(numerical.causes(stock).isEmpty());
+    QVERIFY(!numerical.variables().isEmpty());
+    QVERIFY(numerical.causes("stock").isEmpty());
 }
 
 void TestSimulation::compilationDiagnostics()
@@ -516,7 +523,7 @@ void TestSimulation::cancellationAndRuntimeFailure()
     const EntityId stock = failure.createVariable(ElementKind::Stock);
     const EntityId cloud = failure.createCloud();
     const EntityId flow = failure.createFlow(cloud, stock);
-    failure.rename(stock, "Stock");
+    failure.rename(stock, "stock");
     failure.setInitialEquation(stock, "1");
     failure.setEquation(flow, "1 / (Stock - 1)");
     const SimulationRun failed = runModel(failure);

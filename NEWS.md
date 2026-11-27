@@ -81,3 +81,4 @@
 - 新增 Runs Compare：按 nameKey 对比前两个已加载 Run 的数值 Constant，显示变量、单位、旧值、新值和差值，支持缺失常量与 Datasets 加载状态切换。
 - 仿真内核支持基本数组执行：Apply-to-All 与显式元素方程、数组 Stock/Flow/Variable、标量广播、维度重排、Euler/RK4 和独立 `arraySeries()`；数组结果 UI 留待后续阶段。
 - 统一 SimulationRun 结果对象：RunId、runName、modelRevision、结果变量元数据、直接原因与标量/数组序列同属一个不可变记录，移除 NamedRun 平行模型。
+- 结果查询统一使用 nameKey，EntityId 和 RunVariableInfo.id 私有化，仅由 SimulationRun 内部映射；Graph/Table、Causes Strip 和 Runs Compare 不再接触运行副本 ID。

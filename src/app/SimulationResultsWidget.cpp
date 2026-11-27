@@ -228,9 +228,9 @@ void SimulationResultsWidget::refreshCauses(const QVector<SimulationRun> &loaded
         });
         if (root == run.variables().end())
             continue;
-        for (const qds::core::EntityId causeId : run.causes(root->id())) {
-            const auto cause = std::find_if(run.variables().begin(), run.variables().end(), [causeId](const RunVariableInfo &variable) {
-                return variable.id() == causeId;
+        for (const QString &causeNameKey : run.causes(rootNameKey)) {
+            const auto cause = std::find_if(run.variables().begin(), run.variables().end(), [&causeNameKey](const RunVariableInfo &variable) {
+                return variable.nameKey() == causeNameKey;
             });
             if (cause != run.variables().end() && !seen.contains(cause->nameKey())) {
                 seen.insert(cause->nameKey());

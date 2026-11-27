@@ -126,7 +126,8 @@ void TestSimulationController::namedRunsAndOverwrite()
     QCOMPARE(controller.lastRunName(), QStringLiteral("equilib"));
     QCOMPARE(controller.lastRun()->status(), SimulationRunStatus::Completed);
     const SimulationRun equilibrium = controller.runs().front();
-    QCOMPARE(*equilibrium.series(variable(equilibrium, "stock").id()), (QVector<double> {0.0, 1.0, 2.0}));
+    QVERIFY(equilibrium.series("stock"));
+    QCOMPARE(*equilibrium.series("stock"), (QVector<double> {0.0, 1.0, 2.0}));
     QVERIFY(controller.isRunLoaded(equilibrium.id()));
 
     QVERIFY(controller.start("growth"));
@@ -153,7 +154,8 @@ void TestSimulationController::namedRunsAndOverwrite()
     QVERIFY(replaced->id() != oldId);
     QVERIFY(replaced->id() > oldId);
     QVERIFY(controller.isRunLoaded(replaced->id()));
-    QCOMPARE(*equilibrium.series(variable(equilibrium, "stock").id()), (QVector<double> {0.0, 1.0, 2.0}));
+    QVERIFY(equilibrium.series("stock"));
+    QCOMPARE(*equilibrium.series("stock"), (QVector<double> {0.0, 1.0, 2.0}));
 }
 
 void TestSimulationController::revisionsAndReset()
@@ -174,7 +176,7 @@ void TestSimulationController::revisionsAndReset()
 
     document.setEquation(document.document().findByName("Flow1")->id(), "2");
     QVERIFY(controller.isOutdated(run));
-    QCOMPARE(*run.series(variable(run, "stock").id()), (QVector<double> {0.0, 1.0, 2.0}));
+    QCOMPARE(*run.series("stock"), (QVector<double> {0.0, 1.0, 2.0}));
     document.undoStack()->undo();
     QVERIFY(controller.isOutdated(run));
 

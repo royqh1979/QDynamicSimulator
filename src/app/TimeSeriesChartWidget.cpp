@@ -48,7 +48,7 @@ void TimeSeriesChartWidget::setRuns(const QVector<SimulationRun> &runs, const QS
         });
         if (variable == run.variables().end())
             continue;
-        const QVector<double> *values = run.series(variable->id());
+        const QVector<double> *values = run.series(nameKey);
         if (!values)
             continue;
         displayName = variable->displayName();

@@ -406,6 +406,47 @@ SimulationRun SimulationRun::withMetadata(SimulationRunMetadata metadata) const
     return copy;
 }
 
+const RunVariableInfo *SimulationRun::variable(const QString &nameKey) const
+{
+    const auto found = std::find_if(m_variables.begin(), m_variables.end(), [&nameKey](const RunVariableInfo &variable) {
+        return variable.nameKey() == nameKey;
+    });
+    return found == m_variables.end() ? nullptr : &*found;
+}
+
+const RunVariableInfo *SimulationRun::variable(EntityId id) const
+{
+    const auto found = std::find_if(m_variables.begin(), m_variables.end(), [id](const RunVariableInfo &variable) {
+        return variable.id() == id;
+    });
+    return found == m_variables.end() ? nullptr : &*found;
+}
+
+QVector<QString> SimulationRun::causes(const QString &nameKey) const
+{
+    const RunVariableInfo *dependent = variable(nameKey);
+    QVector<QString> result;
+    if (!dependent)
+        return result;
+    for (const EntityId id : causes(dependent->id())) {
+        if (const RunVariableInfo *cause = variable(id))
+            result.push_back(cause->nameKey());
+    }
+    return result;
+}
+
+const QVector<double> *SimulationRun::series(const QString &nameKey) const
+{
+    const RunVariableInfo *match = variable(nameKey);
+    return match ? series(match->id()) : nullptr;
+}
+
+const QVector<ArrayValue> *SimulationRun::arraySeries(const QString &nameKey) const
+{
+    const RunVariableInfo *match = variable(nameKey);
+    return match ? arraySeries(match->id()) : nullptr;
+}
+
 const QVector<double> *SimulationRun::series(EntityId id) const
 {
     const auto found = m_series.constFind(id);
@@ -428,6 +469,14 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
 {
     SimulationRun run;
     run.m_settings = m_plan.settings();
+    for (const EntityId id : m_plan.m_outputOrder) {
+        const auto *element = dynamic_cast<const ModelElement *>(m_document.find(id));
+        if (element) {
+            run.m_variables.push_back(RunVariableInfo(id, element->displayName(), element->nameKey(),
+                element->unit(), element->kind(),
+                element->kind() == ElementKind::Variable && isConstantFormula(element->equation())));
+        }
+    }
 
     QHash<EntityId, Value> values;
     double currentTime = m_plan.settings().startTime();

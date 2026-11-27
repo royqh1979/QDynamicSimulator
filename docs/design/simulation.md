@@ -61,7 +61,7 @@ stock'(t) = sum(inflow values) - sum(outflow values)
 - 数组 ModelElement 使用与标量相同的初始化/运行期拓扑顺序。Apply-to-All 和逐元素方程均按当前下标求值：Apply-to-All 遍历维度笛卡尔积并设置 `EvaluationScope.dimensions/indices/self`，显式 `ArrayElementFormula` 使用其保存的下标。公式返回整体 ArrayValue 时也按当前下标提取，不把整组值误赋给单个元素。
 - 数组 Stock 的每个元素是独立状态，具有独立初值、净流量和 Euler/RK4 阶段值。数组 Flow 可以返回标量或与 Stock 兼容的 ArrayValue；标量按 Stock 全部元素广播，数组按维度名重排后逐元素累加。缺少维度、维度数不同或形状不兼容时以 `incompatible-stock-flow` 失败，不按位置猜测。
 - `Value=std::variant<double,ArrayValue>` 同时用于变量状态和净流量。标量保持原有逐元素一次求值路径；数组值检查形状、元素数及所有元素的有限性。数组维度或元素数溢出、非有限值和求值顺序错误均不得替换为零。
-- `SimulationRun::series(id)` 继续只返回标量序列，数组 ID 返回 nullptr；新增 `arraySeries(id)` 返回按采样时间排列的 ArrayValue。现有 Graph/Table/Causes Strip 因没有标量序列而跳过数组，数组结果 UI 另行设计，不把数组首元素伪装成标量曲线。
+- `SimulationRun::series(nameKey)` 继续只返回标量序列，未知 nameKey 或数组变量返回 nullptr；`arraySeries(nameKey)` 返回按采样时间排列的 ArrayValue。现有 Graph/Table/Causes Strip 因没有标量序列而跳过数组，数组结果 UI 另行设计，不把数组首元素伪装成标量曲线。
 - 首批数组执行覆盖 Apply-to-All、显式元素方程、数组 Stock/Flow/Variable、标量广播、维度重排、Euler/RK4、守恒和失败前缀。Vensim `:EXCEPT:` 混合分片、数组宏状态、Lookup/Data 和数组图表不属于本阶段。
 
 ## 4. 仿真设置与持久化
@@ -128,6 +128,7 @@ SimulationRun                     一次运行的完整不可变记录
 - SimulationPlan 不持有 AST、FormulaNode、ModelElement 或 MacroDefinition 指针；只保存 EntityId 顺序和关系。公式仍在 Document 中唯一持有。
 - RunId、runName、modelRevision、RunVariableInfo 和 causes 与数值结果属于同一个 SimulationRun，保证 EntityId 与运行副本元数据自洽；不再使用 NamedRun 平行保存这些字段。
 - `withMetadata()` 返回补齐身份的新对象，原结果不变，禁止发布后改写元数据。RunId 是运行记录身份，不是 EntityId，也不是跨 Run 的模型元素 ID。
+- 对外结果查询统一使用 nameKey：`series(nameKey)`、`arraySeries(nameKey)` 和 `causes(nameKey)`。EntityId 版本及 `RunVariableInfo::id()` 私有化，仅由 SimulationRun 完成运行副本内部映射；SimulationRunner 作为 friend 标记执行边界，不向应用层 Controller 开放 friend。
 - Qt 容器利用写时复制，值拷贝不主动复制数值矩阵；Worker 和跨视图仍共享不可变对象。
 - Plan 和 Run 不进入 Document，也不进入编辑器 ChangeSet。
 - Document 修改后 Plan 必须重新编译；UI 不得让旧 Plan 静默作用于新模型。
