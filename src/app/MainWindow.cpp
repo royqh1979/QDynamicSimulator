@@ -117,7 +117,6 @@ MainWindow::MainWindow(QWidget *parent)
             if (run->status() == qds::core::SimulationRunStatus::Completed) {
                 statusBar()->showMessage(tr("Completed %1: %2 samples")
                     .arg(m_simulation->lastRunName()).arg(run->times().size()), 10000);
-                m_runName->setCurrentText(nextAvailableRunName());
             }
         });
     connect(m_simulation, &SimulationController::compilationFailed, this, &MainWindow::showCompilationIssues);

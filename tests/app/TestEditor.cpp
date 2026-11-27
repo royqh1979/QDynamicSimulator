@@ -2726,7 +2726,7 @@ void TestEditor::simulationControls()
     QCOMPARE(simulation->lastRunName(), QStringLiteral("equilib"));
     QCOMPARE(simulation->runs().size(), 1);
     QVERIFY(runName->findText(QStringLiteral("equilib")) >= 0);
-    QCOMPARE(runName->currentText(), QStringLiteral("Run1"));
+    QCOMPARE(runName->currentText(), QStringLiteral("equilib"));
     runName->setCurrentText(QStringLiteral("equilib"));
     QCOMPARE(runName->currentText(), QStringLiteral("equilib"));
     QVERIFY(runAction->isEnabled());
@@ -2737,6 +2737,7 @@ void TestEditor::simulationControls()
     QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
     QTRY_VERIFY(!simulation->isBusy());
     QCOMPARE(simulation->runs().size(), 2);
+    QCOMPARE(runName->currentText(), QStringLiteral("growth"));
     runName->setCurrentText(QStringLiteral("growth"));
 
     QTimer::singleShot(0, &window, []() {
