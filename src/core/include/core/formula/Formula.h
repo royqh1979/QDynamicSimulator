@@ -286,6 +286,7 @@ private:
 };
 
 Formula analyzeFormula(QString equation);
+bool isConstantFormula(QString source);
 std::size_t formulaNodeCount(const FormulaNode *node);
 
 } // namespace qds::core

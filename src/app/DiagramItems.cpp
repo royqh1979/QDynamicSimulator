@@ -275,12 +275,8 @@ QPainterPath VariableItem::shape() const
     QPainterPath path;
     if (m_kind == qds::core::ElementKind::Stock)
         path.addRect(QRectF(-60.0, -25.0, 120.0, 50.0));
-    else if (m_kind == qds::core::ElementKind::Auxiliary)
-        path.addEllipse(QRectF(-45.0, -25.0, 90.0, 50.0));
-    else if (m_kind == qds::core::ElementKind::Constant)
-        path.addPolygon(QPolygonF({QPointF(0.0, -28.0), QPointF(50.0, 0.0), QPointF(0.0, 28.0), QPointF(-50.0, 0.0)}));
     else
-        path.addRoundedRect(QRectF(-50.0, -25.0, 100.0, 50.0), 8.0, 8.0);
+        path.addEllipse(QRectF(-45.0, -25.0, 90.0, 50.0));
     return path;
 }
 
@@ -288,11 +284,7 @@ QRectF VariableItem::labelRect() const
 {
     if (m_kind == qds::core::ElementKind::Stock)
         return QRectF(-60.0, -25.0, 120.0, 50.0).adjusted(5.0, 0.0, -5.0, 0.0);
-    if (m_kind == qds::core::ElementKind::Auxiliary)
-        return QRectF(-45.0, -25.0, 90.0, 50.0).adjusted(5.0, 0.0, -5.0, 0.0);
-    if (m_kind == qds::core::ElementKind::Constant)
-        return QRectF(-40.0, -15.0, 80.0, 30.0);
-    return QRectF(-50.0, -25.0, 100.0, 50.0).adjusted(5.0, 0.0, -5.0, 0.0);
+    return QRectF(-45.0, -25.0, 90.0, 50.0).adjusted(5.0, 0.0, -5.0, 0.0);
 }
 
 void VariableItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
@@ -303,16 +295,10 @@ void VariableItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QW
     painter->setBrush(diagram_palette::EntityFillColor);
 
     const QRectF textRect = labelRect();
-    if (m_kind == qds::core::ElementKind::Stock) {
+    if (m_kind == qds::core::ElementKind::Stock)
         painter->drawRect(QRectF(-60.0, -25.0, 120.0, 50.0));
-    } else if (m_kind == qds::core::ElementKind::Auxiliary) {
+    else
         painter->drawEllipse(QRectF(-45.0, -25.0, 90.0, 50.0));
-    } else if (m_kind == qds::core::ElementKind::Constant) {
-        const QPolygonF diamond({QPointF(0.0, -28.0), QPointF(50.0, 0.0), QPointF(0.0, 28.0), QPointF(-50.0, 0.0)});
-        painter->drawPolygon(diamond);
-    } else {
-        painter->drawRoundedRect(QRectF(-50.0, -25.0, 100.0, 50.0), 8.0, 8.0);
-    }
 
     painter->setPen(diagram_palette::EntityTextColor);
     const QString label = painter->fontMetrics().elidedText(m_name, Qt::ElideRight, static_cast<int>(textRect.width()));
@@ -325,25 +311,14 @@ QPointF VariableItem::boundaryPointToward(const QPointF &target) const
     if (delta.isNull())
         return pos();
 
-    double halfWidth = 60.0;
-    double halfHeight = 25.0;
-    if (m_kind == qds::core::ElementKind::Auxiliary)
-        halfWidth = 45.0;
-    else if (m_kind == qds::core::ElementKind::Constant)
-        halfWidth = 50.0;
-
-    double scale = 0.0;
-    if (m_kind == qds::core::ElementKind::Auxiliary) {
-        scale = 1.0 / std::sqrt(delta.x() * delta.x() / (halfWidth * halfWidth)
-                                + delta.y() * delta.y() / (halfHeight * halfHeight));
-    } else if (m_kind == qds::core::ElementKind::Constant) {
-        scale = 1.0 / (std::abs(delta.x()) / halfWidth + std::abs(delta.y()) / halfHeight);
-    } else {
-        const double xScale = std::abs(delta.x()) > 1e-12 ? halfWidth / std::abs(delta.x()) : 1e12;
-        const double yScale = std::abs(delta.y()) > 1e-12 ? halfHeight / std::abs(delta.y()) : 1e12;
-        scale = std::min(xScale, yScale);
-    }
-    return center() + delta * scale;
+    const double halfWidth = m_kind == qds::core::ElementKind::Stock ? 60.0 : 45.0;
+    constexpr double halfHeight = 25.0;
+    if (m_kind != qds::core::ElementKind::Stock)
+        return center() + delta / std::sqrt(delta.x() * delta.x() / (halfWidth * halfWidth)
+            + delta.y() * delta.y() / (halfHeight * halfHeight));
+    const double xScale = std::abs(delta.x()) > 1e-12 ? halfWidth / std::abs(delta.x()) : 1e12;
+    const double yScale = std::abs(delta.y()) > 1e-12 ? halfHeight / std::abs(delta.y()) : 1e12;
+    return center() + delta * std::min(xScale, yScale);
 }
 
 void VariableItem::refresh(const qds::core::ModelElement &variable, const QPointF &position)

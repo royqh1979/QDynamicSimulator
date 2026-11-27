@@ -10,9 +10,7 @@ using PortId = std::uint32_t;
 enum class ElementKind {
     Stock,
     Flow,
-    Auxiliary,
-    Constant,
-    Data,
+    Variable,
     Connector,
     Cloud,
     Comment

@@ -422,12 +422,8 @@ void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *event)
 
     if (event->button() == Qt::LeftButton && m_tool != Tool::Select && !isRouteTool(m_tool)) {
         ElementKind kind = ElementKind::Stock;
-        if (m_tool == Tool::AddAuxiliary)
-            kind = ElementKind::Auxiliary;
-        else if (m_tool == Tool::AddConstant)
-            kind = ElementKind::Constant;
-        else if (m_tool == Tool::AddData)
-            kind = ElementKind::Data;
+        if (m_tool == Tool::AddVariable)
+            kind = ElementKind::Variable;
         else if (m_tool == Tool::AddCloud)
             kind = ElementKind::Cloud;
         else if (m_tool == Tool::AddComment)

@@ -38,16 +38,26 @@ int main(int argc, char **argv)
     if (totalNodes == 0)
         return 3;
 
+    timer.restart();
+    int constantClassificationCount = 0;
+    for (int index = 0; index < count; ++index) {
+        if (!isConstantFormula(QStringLiteral("+8.123e-10"))
+            || isConstantFormula(QStringLiteral("a + 1")))
+            return 24;
+        ++constantClassificationCount;
+    }
+    const qint64 constantClassificationNs = timer.nsecsElapsed();
+
     Document document;
     document.createVariable(ElementKind::Stock);
     QString previousName = "Stock1";
     for (int index = 0; index < count; ++index) {
-        const EntityId id = document.createVariable(ElementKind::Auxiliary);
+        const EntityId id = document.createVariable(ElementKind::Variable);
         const QString currentName = "Equation" + QString::number(index);
         if (!document.rename(id, currentName))
             return 4;
         for (const QChar prefix : QString("bcdef")) {
-            const EntityId input = document.createVariable(ElementKind::Auxiliary);
+            const EntityId input = document.createVariable(ElementKind::Variable);
             if (!document.rename(input, prefix + QString::number(index)))
                 return 4;
         }
@@ -107,8 +117,8 @@ int main(int argc, char **argv)
     arrays.defineDimension("Location", {"Boston", "Chicago"});
     arrays.defineDimension("N", 3);
     for (int index = 0; index < count; ++index) {
-        const EntityId input = arrays.createVariable(ElementKind::Auxiliary);
-        const EntityId array = arrays.createVariable(ElementKind::Auxiliary);
+        const EntityId input = arrays.createVariable(ElementKind::Variable);
+        const EntityId array = arrays.createVariable(ElementKind::Variable);
         const QString inputName = "Input" + QString::number(index);
         if (!arrays.rename(input, inputName) || !arrays.rename(array, "Array" + QString::number(index))
             || !arrays.setDimensions(array, {"Location", "N"}))
@@ -143,8 +153,8 @@ int main(int argc, char **argv)
     QHash<QString, Value> arrayValues;
     QVector<EntityId> evaluatedArrayIds;
     for (int index = 0; index < count; ++index) {
-        const EntityId input = evaluatedArrays.createVariable(ElementKind::Auxiliary);
-        const EntityId array = evaluatedArrays.createVariable(ElementKind::Auxiliary);
+        const EntityId input = evaluatedArrays.createVariable(ElementKind::Variable);
+        const EntityId array = evaluatedArrays.createVariable(ElementKind::Variable);
         const QString inputName = "Input" + QString::number(index);
         const QString arrayName = "Array" + QString::number(index);
         if (!evaluatedArrays.rename(input, inputName) || !evaluatedArrays.rename(array, arrayName)
@@ -206,7 +216,7 @@ int main(int argc, char **argv)
         return 16;
 
     Document macros;
-    const EntityId macroGlobal = macros.createVariable(ElementKind::Constant);
+    const EntityId macroGlobal = macros.createVariable(ElementKind::Variable);
     macros.rename(macroGlobal, "Global");
     MacroDefinitionData macro;
     macro.displayName = "Scale";
@@ -217,8 +227,8 @@ int main(int argc, char **argv)
     QHash<QString, Value> macroValues {{"global", 10.0}};
     QVector<EntityId> macroOutputs;
     for (int index = 0; index < count; ++index) {
-        const EntityId input = macros.createVariable(ElementKind::Auxiliary);
-        const EntityId output = macros.createVariable(ElementKind::Auxiliary);
+        const EntityId input = macros.createVariable(ElementKind::Variable);
+        const EntityId output = macros.createVariable(ElementKind::Variable);
         const QString inputName = "Input" + QString::number(index);
         macros.rename(input, inputName);
         macros.rename(output, "Output" + QString::number(index));
@@ -268,7 +278,7 @@ int main(int argc, char **argv)
         return 21;
     QVector<EntityId> recursiveOutputs;
     for (int index = 0; index < count; ++index) {
-        const EntityId output = recursiveMacros.createVariable(ElementKind::Auxiliary);
+        const EntityId output = recursiveMacros.createVariable(ElementKind::Variable);
         recursiveMacros.setEquation(output, "Down(4)");
         recursiveOutputs.push_back(output);
     }
@@ -301,6 +311,8 @@ int main(int argc, char **argv)
                         << "formula_analyze," << count << "," << elapsedNs / 1e6 << ","
                         << elapsedNs / 1000.0 / count << "\n"
                         << "formula_nodes," << totalNodes << ",\n"
+                        << "constant_formula_classification," << constantClassificationCount << ","
+                        << constantClassificationNs / 1e6 << "," << constantClassificationNs / 1000.0 / count << "\n"
                         << "document_analysis," << count << "," << documentNs / 1e6 << ","
                         << documentNs / 1000.0 / count << "\n"
                         << "formula_references," << referenceCount << ",\n"

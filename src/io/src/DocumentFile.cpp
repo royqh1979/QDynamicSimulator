@@ -297,12 +297,8 @@ QString nativeKindTag(core::ElementKind kind)
         return QStringLiteral("stock");
     case core::ElementKind::Flow:
         return QStringLiteral("flow");
-    case core::ElementKind::Auxiliary:
-        return QStringLiteral("auxiliary");
-    case core::ElementKind::Constant:
-        return QStringLiteral("constant");
-    case core::ElementKind::Data:
-        return QStringLiteral("data");
+    case core::ElementKind::Variable:
+        return QStringLiteral("variable");
     case core::ElementKind::Cloud:
         return QStringLiteral("cloud");
     case core::ElementKind::Comment:
@@ -320,12 +316,8 @@ core::ElementKind nativeKind(const QString &tag, bool &valid)
         return core::ElementKind::Stock;
     if (tag == QStringLiteral("flow"))
         return core::ElementKind::Flow;
-    if (tag == QStringLiteral("auxiliary"))
-        return core::ElementKind::Auxiliary;
-    if (tag == QStringLiteral("constant"))
-        return core::ElementKind::Constant;
-    if (tag == QStringLiteral("data"))
-        return core::ElementKind::Data;
+    if (tag == QStringLiteral("variable"))
+        return core::ElementKind::Variable;
     if (tag == QStringLiteral("cloud"))
         return core::ElementKind::Cloud;
     if (tag == QStringLiteral("comment"))

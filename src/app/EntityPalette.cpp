@@ -17,9 +17,7 @@ EntityPalette::EntityPalette(QWidget *parent)
         const char *icon;
     } entities[] = {
         {QT_TR_NOOP("Stock"), qds::core::ElementKind::Stock, "stock"},
-        {QT_TR_NOOP("Auxiliary"), qds::core::ElementKind::Auxiliary, "auxiliary"},
-        {QT_TR_NOOP("Constant"), qds::core::ElementKind::Constant, "constant"},
-        {QT_TR_NOOP("Data"), qds::core::ElementKind::Data, "data"},
+        {QT_TR_NOOP("Variable"), qds::core::ElementKind::Variable, "variable"},
         {QT_TR_NOOP("Cloud"), qds::core::ElementKind::Cloud, "cloud"},
         {QT_TR_NOOP("Comment"), qds::core::ElementKind::Comment, "annotation"}};
     for (const auto &entity : entities) {

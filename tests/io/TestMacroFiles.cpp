@@ -52,7 +52,7 @@ void TestMacroFiles::macroRoundTrips()
     macro.parameters = {{"x", {}}, {"factor", "2"}};
     macro.equation = "x * factor";
     QVERIFY(document.defineMacro(macro));
-    const EntityId output = document.createVariable(ElementKind::Auxiliary);
+    const EntityId output = document.createVariable(ElementKind::Variable);
     document.setEquation(output, "Scale(5)");
 
     QTemporaryDir directory;

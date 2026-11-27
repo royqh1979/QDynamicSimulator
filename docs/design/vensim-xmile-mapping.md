@@ -19,9 +19,7 @@
 | --- | --- | --- | --- |
 | Stock | Level | model `<stock>` + view `<stock>` | 保留；语义变量，具有初始值及 inflow/outflow |
 | Flow | Rate；其图形中心为 Valve | model `<flow>` + view `<flow>` | 一个流量实体直接拥有路径和端点；阀门不是另一个变量；XMILE 可存在未连接 flow |
-| Auxiliary | Auxiliary | model/view `<aux>` | 保留；语义变量 |
-| Constant | Constant / Parameter | 通常使用 `<aux>`，没有独立 constant 标签 | 保留为变量分类，不冒充 XMILE 独立元素 |
-| Data | Vensim Data；Glossary 中 Exogenous 指由数据给定的变量 | 通常使用 `<aux>` | 界面统一使用 Data，不翻译为“外生变量”；作为变量分类 |
+| Variable | Vensim Variable 工具，覆盖 Auxiliary/Constant/Data | model/view `<aux>` | 统一为 ElementKind::Variable；常量和数据角色由实际公式判断，不保留平行元素类型 |
 | Cloud | Rate 的 source/sink 云团 | XMILE 1.1 无标准 `<cloud>`；不是 model 变量 | 移出语义变量集合，成为只有 EntityId 的视图对象；布局与端点绑定保存在 workspace |
 | Annotation | Sketch Comment；可为 Arrow Junction | view `<text_box>` 等 | 移出语义变量集合，不拥有模型方程；只有 content，不需要唯一名称 |
 | “依赖线” / Information | Arrow；变量间可称因果箭头 | view `<connector>` | 更名“箭头”；不使用“依赖线”作为正式术语 |
@@ -47,13 +45,13 @@ XMILE connector 是视图对象，通过 from/to 指向其他对象。标准没�
 
 ```text
 Document
-├── Model                  Stock、Flow、Auxiliary 等语义变量
+├── Model                  Stock、Flow、Variable 等语义变量
 └── DiagramDefinition      位置、路径、Cloud、Comment、Connector、视图状态
 ```
 
-- Constant 和 Data 可作为语义变量的分类属性，XMILE 读写仍映射为 aux。
+- XMILE 读写将 Variable 映射为 aux；常量或数据角色由实际公式和所用函数决定。
 - Cloud、Comment 和 Connector 使用统一 EntityId，但不进入 Model 的变量索引，也不需要 displayName/nameKey；Comment 保存 content。
-- Stock、Flow、Auxiliary、Constant、Data 需要唯一 displayName，并由 Document 集中维护 `nameKey → EntityId` 索引供重名判断和公式解析。
+- Stock、Flow、Variable 需要唯一 displayName，并由 Document 集中维护 `nameKey → EntityId` 索引供重名判断和公式解析。
 - XMILE uid 仅用于文件内显示对象引用，加载时映射为新 EntityId，不作为内部永久身份。Cloud 在 XMILE 1.1 中没有标准标签，其布局与端点引用只能进入 workspace。
 - Flow 的端点校验属于 Document 聚合层，因为端点既可能是 Model 中的 Stock，也可能是 DiagramDefinition 中的 Cloud。
 - Connector 属于 DiagramDefinition；只有两端均为语义变量时才表达因果结构。
@@ -74,6 +72,14 @@ Document
 ### 4.1 Stock 初值与外部公式边界
 
 内部 Stock 独立保存 `initialEquation`，FlowEndpoints 是净流入关系的唯一权威。Vensim Level 的 `INTEG(inflows - outflows, initial)` 在使用时派生；XMILE Stock `<eqn>` 是仅初始化求值的初始方程，只在导入/导出适配层映射。普通 ModelElement::equation 不保存 Stock 初值。XMILE 同名 `<eqn>` 的上下文歧义是外部格式弱点，QDS 使用显式 `<initial>`，不得据此建立第二份可写净流入公式。
+
+### 4.2 Vensim Sketch 工具与变量分类
+
+Vensim 内置 Sketch 工具集只提供一个 `Variable` 工具，用于创建 Constant、Auxiliary 和 Data；具体变量类型由方程和使用方式决定。这与官方 Variable Types 文档一致：Auxiliary 是动态计算变量，Constant 是不随时间改变的输入，二者不使用不同积分或求值算法。
+
+因此，本项目已删除 Auxiliary、Constant、Data 三种平行 ElementKind，统一为 `ElementKind::Variable`，面板、工具、画布外形和模拟编译均使用同一类型。数值常量仅由实际公式识别，用于结果列表过滤等显示决策。Vensim 的 Existing Variable、Shadow Variable、Merge、Control、Reference Modes 等完整工具集也不因这份清单自动进入当前最小范围。
+
+Vensim Sketch 工具默认 sticky，并支持键盘选择；本项目当前创建操作结束后返回选择工具。该差异与既定的拖放创建、左键拖拽连线一样，不随参考资料自动改变。
 
 ## 5. 后续设计审查清单
 

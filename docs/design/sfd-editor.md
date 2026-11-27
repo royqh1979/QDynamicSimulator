@@ -10,7 +10,7 @@
 
 概念以 [Vensim、XMILE 与本程序概念对应](vensim-xmile-mapping.md) 为准；原始依据保存在 `docs/references/`。
 
-- 左侧提供可隐藏的“绘图元素”面板。存量、辅助变量、常量、Data（数据）、云团和注释通过拖放创建。
+- 左侧提供可隐藏的“绘图元素”面板。存量、通用 Variable、云团和注释通过拖放创建；常量/数据角色由公式决定，不提供并列元素类型。
 - 分隔符后提供“流量（Rate）”和“箭头（Arrow）”两个路由工具；条目可选中但不能作为普通节点拖放。面板条目、工具按钮和菜单项使用极简 SVG 图标，顶层主菜单只显示文字，不设置图标。
 - 默认工具为选择工具。选择工具下单击只选择对象，拖动对象只移动，不得创建新元素。
 - Arrow 通过“左键按住源对象→拖动橡皮线→释放到目标对象”创建；释放到无效目标时不修改文档。
@@ -76,16 +76,14 @@
 
 - 存量 Stock：矩形。
 - 流量 Flow：双实线管线、沙漏形阀门和方向箭头。
-- 辅助变量 Auxiliary。
-- 常量 Constant。
-- 数据 Data。
+- 通用变量 Variable，覆盖辅助计算、常量和外部数据角色。
 - 源/汇云团 Cloud，用于开放系统的流入和流出。
 - 文本注释和箭头批注，不参与模型计算。
 
 每个元素应支持：
 
 - 创建、选择、移动、复制和删除。
-- Stock、Flow、Auxiliary、Constant、Data 具有唯一且可读的 displayName；nameKey 派生用于重名和引用解析，支持中文及空格。Cloud、Comment、Connector 不需要唯一名称。
+- Stock、Flow、Variable 具有唯一且可读的 displayName；nameKey 派生用于重名和引用解析，支持中文及空格。Cloud、Comment、Connector 不需要唯一名称。
 - Document 集中维护 `nameKey → EntityId` 索引，创建、改名、删除、撤销/重做和加载均保持同步；每类语义变量使用独立递增计数器生成 `Stock1`、`Flow1` 等默认名称，候选冲突时继续递增。
 - 所有语义变量都必须在当前视图可见；XMILE 缺少视图或缺少部分显示对象时，导入器补齐确定性布局，不得丢弃模型变量或保留不可见公式。
 - 独立显示名称，名称过长时省略但可查看全文。
@@ -121,7 +119,7 @@
 ### 3.6 属性与方程编辑
 
 - 属性编辑由独立 `PropertyPanel` Widget 承担，直接依赖 DocumentController/DiagramScene，不依赖 MainWindow；MainWindow 仅负责停靠和保存时调用 commit。名称、方程、单位和说明编辑；选中 Comment 时切换为 Content，正文修改通过 ChangeSet 撤销/重做并同步画布及 XMILE text_box。
-- 双击 Stock、Auxiliary、Constant、Data 或 Flow 打开画布内联名称编辑器，编辑器放在公共 `labelRect()` 对应的场景位置并适当扩大；使用 2 像素选中色边框、4 像素圆角和内边距，颜色来自 DiagramPalette，字体与对应 Item 一致。Enter 通过同一 `renameElement()` ChangeSet 提交，Esc 或切换工具取消，空名称/重名保留编辑状态且不生成命令。Arrow 双击仍用于增加控制点。名称、方程、单位和说明均纳入 undo/redo，属性面板逐项提交的测试覆盖完整恢复顺序。
+- 双击 Stock、Variable 或 Flow 打开画布内联名称编辑器，编辑器放在公共 `labelRect()` 对应的场景位置并适当扩大；使用 2 像素选中色边框、4 像素圆角和内边距，颜色来自 DiagramPalette，字体与对应 Item 一致。Enter 通过同一 `renameElement()` ChangeSet 提交，Esc 或切换工具取消，空名称/重名保留编辑状态且不生成命令。Arrow 双击仍用于增加控制点。名称、方程、单位和说明均纳入 undo/redo，属性面板逐项提交的测试覆盖完整恢复顺序。
 - commit 先读取全部输入值再执行修改，避免首个 ChangeNotification 刷新输入框时覆盖其他待提交字段。
 - 存量初值及净流入/净流出关系查看。
 - 流量和辅助变量方程编辑。
@@ -134,7 +132,7 @@
 - 错误定位到对应变量或方程位置。
 - Lookup 表函数数据及图形化编辑。
 - 属性修改立即反映到画布，并纳入撤销/重做。
-- Stock、Auxiliary、Constant、Data、Flow 和 Comment 支持逐元素字体族和字号。属性面板提供 Font/Size，DiagramDefinition 保存核心值对象 `FontStyle{family, pointSize}`，空值继承应用默认字体；实际变化通过 ElementData/ChangeSet 撤销、复制和恢复，QDS 以 `font-family`/`font-size` 保存，XMILE 不扩展专有字体语义。内联名称编辑器使用同一字体。
+- Stock、Variable、Flow 和 Comment 支持逐元素字体族和字号。属性面板提供 Font/Size，DiagramDefinition 保存核心值对象 `FontStyle{family, pointSize}`，空值继承应用默认字体；实际变化通过 ElementData/ChangeSet 撤销、复制和恢复，QDS 以 `font-family`/`font-size` 保存，XMILE 不扩展专有字体语义。内联名称编辑器使用同一字体。
 
 ### 3.7 XMILE 与布局保存
 
@@ -279,7 +277,7 @@ XMILE 中需要保存：
 
 - 按 Vensim/XMILE 对应表建立 ModelElement 与 ViewElement，统一 EntityId 和 Document 所有权。
 - Flow 直接持有 Stock/Cloud 端点；Arrow 使用单一 Connector，不设置物料/信息/注释连接类型。
-- Cloud、Comment 移出仿真变量集合；Constant/Data 作为语义变量分类。
+- Cloud、Comment 移出仿真变量集合；通用 Variable 覆盖 Auxiliary/Constant/Data，实际角色由公式决定。
 - 建立 displayName/nameKey、中文名称、合法端点、级联删除和 ChangeSet 撤销规则。
 
 完成标准：能准确表达典型水箱、人口、库存和 SIR 模型的 SFD 结构。

@@ -124,9 +124,9 @@ void TestXmileFile::nativeRoundTrip()
     const QString path = directory.filePath(QStringLiteral("model.qds"));
     Document document;
     const EntityId stock = document.createVariable(ElementKind::Stock, {120.5, 80.25});
-    const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary, {300.0, 240.0});
-    const EntityId constant = document.createVariable(ElementKind::Constant, {300.0, 360.0});
-    const EntityId data = document.createVariable(ElementKind::Data, {300.0, 480.0});
+    const EntityId auxiliary = document.createVariable(ElementKind::Variable, {300.0, 240.0});
+    const EntityId constant = document.createVariable(ElementKind::Variable, {300.0, 360.0});
+    const EntityId data = document.createVariable(ElementKind::Variable, {300.0, 480.0});
     const EntityId cloud = document.createCloud({450.0, 80.25});
     document.createCloud({700.0, 500.0});
     const EntityId note = document.createComment("\u6CE8\u91CA", {100.0, 300.0});
@@ -184,8 +184,7 @@ void TestXmileFile::nativeRoundTrip()
     QVERIFY(xml.contains("center-y=\"456.25\""));
     QCOMPARE(xml.count("<cloud"), 2);
     QCOMPARE(xml.count("<comment"), 2);
-    QVERIFY(xml.contains("<constant"));
-    QVERIFY(xml.contains("<data"));
+    QCOMPARE(xml.count("<variable"), 3);
     QVERIFY(xml.contains("font-family=\"Arial\""));
     QVERIFY(xml.contains("font-size=\"14\""));
 
@@ -225,9 +224,9 @@ void TestXmileFile::nativeRoundTrip()
     QCOMPARE(loadedStock->comment(), QString("Population stock"));
     QCOMPARE(loaded.diagram().position(loadedStock->id()), Vec2({120.5, 80.25}));
     QCOMPARE(loaded.diagram().fontStyle(loadedStock->id()), (FontStyle {"Arial", 18}));
-    QCOMPARE(loaded.findByName("\u5E38\u91CF")->kind(), ElementKind::Constant);
-    QCOMPARE(loaded.findByName("\u5916\u90E8\u6570\u636E")->kind(), ElementKind::Data);
-    QCOMPARE(loaded.findByName("\u8F85\u52A9\u53D8\u91CF")->kind(), ElementKind::Auxiliary);
+    QCOMPARE(loaded.findByName("\u5E38\u91CF")->kind(), ElementKind::Variable);
+    QCOMPARE(loaded.findByName("\u5916\u90E8\u6570\u636E")->kind(), ElementKind::Variable);
+    QCOMPARE(loaded.findByName("\u8F85\u52A9\u53D8\u91CF")->kind(), ElementKind::Variable);
     const auto *loadedFlow = dynamic_cast<const Flow *>(loaded.findByName("Flow1"));
     QVERIFY(loadedFlow);
     QCOMPARE(loaded.diagram().fontStyle(loadedFlow->id()), (FontStyle {"Times New Roman", 16}));
@@ -310,7 +309,7 @@ void TestXmileFile::plainXmlOpen()
     QVERIFY(!nativeFormat);
     QCOMPARE(workspace, qds::io::Workspace {});
     QVERIFY(document.findByName("S"));
-    QCOMPARE(document.findByName("A")->kind(), ElementKind::Auxiliary);
+    QCOMPARE(document.findByName("A")->kind(), ElementKind::Variable);
     const auto *flow = dynamic_cast<const Flow *>(document.findByName("F"));
     QVERIFY(flow);
     QVERIFY(flow->endpoints().from != 0 && flow->endpoints().to != 0);
@@ -405,7 +404,7 @@ void TestXmileFile::xmileExport()
     const EntityId stock = document.createVariable(ElementKind::Stock, {100.0, 100.0});
     const EntityId cloud = document.createCloud({300.0, 100.0});
     document.createFlow(stock, cloud);
-    document.createVariable(ElementKind::Constant, {100.0, 300.0});
+    document.createVariable(ElementKind::Variable, {100.0, 300.0});
     document.createComment("Note", {400.0, 300.0});
     QVERIFY(document.setSimulationSettings({2.0, 4.0, 0.25, 0.5, IntegrationMethod::RungeKutta4, QStringLiteral("Month")}));
     QString error;
@@ -431,7 +430,7 @@ void TestXmileFile::xmileExport()
     QVERIFY(importedFlow);
     QCOMPARE(imported.find(importedFlow->endpoints().from)->kind(), ElementKind::Stock);
     QCOMPARE(imported.find(importedFlow->endpoints().to)->kind(), ElementKind::Cloud);
-    QCOMPARE(imported.findByName("Constant1")->kind(), ElementKind::Auxiliary);
+    QCOMPARE(imported.findByName("Variable1")->kind(), ElementKind::Variable);
     QCOMPARE(imported.model().findByName("Stock1")->id(), importedFlow->endpoints().from);
     QCOMPARE(imported.simulationSettings(),
         SimulationSettings(2.0, 4.0, 0.25, 0.25, IntegrationMethod::RungeKutta4, QStringLiteral("Month")));

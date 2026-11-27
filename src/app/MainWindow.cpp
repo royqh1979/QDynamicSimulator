@@ -307,12 +307,8 @@ void MainWindow::createActions()
     stockAction->setShortcut(QKeySequence(Qt::Key_1));
     QAction *flowAction = addToolAction(tr("Flow"), DiagramScene::Tool::AddFlow, "flow");
     flowAction->setShortcut(QKeySequence(Qt::Key_2));
-    QAction *auxiliaryAction = addToolAction(tr("Auxiliary"), DiagramScene::Tool::AddAuxiliary, "auxiliary");
-    auxiliaryAction->setShortcut(QKeySequence(Qt::Key_3));
-    QAction *constantAction = addToolAction(tr("Constant"), DiagramScene::Tool::AddConstant, "constant");
-    constantAction->setShortcut(QKeySequence(Qt::Key_5));
-    QAction *dataAction = addToolAction(tr("Data"), DiagramScene::Tool::AddData, "data");
-    dataAction->setShortcut(QKeySequence(Qt::Key_6));
+    QAction *variableAction = addToolAction(tr("Variable"), DiagramScene::Tool::AddVariable, "variable");
+    variableAction->setShortcut(QKeySequence(Qt::Key_3));
     QAction *cloudAction = addToolAction(tr("Cloud"), DiagramScene::Tool::AddCloud, "cloud");
     cloudAction->setShortcut(QKeySequence(Qt::Key_7));
     QAction *annotationAction = addToolAction(tr("Comment"), DiagramScene::Tool::AddComment, "annotation");
@@ -419,16 +415,10 @@ void MainWindow::createActions()
     QAction *tableAction = new QAction(actionIcon("table"), tr("Table"), this);
     tableAction->setObjectName(QStringLiteral("tableAction"));
     connect(graphAction, &QAction::triggered, this, [this]() {
-        if (m_resultsDock && m_results) {
-            m_resultsDock->show();
-            m_results->showGraph();
-        }
+        showSimulationResults(true);
     });
     connect(tableAction, &QAction::triggered, this, [this]() {
-        if (m_resultsDock && m_results) {
-            m_resultsDock->show();
-            m_results->showTable();
-        }
+        showSimulationResults(false);
     });
     m_simulationSettingsAction = new QAction(actionIcon("simulation-settings"), tr("Simulation settings"), this);
     m_simulationSettingsAction->setObjectName(QStringLiteral("simulationSettingsAction"));
@@ -562,9 +552,8 @@ void MainWindow::createPropertyPanel()
                 return candidate.id() == m_simulation->lastRunId();
             });
             if (completed != runs.end() && !m_simulation->isOutdated(*completed)) {
-                m_resultsDock->show();
                 m_results->showRun(completed->id());
-                m_results->showGraph();
+                showSimulationResults(true);
             }
         });
     connect(m_simulation, &SimulationController::namedRunsChanged, this, [this]() {
@@ -574,25 +563,6 @@ void MainWindow::createPropertyPanel()
             m_resultsDock->hide();
         }
     });
-    connect(m_scene, &QGraphicsScene::selectionChanged, this, [this]() {
-        const QList<QGraphicsItem *> selection = m_scene->selectedItems();
-        if (selection.size() != 1)
-            return;
-        const auto *item = dynamic_cast<const DiagramItem *>(selection.front());
-        if (item && dynamic_cast<const qds::core::ModelElement *>(m_controller->document().find(item->id())))
-            m_simulation->setWorkbenchVariable(item->id());
-    });
-    connect(m_simulation, &SimulationController::workbenchVariableChanged, this, [this]() {
-        DiagramItem *item = m_scene->item(m_simulation->workbenchVariable());
-        if (!item)
-            return;
-        const QList<QGraphicsItem *> selection = m_scene->selectedItems();
-        if (selection.size() == 1 && selection.front() == item)
-            return;
-        m_scene->clearSelection();
-        item->setSelected(true);
-    });
-
     m_propertyPanel->refresh();
     refreshValidation();
 }
@@ -659,6 +629,23 @@ void MainWindow::runSimulation()
             return;
     }
     m_simulation->start(name, overwrite);
+}
+
+void MainWindow::showSimulationResults(bool graph)
+{
+    if (!m_resultsDock || !m_results)
+        return;
+    const QList<QGraphicsItem *> selection = m_scene->selectedItems();
+    if (selection.size() == 1) {
+        const auto *item = dynamic_cast<const DiagramItem *>(selection.front());
+        if (item && dynamic_cast<const qds::core::ModelElement *>(m_controller->document().find(item->id())))
+            m_simulation->setWorkbenchVariable(item->id());
+    }
+    m_resultsDock->show();
+    if (graph)
+        m_results->showGraph();
+    else
+        m_results->showTable();
 }
 
 void MainWindow::openSimulationSettings()
@@ -884,14 +871,8 @@ void MainWindow::setTool(DiagramScene::Tool tool)
     case DiagramScene::Tool::AddFlow:
         statusBar()->showMessage(tr("Drag from a stock, cloud, or blank point to create a flow"));
         break;
-    case DiagramScene::Tool::AddAuxiliary:
-        statusBar()->showMessage(tr("Click on the canvas to create an auxiliary"));
-        break;
-    case DiagramScene::Tool::AddConstant:
-        statusBar()->showMessage(tr("Click on the canvas to create a constant"));
-        break;
-    case DiagramScene::Tool::AddData:
-        statusBar()->showMessage(tr("Click on the canvas to create data"));
+    case DiagramScene::Tool::AddVariable:
+        statusBar()->showMessage(tr("Click on the canvas to create a variable"));
         break;
     case DiagramScene::Tool::AddCloud:
         statusBar()->showMessage(tr("Click on the canvas to create a source/sink cloud"));

@@ -41,7 +41,7 @@ void TestArrays::dimensionDefinitions()
     QCOMPARE(document.findDimension("LOCATION")->elements[1].nameKey, QString("new_york"));
     QCOMPARE(document.findDimension("N")->elements[2].displayName, QString("3"));
 
-    const EntityId array = document.createVariable(ElementKind::Auxiliary);
+    const EntityId array = document.createVariable(ElementKind::Variable);
     document.rename(array, "Sales");
     QVERIFY(!document.rename(array, "Location"));
     QVERIFY(!document.defineDimension("Sales", 2));
@@ -103,10 +103,10 @@ void TestArrays::arrayAnalysis()
     Document document;
     document.defineDimension("Location", {"Boston", "Chicago"});
     document.defineDimension("N", 3);
-    const EntityId sales = document.createVariable(ElementKind::Auxiliary);
-    const EntityId revenue = document.createVariable(ElementKind::Auxiliary);
-    const EntityId costs = document.createVariable(ElementKind::Auxiliary);
-    const EntityId recursive = document.createVariable(ElementKind::Auxiliary);
+    const EntityId sales = document.createVariable(ElementKind::Variable);
+    const EntityId revenue = document.createVariable(ElementKind::Variable);
+    const EntityId costs = document.createVariable(ElementKind::Variable);
+    const EntityId recursive = document.createVariable(ElementKind::Variable);
     document.rename(sales, "Sales");
     document.rename(revenue, "Revenue");
     document.rename(costs, "Costs");
@@ -140,8 +140,8 @@ void TestArrays::captureAndRestore()
 {
     Document document;
     document.defineDimension("Location", {"Boston", "Chicago"});
-    const EntityId input = document.createVariable(ElementKind::Constant);
-    const EntityId array = document.createVariable(ElementKind::Auxiliary);
+    const EntityId input = document.createVariable(ElementKind::Variable);
+    const EntityId array = document.createVariable(ElementKind::Variable);
     document.rename(input, "Input");
     document.setDimensions(array, {"Location"});
     document.setElementEquation(array, {0}, "Input");

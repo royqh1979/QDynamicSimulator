@@ -182,9 +182,7 @@ QString variableTag(core::ElementKind kind)
         return QStringLiteral("stock");
     case core::ElementKind::Flow:
         return QStringLiteral("flow");
-    case core::ElementKind::Auxiliary:
-    case core::ElementKind::Constant:
-    case core::ElementKind::Data:
+    case core::ElementKind::Variable:
         return QStringLiteral("aux");
     case core::ElementKind::Cloud:
         return QStringLiteral("cloud");
@@ -590,7 +588,7 @@ bool parseVariable(
         variable.kind = core::ElementKind::Flow;
         variable.route.mode = core::RouteMode::Straight;
     } else {
-        variable.kind = core::ElementKind::Auxiliary;
+        variable.kind = core::ElementKind::Variable;
     }
 
     QStringList inflows;
@@ -650,7 +648,7 @@ bool parseVariable(
 
     if (variable.kind == core::ElementKind::Flow) {
         pendingFlows.push_back(std::move(variable));
-    } else if (variable.kind == core::ElementKind::Auxiliary) {
+    } else if (variable.kind == core::ElementKind::Variable) {
         pendingAuxiliaries.push_back(std::move(variable));
     } else if (!model.restore(variable)) {
         setError(errorMessage, translate("The model contains a duplicate variable name: %1").arg(name));

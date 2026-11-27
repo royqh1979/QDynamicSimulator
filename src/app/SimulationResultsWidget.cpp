@@ -142,7 +142,7 @@ void SimulationResultsWidget::refreshWorkbench()
     QSet<QString> seenNames;
     for (const NamedRun &candidate : m_controller->runs()) {
         for (const RunVariableInfo &variable : candidate.variables()) {
-            if (variable.kind() != qds::core::ElementKind::Constant && !seenNames.contains(variable.nameKey())) {
+            if (!variable.isConstant() && !seenNames.contains(variable.nameKey())) {
                 seenNames.insert(variable.nameKey());
                 availableVariables.push_back(variable);
             }
@@ -158,13 +158,16 @@ void SimulationResultsWidget::refreshWorkbench()
         m_variableCombo->setItemData(m_variableCombo->count() - 1, static_cast<int>(variable.kind()), Qt::UserRole + 1);
         if (variable.nameKey() == m_controller->workbenchNameKey())
             selectedIndex = m_variableCombo->count() - 1;
-        if (selectedIndex < 0 && variable.kind() == qds::core::ElementKind::Stock)
+        if (selectedIndex < 0 && m_controller->workbenchNameKey().isEmpty()
+            && variable.kind() == qds::core::ElementKind::Stock)
             selectedIndex = m_variableCombo->count() - 1;
     }
-    if (selectedIndex < 0 && m_variableCombo->count() > 0)
+    if (selectedIndex < 0 && m_controller->workbenchNameKey().isEmpty() && m_variableCombo->count() > 0)
         selectedIndex = 0;
     m_variableCombo->setCurrentIndex(selectedIndex);
-    const QString nameKey = m_variableCombo->currentData().toString();
+    const QString nameKey = selectedIndex >= 0
+        ? m_variableCombo->currentData().toString()
+        : m_controller->workbenchNameKey();
     if (selectedIndex >= 0 && m_controller->workbenchNameKey() != nameKey)
         m_controller->setWorkbenchVariableName(nameKey);
     QVector<NamedRun> loadedRuns;

@@ -39,9 +39,7 @@ core::Document
 ├── core::Model                  模型变量的只读门面；Stock 独立保存 initialEquation
 │   ├── Stock                    Vensim Level / XMILE stock
 │   ├── Flow                     Vensim Rate / XMILE flow
-│   ├── Auxiliary                XMILE aux
-│   ├── Constant                 变量分类，XMILE 使用 aux
-│   └── Data（数据）             变量分类，XMILE 使用 aux
+│   └── Variable                 通用变量，XMILE 使用 aux
 ├── Dimension                    Document 级数组维度定义
 ├── MacroDefinition              Document 级自定义函数定义
 └── DiagramDefinition            当前视图的图形对象与持久布局
@@ -57,7 +55,7 @@ MainWindow / DiagramView
 
 | 对象 | 在 Document | 在 Model | 在 DiagramDefinition | 说明 |
 | --- | :---: | :---: | :---: | --- |
-| Stock、Flow、Auxiliary、Constant、Data | 是 | 是 | 保存其布局 | 具有名称和方程等模型语义 |
+| Stock、Flow、Variable | 是 | 是 | 保存其布局 | 具有名称和方程等模型语义 |
 | Arrow / Connector | 是 | 否 | 是 | 保存 from/to 和 Route；不是可计算变量 |
 | Cloud | 是 | 否 | 是 | 只表示流量的源/汇 |
 | Comment / Annotation | 是 | 否 | 是 | 保存正文；作为 Arrow Junction 时可接 Connector |
@@ -115,7 +113,7 @@ ChangeSet 不需要 UUID，也不经过 XMILE save/load。EntityId 保持 uint64
 
 ```cpp
 enum class ElementKind {
-    Stock, Flow, Auxiliary, Constant, Data,
+    Stock, Flow, Variable,
     Connector, Cloud, Comment
 };
 
@@ -144,7 +142,7 @@ class Connector final : public ViewElement {
 };
 ```
 
-Stock、Auxiliary、Constant、Data 可继续共用 `Variable : ModelElement`，由 kind() 区分；Flow 因具有端点和独立路径语义而拆分。Cloud 和 Comment 继承 ViewElement，不是 Variable，也不进入仿真变量集合。
+通用变量统一为 `ElementKind::Variable` 和 `Variable : ModelElement`，不再按 Auxiliary/Constant/Data 拆分；常量等显示角色由公式决定。Flow 因具有端点和独立路径语义而拆分。Cloud 和 Comment 继承 ViewElement，不是 Variable，也不进入仿真变量集合。
 
 `Route`、`Vec2`、`Endpoint` 和 `PortGeometry` 仍是值对象，不需要继承 DocumentElement。选中状态和控制句柄也不是 DocumentElement。
 
@@ -180,7 +178,7 @@ for (const ViewElement &element : document.diagram().elements()) { ... }
 
 ### 3.5 名称、nameKey 索引与重名判断
 
-Stock、Flow、Auxiliary、Constant、Data 都可能进入公式，因此全部参与当前模型的语义变量命名空间。Cloud、Comment 和 Connector 不进入公式，不需要唯一名称，也不参与名称到对象的查询：Cloud 和 Connector 只使用 EntityId，Comment 另保存用户正文 `content`，不能把正文当作名称。
+Stock、Flow、Variable 都可能进入公式，因此全部参与当前模型的语义变量命名空间。Cloud、Comment 和 Connector 不进入公式，不需要唯一名称，也不参与名称到对象的查询：Cloud 和 Connector 只使用 EntityId，Comment 另保存用户正文 `content`，不能把正文当作名称。
 
 每个语义变量同时保存：
 
@@ -216,7 +214,7 @@ QHash<QString, EntityId> m_nameIndex; // nameKey -> ModelElement
 
 ### 3.6 默认名称与序列化 uid
 
-每个语义变量类型使用独立、单调递增的命名计数器，生成 `Stock1`、`Flow1`、`Auxiliary1` 等默认 displayName。命名计数器不是 EntityId，也不表示对象身份；删除对象不回收编号，编号允许不连续。
+每个语义变量类型使用独立、单调递增的命名计数器，生成 `Stock1`、`Flow1`、`Variable1` 等默认 displayName。命名计数器不是 EntityId，也不表示对象身份；删除对象不回收编号，编号允许不连续。
 
 候选名称仍需查询 nameKey 索引，因为用户改名、XMILE 导入和粘贴都可能提前占用某个候选名称。若冲突则继续递增，直到取得未使用的名称；无需扫描全部对象。加载文档后计数器可从 1 开始并跳过已占用名称。undo/redo 恢复原 displayName，不重新运行自动命名。
 
@@ -255,7 +253,7 @@ QGraphicsObject
 - RoutedItem 通过统一 `updateLayout()` 声明旧/新几何失效；端点预览状态虽然不修改 Route，也必须在写入 `m_previewEndpoint/m_previewPosition` **之前**调用 `prepareGeometryChange()`，再更新状态并调用 `update()`，禁止先改状态再由 updateLayout 查询旧轮廓。boundingRect 必须联合 `geometryPath().boundingRect()` 与 `controlPointRect()`，并覆盖阀门、文字和辅助线，确保远离曲线实际控制点的手柄也纳入失效区域。创建连接与端点拖动使用不同预览对象，取消、重连和文档重置时按各自生命周期清理，避免残影。
 - 根据文档变化刷新显示缓存。
 
-子类只实现真正不同的外形、端口和交互。Constant、Data 与 Auxiliary 如果行为一致，可共用 VariableItem，并通过绘制策略区分外观。
+子类只实现真正不同的外形、端口和交互。VariableItem 对所有通用 Variable 使用同一椭圆外形，不再提供 Constant/Data 专用外观。
 
 不采用“DiagramItem 包含一个 QGraphicsItem 属性”的适配方式，因为这仍需转发场景坐标、选择、事件、绘制、所有权和变换，没有实际收益。
 
@@ -336,11 +334,11 @@ FlowItem 的名称使用独立 `labelRect()` 计算，`boundingRect()` 必须同
 
 ### 4.2.3 Flow 的 XMILE 边界
 
-目标版本为 XMILE 1.1，仅用于未压缩 XML 的导入/导出。Flow 名称和方程写入标准 `<flow>`，Stock 使用 `<inflow>`/`<outflow>` 引用 Flow；不生成物料 Connector。Constant/Data 在标准 XMILE 中写为 aux，普通 aux 导入为 Auxiliary。XMILE 1.1 没有标准 `<cloud>`，不得输出该标签冒充标准内容。
+目标版本为 XMILE 1.1，仅用于未压缩 XML 的导入/导出。Flow 名称和方程写入标准 `<flow>`，Stock 使用 `<inflow>`/`<outflow>` 引用 Flow；不生成物料 Connector。Variable 在标准 XMILE 中写为 aux，普通 aux 导入为 Variable。XMILE 1.1 没有标准 `<cloud>`，不得输出该标签冒充标准内容。
 
 导入纯 XMILE 时，Stock 的 inflow/outflow 决定 Flow 语义端点，Stock 位置决定已知端点布局；`x,y`、`pts`、`angle` 只作为布局参考。Flow 的 `x,y` 是阀门参考中心，Connector 的 `x,y` 只是通用显示位置，均不得变成 Route 固定点。`pts` 首尾可用于估计缺失 Cloud 的位置，中间点不得直接写成固定控制点。导入后 Route.manual=false，路径由端点自动重算；Arrow 可包含默认贝塞尔的 automatic 相对点，但不得包含 XMILE 派生的手动固定点。
 
-没有视图或路径时生成确定性的默认布局。名称、端点、视图补齐和索引建立必须属于同一事务，失败时保留原 Document。导出不得把贝塞尔控制手柄冒充标准锚点，也不得声称保留 Cloud 图形、Constant/Data 分类、Comment Connector、私有路径和工作区语义。
+没有视图或路径时生成确定性的默认布局。名称、端点、视图补齐和索引建立必须属于同一事务，失败时保留原 Document。导出不得把贝塞尔控制手柄冒充标准锚点，也不得声称保留 Cloud 图形、公式派生的常量角色、Comment Connector、私有路径和工作区语义。
 
 真实互操作验证首先使用 `3rdparty/test-models/samples/SIR/SIR.xmile`，要求全部 Flow/Connector 端点有效、无孤立实体、无固定 Route 点。CMake 选项 `QDS_ENABLE_XMILE_CORPUS_TESTS` 默认 OFF；修改 XMILE 导入功能时显式开启，遍历 `3rdparty/test-models` 下全部 XMILE 文件执行同族结构验证，不得静默跳过文件。多模型/模块及多 Stock 同向端点必须明确报不支持，禁止部分导入；损坏 XML 必须明确拒绝，并在测试输出中分类记录。公式引用变量的孤立判断暂缓并在测试输出中列出，待公式依赖分析实现后恢复；这些文件仍验证导入、端点和 Route。
 
@@ -348,7 +346,7 @@ FlowItem 的名称使用独立 `labelRect()` 计算，`boundingRect()` 必须同
 
 I/O 职责按格式拆分为独立类和源码文件：`DocumentFile` 负责 QDS/ZIP，`XmileFile` 只负责未压缩 XMILE 导入/导出，不共享格式兼容层。原生文件使用 `.qds` 后缀，ZIP 容器中只有一个 `document.xml`。XML 根元素为 `<qds-document version="1">`，内部以 `<model>`、`<diagram>` 和可选 `<workspace>` 分区；代码模型与视图分层不要求拆成多个文件。开发阶段不读取旧版 model.xmile/workspace.xml ZIP，也不为其设置兼容层。
 
-`model` 保存 Stock、Flow、Auxiliary、Constant、Data 及方程、单位、说明和 Flow 端点；Stock 初值使用独立 `<initial>`，不写入普通 `<eqn>`；`diagram` 保存 Cloud、Comment、Connector、位置和 Route。所有对象使用文件内 uid 引用，加载时重新分配 EntityId 并建立 uid→EntityId 映射。displayName 持久化，nameKey 加载时派生；Comment 保存 content，Cloud 不使用名称。
+`model` 保存 Stock、Flow、Variable 及方程、单位、说明和 Flow 端点；通用变量使用单一 `<variable>` 标签，不读取旧类型标签；Stock 初值使用独立 `<initial>`，不写入普通 `<eqn>`；`diagram` 保存 Cloud、Comment、Connector、位置和 Route。所有对象使用文件内 uid 引用，加载时重新分配 EntityId 并建立 uid→EntityId 映射。displayName 持久化，nameKey 加载时派生；Comment 保存 content，Cloud 不使用名称。
 
 原生读取采用两阶段构建：先建立非路由对象，再按映射建立 Flow、Connector。原生往返必须完整保留 ElementKind、重复 Comment、Cloud、端点、路径模式、控制点和锁定状态。ZIP 中缺少 document.xml、XML 损坏或引用无效时加载失败并保留原 Document。XMILE 导入通道遇到 ZIP 直接报错，不尝试猜测旧格式。
 
@@ -693,7 +691,7 @@ ControlPointHandle
 - 每个 ArrowItem 的 ID 都对应 DiagramDefinition::Connector。
 - CloudItem、CommentItem 只对应 DiagramDefinition 对象，不出现在 Model::variables()。
 - 每条 Connector 和 Flow 的端点对象均存在；稳定 Document 中 Flow 两端均为有效 Stock/Cloud，不存在 0 端点或半连接 Flow。
-- Document::find(id) 能返回任意 Stock、Flow、Auxiliary、Connector、Cloud 或 Comment，且结果 kind() 与实际对象一致。
+- Document::find(id) 能返回任意 Stock、Flow、Variable、Connector、Cloud 或 Comment，且结果 kind() 与实际对象一致。
 - 每个 DiagramItem::id() 均可通过 Document::find() 找到对应核心对象；每个可见核心对象均可通过 DiagramScene::item() 找到图元。
 - 当前单视图中，每个 ModelElement 恰好有一个可见 DiagramItem；没有仅因原 XMILE 缺少 view/pts 而不可见的公式变量。
 - nameKey 索引与 ModelElement 集合一一对应：每个非空 nameKey 只出现一次，索引目标 ID 正确且对象的 displayName 重新派生后等于该键；Cloud、Comment、Connector 不在索引中。

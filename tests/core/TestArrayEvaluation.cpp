@@ -45,10 +45,10 @@ void TestArrayEvaluation::initTestCase()
 {
     document.defineDimension("Location", {"Boston", "Chicago", "LA"});
     document.defineDimension("N", 2);
-    a = document.createVariable(ElementKind::Constant);
-    b = document.createVariable(ElementKind::Constant);
-    c = document.createVariable(ElementKind::Constant);
-    result = document.createVariable(ElementKind::Auxiliary);
+    a = document.createVariable(ElementKind::Variable);
+    b = document.createVariable(ElementKind::Variable);
+    c = document.createVariable(ElementKind::Variable);
+    result = document.createVariable(ElementKind::Variable);
     document.rename(a, "A");
     document.rename(b, "B");
     document.rename(c, "C");

@@ -69,9 +69,9 @@ void TestSimulation::initializationAndEvaluationOrder()
 {
     Document document;
     const EntityId stock = document.createVariable(ElementKind::Stock);
-    const EntityId auxiliary = document.createVariable(ElementKind::Auxiliary);
-    const EntityId offset = document.createVariable(ElementKind::Constant);
-    const EntityId base = document.createVariable(ElementKind::Constant);
+    const EntityId auxiliary = document.createVariable(ElementKind::Variable);
+    const EntityId offset = document.createVariable(ElementKind::Variable);
+    const EntityId base = document.createVariable(ElementKind::Variable);
     document.rename(stock, "Stock");
     document.rename(auxiliary, "Twice");
     document.rename(offset, "Offset");
@@ -280,13 +280,13 @@ void TestSimulation::compilationDiagnostics()
     QVERIFY(hasIssue(compileSimulation(unsupported), "unsupported-simulation-function"));
 
     Document data;
-    const EntityId dataElement = data.createVariable(ElementKind::Data);
+    const EntityId dataElement = data.createVariable(ElementKind::Variable);
     data.setEquation(dataElement, "1");
-    QVERIFY(hasIssue(compileSimulation(data), "unsupported-simulation-data"));
+    QVERIFY(compileSimulation(data).plan);
 
     Document array;
     array.defineDimension("N", 2);
-    const EntityId arrayElement = array.createVariable(ElementKind::Auxiliary);
+    const EntityId arrayElement = array.createVariable(ElementKind::Variable);
     array.setDimensions(arrayElement, {"N"});
     array.setElementEquation(arrayElement, {0}, "1");
     array.setElementEquation(arrayElement, {1}, "2");
@@ -302,8 +302,8 @@ void TestSimulation::compilationDiagnostics()
     QVERIFY(hasIssue(compileSimulation(initialCycle), "simultaneous-initial-equations"));
 
     Document runtimeCycle;
-    const EntityId first = runtimeCycle.createVariable(ElementKind::Auxiliary);
-    const EntityId second = runtimeCycle.createVariable(ElementKind::Auxiliary);
+    const EntityId first = runtimeCycle.createVariable(ElementKind::Variable);
+    const EntityId second = runtimeCycle.createVariable(ElementKind::Variable);
     runtimeCycle.rename(first, "First");
     runtimeCycle.rename(second, "Second");
     runtimeCycle.setEquation(first, "Second");

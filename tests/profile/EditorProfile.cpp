@@ -89,8 +89,8 @@ int main(int argc, char **argv)
     QElapsedTimer timer;
     timer.start();
     const ElementKind types[] = {
-        ElementKind::Stock, ElementKind::Auxiliary, ElementKind::Constant,
-        ElementKind::Data, ElementKind::Cloud, ElementKind::Comment};
+        ElementKind::Stock, ElementKind::Variable, ElementKind::Variable,
+        ElementKind::Variable, ElementKind::Cloud, ElementKind::Comment};
     for (int index = 0; index < count; ++index) {
         const ElementKind kind = types[index % 6];
         const QPointF position((index % 40) * 180.0, (index / 40) * 120.0);
@@ -174,7 +174,7 @@ int main(int argc, char **argv)
     DocumentController areaController;
     DiagramScene areaScene(&areaController);
     areaController.createVariable(ElementKind::Stock, QPointF());
-    areaController.createVariable(ElementKind::Auxiliary, QPointF(200.0, 200.0));
+    areaController.createVariable(ElementKind::Variable, QPointF(200.0, 200.0));
     DiagramView areaView(&areaScene);
     areaView.resize(640, 480);
     auto *areaFrame = areaView.findChild<QFrame *>(QStringLiteral("selectionFrame"));
@@ -349,7 +349,7 @@ int main(int argc, char **argv)
     DocumentController guideController;
     DiagramScene guideScene(&guideController);
     const EntityId guideFrom = guideController.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
-    const EntityId guideTo = guideController.createVariable(ElementKind::Auxiliary, QPointF(200.0, 0.0));
+    const EntityId guideTo = guideController.createVariable(ElementKind::Variable, QPointF(200.0, 0.0));
     const EntityId guideConnection = guideController.createConnector(guideFrom, guideTo);
     auto *guideItem = dynamic_cast<ArrowItem *>(guideScene.item(guideConnection));
     const EntityId guideComment = guideController.createComment(QStringLiteral("Note"), QPointF(100.0, 100.0));
@@ -487,7 +487,7 @@ int main(int argc, char **argv)
     const EntityId previewFlowOldTarget = previewFlowController.createVariable(ElementKind::Stock, QPointF(400.0, 0.0));
     const EntityId previewFlowNewTarget = previewFlowController.createVariable(ElementKind::Stock, QPointF(400.0, 400.0));
     const EntityId previewFlow = previewFlowController.createFlow(previewFlowSource, previewFlowOldTarget);
-    const EntityId previewFlowAuxiliary = previewFlowController.createVariable(ElementKind::Auxiliary, QPointF(-400.0, 400.0));
+    const EntityId previewFlowAuxiliary = previewFlowController.createVariable(ElementKind::Variable, QPointF(-400.0, 400.0));
     const EntityId previewFlowConnector = previewFlowController.createConnector(previewFlowAuxiliary, previewFlow);
     auto *previewFlowItem = dynamic_cast<FlowItem *>(previewFlowScene.item(previewFlow));
     auto *previewFlowArrow = dynamic_cast<ArrowItem *>(previewFlowScene.item(previewFlowConnector));
@@ -531,7 +531,7 @@ int main(int argc, char **argv)
 
     DocumentController flowTargetController;
     DiagramScene flowTargetScene(&flowTargetController);
-    const EntityId flowTargetSource = flowTargetController.createVariable(ElementKind::Auxiliary, QPointF(0.0, -200.0));
+    const EntityId flowTargetSource = flowTargetController.createVariable(ElementKind::Variable, QPointF(0.0, -200.0));
     const EntityId flowTargetStock = flowTargetController.createVariable(ElementKind::Stock, QPointF());
     const EntityId flowTargetCloud = flowTargetController.createCloud(QPointF(400.0, 0.0));
     const EntityId flowTargetFlow = flowTargetController.createFlow(flowTargetStock, flowTargetCloud);
@@ -766,7 +766,7 @@ int main(int argc, char **argv)
     DiagramScene pngScene(&pngController);
     QVector<EntityId> pngIds;
     for (int index = 0; index < 20; ++index) {
-        const ElementKind kind = index % 2 == 0 ? ElementKind::Stock : ElementKind::Auxiliary;
+        const ElementKind kind = index % 2 == 0 ? ElementKind::Stock : ElementKind::Variable;
         pngIds.push_back(pngController.createVariable(kind, QPointF((index % 5) * 180.0, (index / 5) * 140.0)));
     }
     for (int index = 1; index < 20; ++index)
@@ -1057,7 +1057,7 @@ int main(int argc, char **argv)
 
     Document chartDocument;
     for (int index = 0; index < 10; ++index) {
-        const EntityId id = chartDocument.createVariable(ElementKind::Auxiliary);
+        const EntityId id = chartDocument.createVariable(ElementKind::Variable);
         chartDocument.setEquation(id, QString::number(index));
     }
     chartDocument.setSimulationSettings({0.0, 99999.0, 1.0, 1.0});
@@ -1071,7 +1071,7 @@ int main(int argc, char **argv)
     for (EntityId id : chartCompiled.plan->outputOrder()) {
         const auto *element = dynamic_cast<const ModelElement *>(chartDocument.find(id));
         if (element)
-            chartVariables.push_back(RunVariableInfo(id, element->displayName(), element->nameKey(), element->unit(), element->kind()));
+            chartVariables.push_back(RunVariableInfo(id, element->displayName(), element->nameKey(), element->unit(), element->kind(), false));
     }
     QVector<NamedRun> chartRuns;
     for (int index = 0; index < 10; ++index)

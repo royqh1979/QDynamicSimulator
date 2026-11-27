@@ -49,11 +49,11 @@
 **Workbench Variable**
 
 - 当前分析变量称为 Workbench Variable，与画布多选集合和图表可见变量集合分开保存。
-- 单击画布中的数值 ModelElement 会同时选中它并设为 Workbench Variable；Connector、Cloud、Comment 不能成为 Workbench Variable。多选不改变“唯一当前分析变量”的规则。
+- 画布选择与 Workbench Variable 平时互不影响。仅在 Graph/Table 菜单、工具栏动作或运行成功后的自动打开时，若当前恰好单选一个数值 ModelElement，则尽力将它设为 Workbench Variable；无选择、多选、Connector、Cloud、Comment 或被结果列表过滤的数值常量均不阻止打开结果视图，也不改变画布选择状态。Workbench Variable 的选择不反向同步到画布。
 - 工具栏/结果区的 Variable Selection 控件提供同一变量列表和搜索；控件与画布选择双向同步。
 - 标题栏或紧邻标题的固定区域显示当前 Workbench Variable，修改画布选择、变量改名或文档替换后立即刷新。
 - Graph/Table 默认分析 Workbench Variable；若尚未设置则使用首个 Stock，再否则使用首个可输出变量。没有可用结果时提示先运行，不隐式启动新 Run。
-- Workbench Variable 只决定当前分析对象；Graph 默认叠加所有已加载 Run。变量下拉框汇总历史 Run 中可用变量，排除没有显示必要的 Constant，并按 displayName 的本地化顺序排序、以 nameKey 打破并列；后续变量列表仍可加入其他变量。
+- Workbench Variable 只决定当前分析对象；Graph 默认叠加所有已加载 Run。变量下拉框汇总历史 Run 中可用的 Variable，使用公式 AST 排除数值常量，并按 displayName 的本地化顺序排序、以 nameKey 打破并列；后续变量列表仍可加入其他变量。
 
 **模型检查入口**
 
@@ -92,7 +92,7 @@ Run results
 - 没有 Run 时 Dock 可保持隐藏；运行成功且完成时 Document 的 simulationRevision 与该 Run 一致，则自动显示 Graph、选择 lastRunId 对应的此次 Run，并显示 Completed、样本数和 Run Name。运行期间或完成后模型已修改时只保留过期结果，不自动弹出 Dock。即使小模型瞬间完成也遵循同一规则，不让用户靠“是否弹出覆盖提示”判断是否运行。失败/取消运行继续通过状态栏和 Diagnostics 显示，不产生虚假成功图表。
 - Diagnostics 复用现有模型检查面板或共享诊断视图，不复制诊断存储。
 - 变量列表显示名称、单位、可见勾选状态和 Run 状态，不把名称作为身份。
-- 默认显示 Workbench Variable；未设置时选择首个 Stock。Auxiliary/Flow/Constant 可搜索并追加。变量过多时使用列表虚拟化和延迟搜索，不一次生成图表点对象。
+- 默认显示 Workbench Variable；仅在它为空时选择首个 Stock。Variable/Flow 可搜索并追加，数值常量不进入下拉框；若 Workbench 是被过滤的数值常量，则保留空当前项且不回退到其他变量。文档 reset 先清空 Runs，再发送 Workbench 通知，禁止用旧 Run 回填名称。变量过多时使用列表虚拟化和延迟搜索，不一次生成图表点对象。
 - Del/Close 只在结果视图具有焦点时关闭当前输出，不删除数据集，也不删除画布元素。Windows > Close All Output 只关闭输出视图，不清空 Datasets；清空结果需要独立明确操作。
 
 ### 2.4 结构、方程与完整性提示
@@ -103,7 +103,7 @@ Run results
 - Equation Editor 动作聚焦现有 PropertyPanel 的公式输入，不新增另一套公式存储。变量列表/补全可以插入名称；换行和空白只影响公式源文本，名称内部不能插入换行。
 - 缺少公式、公式不完整、缺少必要输入或存在诊断的元素在画布上有明确警告轮廓/标记；完成后立即清除。颜色不是唯一通道，还需图标或文本以支持可访问性。
 - Stock 编辑显示 Initial value 公式、单位和流入/流出关系；Flow 由端点方向自动决定加减。不得把 Stock 初值伪装成可自由编辑的 INTEG 表达式，也不要求用户手工维护净流入字符串。
-- Flow/Auxiliary/Constant 编辑各自公式和单位；Flow 的方向与符号由 FlowEndpoints 决定，改变方向必须经过现有重连命令。
+- Flow/Variable 编辑各自公式和单位；Flow 的方向与符号由 FlowEndpoints 决定，改变方向必须经过现有重连命令。
 - Check Model（Ctrl+T）汇总结构、语法、引用、初始化/运行期环和可运行性；错误可定位到元素及公式 SourceSpan。
 - Units 输入保留既有单位历史供选择。Units Check（Ctrl+U）需要真正的量纲分析；实现前不提供虚假通过结果。单位错误应指出相关变量、期望/实际单位和运算位置。
 - 新建模型可以直接使用默认 SimulationSettings，Time Bounds 设置入口在向导/菜单中清晰可发现；是否强制弹窗由后续可用性测试决定，不强制中断熟悉用户。
@@ -191,7 +191,7 @@ QDS 只保存当前 Document，不包含 NamedRun。当前 Run 只存在于会�
 - 空选择显示提示，不生成空图片覆盖剪贴板；
 - PNG 导出使用离屏渲染，不截取屏幕。
 
-已确定使用官方 Qt Charts，不再引入 QCustomPlot 或维护通用自绘图表框架。Qt Charts 只进入应用层，Core 不依赖它；TimeSeriesChartWidget 继续隔离图表实现。Graph/Table 共用 Simulation 菜单和工具栏 QAction，并切换结果 Dock 的 Chart/Data 标签。当前图表默认叠加全部已加载 Run，图例显示 Run Name 与变量名；滚轮缩放、左键拖动平移，双击同时恢复缩放和平移前的完整坐标范围。10 万样本、10 条序列、连续缩放和 PNG 输出仍作为回归 profile 场景，用于发现异常，不设置当前不需要的极限性能门槛。置信区间带、Causes Strip 等领域图形可在 Qt Charts 基础上组合或少量自绘。
+已确定使用官方 Qt Charts，不再引入 QCustomPlot 或维护通用自绘图表框架。Qt Charts 只进入应用层，Core 不依赖它；TimeSeriesChartWidget 继续隔离图表实现。Graph/Table 共用 Simulation 菜单和工具栏 QAction，并切换结果 Dock 的 Chart/Data 标签。当前图表默认叠加全部已加载 Run，图例只显示 Run Name；滚轮缩放、左键拖动平移，双击同时恢复缩放和平移前的完整坐标范围。10 万样本、10 条序列、连续缩放和 PNG 输出仍作为回归 profile 场景，用于发现异常，不设置当前不需要的极限性能门槛。置信区间带、Causes Strip 等领域图形可在 Qt Charts 基础上组合或少量自绘。
 
 ### 4.2 数据表
 
@@ -219,7 +219,7 @@ QDS 只保存当前 Document，不包含 NamedRun。当前 Run 只存在于会�
 - 非法设置、无公式、未定义变量、代数环、不支持的函数分别显示明确原因。
 - 非有限值、时间停滞和 Worker 内部错误终止当前 Run，UI 保持可编辑。
 - Cancel 是正常用户操作，不弹错误框；状态栏显示取消时的实际时间。
-- 无 Stock 的纯公式模型仍可运行并显示 Auxiliary/Constant。
+- 无 Stock 的纯公式模型仍可运行并显示 Variable；数值常量不进入结果变量下拉框。
 - 不支持的数组、Data、Lookup、随机或状态函数不得显示“运行成功”。
 
 ## 6. 测试与 profile

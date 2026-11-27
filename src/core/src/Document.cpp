@@ -17,12 +17,8 @@ QString defaultName(ElementKind kind)
         return "Stock";
     case ElementKind::Flow:
         return "Flow";
-    case ElementKind::Auxiliary:
-        return "Auxiliary";
-    case ElementKind::Constant:
-        return "Constant";
-    case ElementKind::Data:
-        return "Data";
+    case ElementKind::Variable:
+        return "Variable";
     default:
         return {};
     }
@@ -352,8 +348,7 @@ EntityId Document::insert(std::unique_ptr<T> element, Vec2 position)
 
 EntityId Document::createVariable(ElementKind kind, Vec2 position)
 {
-    if (kind != ElementKind::Stock && kind != ElementKind::Auxiliary && kind != ElementKind::Constant
-        && kind != ElementKind::Data)
+    if (kind != ElementKind::Stock && kind != ElementKind::Variable)
         return 0;
     std::unique_ptr<ModelElement> variable;
     if (kind == ElementKind::Stock)
@@ -485,7 +480,7 @@ bool Document::restore(const ElementData &data)
     if (find(id))
         return false;
     const QString normalized = normalizeIdentifier(data.displayName);
-    if (data.kind <= ElementKind::Data && (normalized.isEmpty() || m_nameIndex.count(normalized)
+    if (data.kind <= ElementKind::Variable && (normalized.isEmpty() || m_nameIndex.count(normalized)
             || m_dimensionIndex.count(normalized) || hasMacroName(normalized)
             || !validArrayData(data.dimensions, data.elementEquations,
                 data.kind == ElementKind::Stock ? data.initialEquation : data.equation)))
@@ -514,7 +509,7 @@ bool Document::restore(const ElementData &data)
         element = std::make_unique<Comment>(id);
     } else if (data.kind == ElementKind::Stock) {
         element = std::make_unique<Stock>(id);
-    } else if (data.kind <= ElementKind::Data) {
+    } else if (data.kind <= ElementKind::Variable) {
         element = std::make_unique<Variable>(id, data.kind);
     } else {
         return false;
@@ -792,7 +787,7 @@ bool Document::validFontData(ElementKind kind, const FontStyle &font)
 {
     if (font.pointSize < 0)
         return false;
-    return kind <= ElementKind::Data || kind == ElementKind::Comment || font == FontStyle {};
+    return kind <= ElementKind::Variable || kind == ElementKind::Comment || font == FontStyle {};
 }
 
 bool Document::validRouteData(ElementKind kind, const Route &route)
