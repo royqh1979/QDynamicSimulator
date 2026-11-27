@@ -2,6 +2,7 @@
 
 #include <core/SimulationSettings.h>
 #include <core/Validation.h>
+#include <core/formula/Evaluation.h>
 
 #include <QHash>
 #include <QVector>
@@ -60,6 +61,7 @@ public:
     const QVector<ModelIssue> &issues() const { return m_issues; }
     std::optional<double> endTime() const { return m_endTime; }
     const QVector<double> *series(EntityId id) const;
+    const QVector<ArrayValue> *arraySeries(EntityId id) const;
 
 private:
     friend class SimulationRunner;
@@ -69,6 +71,7 @@ private:
     SimulationSettings m_settings;
     QVector<double> m_times;
     QHash<EntityId, QVector<double>> m_series;
+    QHash<EntityId, QVector<ArrayValue>> m_arraySeries;
     QVector<ModelIssue> m_issues;
     std::optional<double> m_endTime;
 };

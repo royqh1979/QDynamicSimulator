@@ -101,3 +101,14 @@ RK4 校验和约为 2.20265e+07。Euler 与 RK4 分列，不用不同方法的�
 | runs_compare_bind | 100 | 0.0869 | 0.869 |
 
 该结果使用 Release `profile-editor.exe 100`，不包含 Worker 或积分时间。
+
+## 数组执行
+
+固定 16 个数组元素的 Stock，初值均为 1，Flow 为 `Stock * N`，Euler、DT=0.01、1000 步。每轮检查 Completed、1001 个采样点和每个元素的独立递推结果，数组通过 `arraySeries()` 读取；不把首元素作为校验和。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| simulation_array_euler | 1000 | 50655.5 | 50655.5 |
+| simulation_array_element_step | 16000000 | 50655.5 | 3.16597 |
+
+共保存 16016000 个数组元素值，逐元素期望使用 `pow(1 + i*DT, steps)` 计算，校验和匹配。该结果使用 Release `profile-simulation.exe 1000`，用于后续同场景回归，不设置额外性能门槛。
