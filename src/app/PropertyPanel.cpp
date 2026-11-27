@@ -52,8 +52,12 @@ PropertyPanel::PropertyPanel(DocumentController *controller, DiagramScene *scene
     layout->addRow(tr("Size"), m_fontSize);
 
     connect(m_scene, &QGraphicsScene::selectionChanged, this, &PropertyPanel::refresh);
+    connect(m_scene, &QObject::destroyed, this, &PropertyPanel::refresh);
     connect(m_controller, &DocumentController::documentChanged, this, &PropertyPanel::refresh);
+    connect(m_controller, &QObject::destroyed, this, &PropertyPanel::refresh);
     connect(m_nameEdit, &QLineEdit::editingFinished, this, [this]() {
+        if (!m_controller || !m_scene)
+            return;
         if (!m_scene->selectedModelElement())
             return;
         if (!m_scene->renameSelected(m_nameEdit->text())) {
@@ -62,13 +66,18 @@ PropertyPanel::PropertyPanel(DocumentController *controller, DiagramScene *scene
         }
     });
     connect(m_equationEdit, &EquationEditor::editingFinished, this, [this]() {
-        m_scene->setSelectedEquation(m_equationEdit->text());
+        if (m_controller && m_scene)
+            m_scene->setSelectedEquation(m_equationEdit->text());
     });
     connect(m_unitEdit, &QLineEdit::editingFinished, this, [this]() {
+        if (!m_controller || !m_scene)
+            return;
         if (m_scene->selectedModelElement())
             m_controller->setUnit(m_scene->selectedModelElement()->id(), m_unitEdit->text());
     });
     connect(m_commentEdit, &QLineEdit::editingFinished, this, [this]() {
+        if (!m_controller || !m_scene)
+            return;
         if (m_scene->selectedModelElement())
             m_controller->setComment(m_scene->selectedModelElement()->id(), m_commentEdit->text());
         else if (m_scene->selectedComment())
@@ -89,6 +98,8 @@ PropertyPanel::PropertyPanel(DocumentController *controller, DiagramScene *scene
 
 bool PropertyPanel::commit()
 {
+    if (!m_controller || !m_scene)
+        return false;
     const QString name = m_nameEdit->text();
     const QString equation = m_equationEdit->text();
     const QString unit = m_unitEdit->text();
@@ -113,10 +124,31 @@ bool PropertyPanel::commit()
 
 void PropertyPanel::refresh()
 {
-    const qds::core::ModelElement *variable = m_scene->selectedModelElement();
-    const qds::core::Comment *comment = m_scene->selectedComment();
     const QSignalBlocker fontBlocker(m_fontCombo);
     const QSignalBlocker sizeBlocker(m_fontSize);
+    if (!m_controller || !m_scene) {
+        m_fontCombo->setEnabled(false);
+        m_fontSize->setEnabled(false);
+        m_nameEdit->setEnabled(false);
+        m_equationEdit->setEnabled(false);
+        m_unitEdit->setEnabled(false);
+        m_commentEdit->setEnabled(false);
+        m_flowsLabel->setVisible(false);
+        m_flowsEdit->setVisible(false);
+        m_equationLabel->setText(tr("Equation"));
+        m_commentLabel->setText(tr("Comment"));
+        m_nameEdit->clear();
+        m_equationEdit->clear();
+        m_equationEdit->setCompletionWords({});
+        m_flowsEdit->clear();
+        m_unitEdit->clear();
+        m_commentEdit->clear();
+        m_fontCombo->setCurrentFont(QApplication::font());
+        m_fontSize->setValue(QApplication::font().pointSize());
+        return;
+    }
+    const qds::core::ModelElement *variable = m_scene->selectedModelElement();
+    const qds::core::Comment *comment = m_scene->selectedComment();
     m_fontCombo->setEnabled(variable || comment);
     m_fontSize->setEnabled(variable || comment);
     m_nameEdit->setEnabled(variable != nullptr);
@@ -170,6 +202,8 @@ void PropertyPanel::refresh()
 
 void PropertyPanel::commitFontStyle(const QFont &font)
 {
+    if (!m_controller || !m_scene)
+        return;
     const QVector<qds::core::EntityId> selection = m_scene->selectedElementIds();
     if (selection.size() == 1)
         m_controller->setFontStyle(selection.front(), font);

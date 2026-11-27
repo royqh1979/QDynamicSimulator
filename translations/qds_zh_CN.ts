@@ -4,47 +4,47 @@
 <context>
     <name>DiagramScene</name>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="118"/>
+        <location filename="../src/app/DiagramScene.cpp" line="124"/>
         <source>Comment</source>
         <translation>注释</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="554"/>
+        <location filename="../src/app/DiagramScene.cpp" line="571"/>
         <source>Route type</source>
         <translation>布线类型</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="563"/>
+        <location filename="../src/app/DiagramScene.cpp" line="580"/>
         <source>Straight</source>
         <translation>直线</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="564"/>
+        <location filename="../src/app/DiagramScene.cpp" line="581"/>
         <source>Orthogonal</source>
         <translation>直角线</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="565"/>
+        <location filename="../src/app/DiagramScene.cpp" line="582"/>
         <source>Bezier</source>
         <translation>贝塞尔曲线</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="579"/>
+        <location filename="../src/app/DiagramScene.cpp" line="596"/>
         <source>Reset automatic route</source>
         <translation>重置自动布线</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="581"/>
+        <location filename="../src/app/DiagramScene.cpp" line="598"/>
         <source>Lock route</source>
         <translation>锁定路径</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="590"/>
+        <location filename="../src/app/DiagramScene.cpp" line="609"/>
         <source>Delete</source>
         <translation>删除</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="978"/>
+        <location filename="../src/app/DiagramScene.cpp" line="1019"/>
         <source>The name cannot be empty or duplicate another variable.</source>
         <translation>名称不能为空或与其他变量重名。</translation>
     </message>
@@ -737,7 +737,8 @@
         <translation>名称</translation>
     </message>
     <message>
-        <location filename="../src/app/PropertyPanel.cpp" line="129"/>
+        <location filename="../src/app/PropertyPanel.cpp" line="138"/>
+        <location filename="../src/app/PropertyPanel.cpp" line="161"/>
         <source>Equation</source>
         <translation>方程</translation>
     </message>
@@ -757,34 +758,35 @@
         <translation>字号</translation>
     </message>
     <message>
-        <location filename="../src/app/PropertyPanel.cpp" line="60"/>
-        <location filename="../src/app/PropertyPanel.cpp" line="100"/>
+        <location filename="../src/app/PropertyPanel.cpp" line="64"/>
+        <location filename="../src/app/PropertyPanel.cpp" line="111"/>
         <source>Invalid name</source>
         <translation>无效名称</translation>
     </message>
     <message>
-        <location filename="../src/app/PropertyPanel.cpp" line="60"/>
-        <location filename="../src/app/PropertyPanel.cpp" line="100"/>
+        <location filename="../src/app/PropertyPanel.cpp" line="64"/>
+        <location filename="../src/app/PropertyPanel.cpp" line="111"/>
         <source>The name cannot be empty or duplicate another variable.</source>
         <translation>名称不能为空或与其他变量重名。</translation>
     </message>
     <message>
-        <location filename="../src/app/PropertyPanel.cpp" line="126"/>
+        <location filename="../src/app/PropertyPanel.cpp" line="158"/>
         <source>Content</source>
         <translation>正文</translation>
     </message>
     <message>
-        <location filename="../src/app/PropertyPanel.cpp" line="126"/>
+        <location filename="../src/app/PropertyPanel.cpp" line="139"/>
+        <location filename="../src/app/PropertyPanel.cpp" line="158"/>
         <source>Comment</source>
         <translation>注释</translation>
     </message>
     <message>
-        <location filename="../src/app/PropertyPanel.cpp" line="129"/>
+        <location filename="../src/app/PropertyPanel.cpp" line="161"/>
         <source>Initial value</source>
         <translation>初值</translation>
     </message>
     <message>
-        <location filename="../src/app/PropertyPanel.cpp" line="144"/>
+        <location filename="../src/app/PropertyPanel.cpp" line="176"/>
         <source>In: %1  Out: %2</source>
         <translation>流入：%1  流出：%2</translation>
     </message>
@@ -810,17 +812,22 @@
 <context>
     <name>SimulationController</name>
     <message>
-        <location filename="../src/app/SimulationController.cpp" line="107"/>
+        <location filename="../src/app/SimulationController.cpp" line="116"/>
         <source>A simulation is already running.</source>
         <translation>已有模拟正在运行。</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationController.cpp" line="112"/>
+        <location filename="../src/app/SimulationController.cpp" line="121"/>
+        <source>The document is no longer available.</source>
+        <translation>文档已不可用。</translation>
+    </message>
+    <message>
+        <location filename="../src/app/SimulationController.cpp" line="126"/>
         <source>Run name cannot be empty.</source>
         <translation>运行名称不能为空。</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationController.cpp" line="116"/>
+        <location filename="../src/app/SimulationController.cpp" line="130"/>
         <source>A run with this name already exists.</source>
         <translation>已存在同名运行。</translation>
     </message>
@@ -858,22 +865,22 @@
         <translation>比较</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationResultsWidget.cpp" line="136"/>
+        <location filename="../src/app/SimulationResultsWidget.cpp" line="145"/>
         <source> (older model)</source>
         <translation>（旧模型）</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationResultsWidget.cpp" line="162"/>
+        <location filename="../src/app/SimulationResultsWidget.cpp" line="171"/>
         <source>No completed runs</source>
         <translation>尚无已完成的运行</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationResultsWidget.cpp" line="208"/>
+        <location filename="../src/app/SimulationResultsWidget.cpp" line="217"/>
         <source>%1 — %2 samples%3</source>
         <translation>%1 — %2 个样本%3</translation>
     </message>
     <message>
-        <location filename="../src/app/SimulationResultsWidget.cpp" line="210"/>
+        <location filename="../src/app/SimulationResultsWidget.cpp" line="219"/>
         <source>, older model</source>
         <translation>，旧模型</translation>
     </message>

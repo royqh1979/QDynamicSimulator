@@ -5,6 +5,7 @@
 #include <QFont>
 #include <QGraphicsObject>
 #include <QPen>
+#include <QPointer>
 
 class DiagramItem : public QGraphicsObject
 {
@@ -102,8 +103,8 @@ public:
 
     bool connects(qds::core::EntityId id) const;
     QPainterPath sceneShape() const override;
-    DiagramItem *from() const { return m_from; }
-    DiagramItem *to() const { return m_to; }
+    DiagramItem *from() const { return m_from.data(); }
+    DiagramItem *to() const { return m_to.data(); }
     const qds::core::Route &route() const { return m_route; }
     bool previewing() const { return m_previewEndpoint != 0; }
     void previewEndpoint(int index, const QPointF &position);
@@ -128,8 +129,8 @@ protected:
     QVector<QPointF> points(bool visible) const;
     void routeFrame(QPointF &from, QPointF &delta, QPointF &normal) const;
 
-    DiagramItem *m_from;
-    DiagramItem *m_to;
+    QPointer<DiagramItem> m_from;
+    QPointer<DiagramItem> m_to;
     qds::core::Route m_route;
     mutable QPainterPath m_geometryCache;
     mutable bool m_geometryCacheValid = false;

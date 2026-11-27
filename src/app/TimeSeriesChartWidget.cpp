@@ -48,17 +48,17 @@ void TimeSeriesChartWidget::setRuns(const QVector<SimulationRun> &runs, const QS
         });
         if (variable == run.variables().end())
             continue;
-        const QVector<double> *values = run.series(nameKey);
-        if (!values)
+        const QVector<double> values = run.series(nameKey);
+        if (values.isEmpty())
             continue;
         displayName = variable->displayName();
         const QVector<double> &times = run.times();
-        const int count = std::min(times.size(), values->size());
+        const int count = std::min(times.size(), values.size());
         QList<QPointF> points;
         points.reserve(count);
         for (int index = 0; index < count; ++index) {
             const double time = times[index];
-            const double value = (*values)[index];
+            const double value = values[index];
             points.append(QPointF(time, value));
             if (!hasSamples) {
                 minimumTime = maximumTime = time;

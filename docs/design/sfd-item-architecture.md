@@ -517,13 +517,15 @@ ChangeRecord/ChangeSet 的逻辑字段通过受控构造确定，完成后只读
 
 ## 7. 生命周期与所有权
 
+跨 QObject 引用和析构期通知的统一规则见 [UI 对象生命周期与指针规则](object-lifetime.md)。本节保留核心/画布投影的创建、级联删除和重置规则；QPointer 与索引清空调整的实施过程见对应 history 计划。
+
 ### 7.1 两层各自拥有对象
 
 | 层 | 拥有者 | 所有权形式 | 非拥有索引/引用 |
 | --- | --- | --- | --- |
 | 全部核心语义对象 | Document | `unordered_map<EntityId, unique_ptr<DocumentElement>>` | Model/DiagramDefinition 的过滤范围 |
 | 当前视口 | DiagramView | 实际 transform、滚动条与中心 | 保存时生成 Workspace DTO |
-| 画布图元 | QGraphicsScene | `addItem()` 接管 DiagramItem* | Scene 的 ID 索引、RoutedItem 的端点 Item* |
+| 画布图元 | QGraphicsScene | `addItem()` 接管 DiagramItem* | Scene 的 ID 索引、RoutedItem 的 `QPointer<DiagramItem>` 端点弱引用 |
 | 临时控制句柄 | QGraphicsScene | `addItem()` 接管 | Scene 当前句柄列表 |
 
 Document 是唯一核心所有者，Model 与 DiagramDefinition 只是分类视图。Scene 索引不拥有图元。命令不得保存已删除对象指针；核心对象不得保存 QGraphicsItem/QObject；DocumentElement 的地址只在对象存活期间有效。
@@ -562,7 +564,7 @@ Scene 按依赖顺序处理该 ChangeNotification：
 → QGraphicsScene 随图元析构释放对象
 ```
 
-RoutedItem 的端点指针是非拥有引用，因此必须先删除或重绑相关 RoutedItem，再删除端点图元。任何一层都不得直接删除另一层对象。
+RoutedItem 的端点是非拥有弱引用，使用 `QPointer<DiagramItem>` 防止独立对象销毁后的悬空访问；业务删除仍必须先删除或重绑相关 RoutedItem，再删除端点图元，不能用弱引用代替级联规则。任何一层都不得直接删除另一层对象。
 
 ### 7.4 撤销与重做
 
@@ -581,9 +583,8 @@ I/O 构造并校验局部 Document 与 Workspace
 → DocumentController 替换 Document
 → 旧 Document 析构并销毁全部核心对象，旧 ID 容器和分类范围随之失效
 → 发出 documentReset
-→ Scene 先清除临时句柄
-→ QGraphicsScene::clear() 销毁全部图元
-→ Scene 清空统一 ID 索引
+→ Scene 先清除临时句柄、交互状态和统一 ID 索引
+→ QGraphicsScene::clear() 销毁全部图元，观察者只能看到有效的空投影
 → 按新 Document 创建全部图元并重建索引
 → MainWindow 将 Workspace 应用到 DiagramView
 ```

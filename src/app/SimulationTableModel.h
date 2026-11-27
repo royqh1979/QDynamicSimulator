@@ -22,8 +22,8 @@ public:
 private:
     struct Column {
         QString runName;
-        std::shared_ptr<const qds::core::SimulationRun> run;
-        const QVector<double> *values = nullptr;
+        QVector<double> times;
+        QVector<double> values;
     };
 
     QVector<double> m_times;

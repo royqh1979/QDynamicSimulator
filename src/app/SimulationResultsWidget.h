@@ -2,6 +2,7 @@
 
 #include "SimulationController.h"
 
+#include <QPointer>
 #include <QWidget>
 
 #include <optional>
@@ -35,7 +36,7 @@ private:
     void refreshCauses(const QVector<SimulationRun> &loadedRuns, const QString &rootNameKey);
     std::optional<SimulationRun> currentRun() const;
 
-    SimulationController *m_controller;
+    QPointer<SimulationController> m_controller;
     QComboBox *m_variableCombo;
     QComboBox *m_runCombo;
     QListWidget *m_datasetsList;

@@ -73,16 +73,17 @@ SimulationResultsWidget::SimulationResultsWidget(SimulationController *controlle
 
     connect(m_controller, &SimulationController::namedRunsChanged, this, &SimulationResultsWidget::refreshRuns);
     connect(m_controller, &SimulationController::workbenchVariableChanged, this, &SimulationResultsWidget::refreshWorkbench);
+    connect(m_controller, &QObject::destroyed, this, &SimulationResultsWidget::refreshRuns);
     connect(m_runCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
         if (!m_refreshing)
             refreshWorkbench();
     });
     connect(m_variableCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
-        if (!m_refreshing)
+        if (!m_refreshing && m_controller)
             m_controller->setWorkbenchVariableName(m_variableCombo->currentData().toString());
     });
     connect(m_datasetsList, &QListWidget::itemChanged, this, [this](QListWidgetItem *item) {
-        if (!m_refreshing)
+        if (!m_refreshing && m_controller)
             m_controller->setRunLoaded(item->data(Qt::UserRole).toULongLong(), item->checkState() == Qt::Checked);
     });
     refreshRuns();
@@ -120,6 +121,14 @@ void SimulationResultsWidget::refreshRuns()
     if (m_refreshing)
         return;
     m_refreshing = true;
+    if (!m_controller) {
+        m_runCombo->clear();
+        m_datasetsList->clear();
+        m_knownRuns.clear();
+        m_refreshing = false;
+        refreshWorkbench();
+        return;
+    }
     const RunId selected = m_runCombo->currentData().toULongLong();
     m_runCombo->clear();
     m_datasetsList->clear();
@@ -250,6 +259,8 @@ void SimulationResultsWidget::refreshCauses(const QVector<SimulationRun> &loaded
 
 std::optional<SimulationRun> SimulationResultsWidget::currentRun() const
 {
+    if (!m_controller)
+        return std::nullopt;
     const RunId id = m_runCombo->currentData().toULongLong();
     const auto &runs = m_controller->runs();
     const auto found = std::find_if(runs.begin(), runs.end(), [id](const SimulationRun &run) {

@@ -152,7 +152,8 @@ SimulationRun 发布后不可变；覆盖同名结果也创建新 RunId 和新�
 - 完成后 UI 接收 `shared_ptr<const SimulationRun>`；Worker 不保留可修改结果。
 - Cancel 只设置线程安全标志并请求 Runner 协作取消，不强制终止线程。
 - 新 Run 必须等待旧 Worker 完全退出；不并行覆盖 activeRequest。
-- 新建、打开、替换 Document 或关闭 MainWindow 时先取消并等待 Worker，再清理会话； queued signal 使用 Controller 作为 context，Controller 析构后不得访问窗口。MainWindow 析构入口先断开 SimulationController 到窗口的连接，再取消并等待 Worker，防止 reset 状态通知访问正在销毁的 Dock 或状态栏。
+- SimulationController 由 MainWindow/session 直接拥有，DocumentController 只是其 QPointer 弱引用服务，不再兼任 parent。这样 Document 销毁不会连带销毁仍需安全收尾的会话及其外部观察者。
+- 新建、打开、替换 Document 或关闭 MainWindow 时先取消并等待 Worker，再清理会话；queued signal 使用 Controller 作为 context，Controller 析构后不得访问窗口。显式 reset 可以通知视图，析构停止则不再发出驱动外部查询的业务信号；内存安全不得依赖 MainWindow 定向 disconnect 或特定兄弟对象销毁顺序。完整规则见 [UI 对象生命周期与指针规则](object-lifetime.md)。
 - 不用裸指针捕获 Worker、Controller 或 MainWindow 给长命 lambda。QThread 的 finished 与对象销毁顺序必须专门测试。
 
 首批 UI 不使用“在 UI 线程反复 processEvents”的伪异步方案，避免重入修改 Document 或关闭窗口。

@@ -1,12 +1,16 @@
 #include "DocumentController.h"
 #include "SimulationController.h"
 #include "SimulationSettingsDialog.h"
+#include "SimulationResultsWidget.h"
+#include "SimulationTableModel.h"
 
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFont>
 #include <QLabel>
+#include <QPointer>
 #include <QSignalSpy>
+#include <QTableView>
 #include <QtTest>
 
 #include <algorithm>
@@ -56,6 +60,7 @@ private slots:
     void cancellation();
     void resetDuringRun();
     void destructionDuringRun();
+    void documentAndControllerDestruction();
 };
 
 void TestSimulationController::settingsDialog()
@@ -99,17 +104,17 @@ void TestSimulationController::settingsUndoRedo()
     QVERIFY(document.setSimulationSettings(custom));
     QCOMPARE(document.document().simulationSettings(), custom);
     QCOMPARE(document.simulationRevision(), quint64(1));
-    document.undoStack()->undo();
+    document.undoStack().undo();
     QCOMPARE(document.document().simulationSettings(), original);
     QCOMPARE(document.simulationRevision(), quint64(2));
-    document.undoStack()->redo();
+    document.undoStack().redo();
     QCOMPARE(document.document().simulationSettings(), custom);
     QCOMPARE(document.simulationRevision(), quint64(3));
-    const int commands = document.undoStack()->count();
+    const int commands = document.undoStack().count();
     QVERIFY(!document.setSimulationSettings({0.0, 1.0, 0.0, 0.0}));
     QCOMPARE(document.document().simulationSettings(), custom);
     QCOMPARE(document.simulationRevision(), quint64(3));
-    QCOMPARE(document.undoStack()->count(), commands);
+    QCOMPARE(document.undoStack().count(), commands);
 }
 
 void TestSimulationController::namedRunsAndOverwrite()
@@ -126,8 +131,8 @@ void TestSimulationController::namedRunsAndOverwrite()
     QCOMPARE(controller.lastRunName(), QStringLiteral("equilib"));
     QCOMPARE(controller.lastRun()->status(), SimulationRunStatus::Completed);
     const SimulationRun equilibrium = controller.runs().front();
-    QVERIFY(equilibrium.series("stock"));
-    QCOMPARE(*equilibrium.series("stock"), (QVector<double> {0.0, 1.0, 2.0}));
+    QVERIFY(!equilibrium.series("stock").isEmpty());
+    QCOMPARE(equilibrium.series("stock"), (QVector<double> {0.0, 1.0, 2.0}));
     QVERIFY(controller.isRunLoaded(equilibrium.id()));
 
     QVERIFY(controller.start("growth"));
@@ -154,8 +159,8 @@ void TestSimulationController::namedRunsAndOverwrite()
     QVERIFY(replaced->id() != oldId);
     QVERIFY(replaced->id() > oldId);
     QVERIFY(controller.isRunLoaded(replaced->id()));
-    QVERIFY(equilibrium.series("stock"));
-    QCOMPARE(*equilibrium.series("stock"), (QVector<double> {0.0, 1.0, 2.0}));
+    QVERIFY(!equilibrium.series("stock").isEmpty());
+    QCOMPARE(equilibrium.series("stock"), (QVector<double> {0.0, 1.0, 2.0}));
 }
 
 void TestSimulationController::revisionsAndReset()
@@ -176,8 +181,8 @@ void TestSimulationController::revisionsAndReset()
 
     document.setEquation(document.document().findByName("Flow1")->id(), "2");
     QVERIFY(controller.isOutdated(run));
-    QCOMPARE(*run.series("stock"), (QVector<double> {0.0, 1.0, 2.0}));
-    document.undoStack()->undo();
+    QCOMPARE(run.series("stock"), (QVector<double> {0.0, 1.0, 2.0}));
+    document.undoStack().undo();
     QVERIFY(controller.isOutdated(run));
 
     document.setUnit(stock, "rabbit");
@@ -248,6 +253,54 @@ void TestSimulationController::destructionDuringRun()
     QCoreApplication::processEvents();
     delete document;
     QCoreApplication::processEvents();
+}
+
+void TestSimulationController::documentAndControllerDestruction()
+{
+    auto *document = new DocumentController;
+    createModel(*document);
+    auto *controller = new SimulationController(document);
+    QVERIFY(controller->start("lifetime"));
+    waitCompleted(*controller);
+    const SimulationRun historical = controller->runs().front();
+    auto *results = new SimulationResultsWidget(controller);
+    SimulationTableModel independentTable;
+    independentTable.setRuns(controller->runs(), QStringLiteral("stock"));
+    QCOMPARE(independentTable.rowCount(), 3);
+
+    QPointer<DocumentController> documentGuard = document;
+    QPointer<SimulationController> controllerGuard = controller;
+    QSignalSpy errors(controller, &SimulationController::errorOccurred);
+    delete document;
+    QVERIFY(documentGuard.isNull());
+    QCOMPARE(controller->status(), SimulationSessionStatus::Idle);
+    QVERIFY(controller->isOutdated(historical));
+    QCOMPARE(results->findChild<QComboBox *>(QStringLiteral("resultsRunCombo"))->count(), 0);
+    QCOMPARE(independentTable.rowCount(), 3);
+    QCOMPARE(independentTable.data(independentTable.index(2, 1)).toString(), QStringLiteral("2"));
+    QVERIFY(!controller->start("missing-document"));
+    QCOMPARE(errors.count(), 1);
+
+    QSignalSpy statusChanges(controller, &SimulationController::statusChanged);
+    QSignalSpy namedRunsChanges(controller, &SimulationController::namedRunsChanged);
+    delete controller;
+    QVERIFY(controllerGuard.isNull());
+    QCOMPARE(statusChanges.count(), 0);
+    QCOMPARE(namedRunsChanges.count(), 0);
+    QCOMPARE(results->findChild<QComboBox *>(QStringLiteral("resultsRunCombo"))->count(), 0);
+    delete results;
+
+    auto *remainingDocument = new DocumentController;
+    auto *shortLivedController = new SimulationController(remainingDocument);
+    auto *remainingResults = new SimulationResultsWidget(shortLivedController);
+    QSignalSpy shortStatusChanges(shortLivedController, &SimulationController::statusChanged);
+    QSignalSpy shortNamedRunsChanges(shortLivedController, &SimulationController::namedRunsChanged);
+    delete shortLivedController;
+    QCOMPARE(shortStatusChanges.count(), 0);
+    QCOMPARE(shortNamedRunsChanges.count(), 0);
+    QCOMPARE(remainingResults->findChild<QComboBox *>(QStringLiteral("resultsRunCombo"))->count(), 0);
+    delete remainingResults;
+    delete remainingDocument;
 }
 
 } // namespace

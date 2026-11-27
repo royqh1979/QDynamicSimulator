@@ -15,8 +15,8 @@ std::optional<double> initialValue(const SimulationRun &run, const QString &name
     });
     if (variable == run.variables().end())
         return std::nullopt;
-    const QVector<double> *values = run.series(nameKey);
-    return values && !values->isEmpty() ? std::optional<double>(values->front()) : std::nullopt;
+    const QVector<double> values = run.series(nameKey);
+    return values.isEmpty() ? std::nullopt : std::optional<double>(values.front());
 }
 
 } // namespace
