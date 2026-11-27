@@ -141,7 +141,7 @@
 | FR-527 | String Variable、Reality Check、测试输入及 `:TEST INPUT:` 等专用语句 | 未实现相应值类型、语句模型与执行器 | 中 |
 | FR-528 | 扩展 Vensim 函数库：分配、队列、矩阵、向量选择、财务、市场及 RC 等函数 | 仅现有 Formula/Evaluation 已实现的函数可执行；其它函数不得因解析成功而视为已支持 | 中 |
 | FR-529 | 完整仿真控制与特殊变量：动态控制参数、Gaming、噪声控制、并行、线性化、Kalman 和 SIMULATION 输出变量 | 首版只映射数值 FINAL/INITIAL TIME、TIME STEP 和 SAVEPER；其它控制不映射为已生效设置 | 中 |
-| FR-530 | 完整 Sketch：多视图、隐藏级别、字体/颜色、导航链接、I/O 对象、位图和图元文件 | 首版还原主要变量、Flow、Cloud、Comment、Connector；其它对象 warning 或拒绝 | 低 |
+| FR-530 | 完整 Sketch：多视图、隐藏级别、字体/颜色、导航链接、I/O 对象、位图和图元文件；Polyline/Perpendicular 类型判别与精确映射、shape 完整样式、极性和延迟标记 | 首版还原主要变量、Flow、Cloud、Comment、Connector；普通 Arrow 还原直线/单手柄贝塞尔，多点结构明确拒绝，其它对象 warning 或拒绝 | 低 |
 | FR-531 | Vensim 单位表达式、宏单位替换及完整量纲检查 | 首版只保留单位文本，不执行 Vensim 单位推导 | 中 |
 
 各待办实现前须分别补充对应设计、完整单元测试、性能 profile 和 Vensim 对齐验证；具体首版导入规则见 [Vensim MDL 导入设计](docs/design/vensim-mdl.md)。

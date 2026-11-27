@@ -269,7 +269,10 @@ void TestMdlFile::rabbitModel()
     QCOMPARE(document.find(births->endpoints().from)->kind(), ElementKind::Cloud);
     QCOMPARE(document.find(deaths->endpoints().from)->id(), population->id());
     QCOMPARE(document.find(deaths->endpoints().to)->kind(), ElementKind::Cloud);
-    QVERIFY(connector(document, birthRate->id(), births->id()));
+    const Connector *birthRateArrow = connector(document, birthRate->id(), births->id());
+    QVERIFY(birthRateArrow);
+    QCOMPARE(document.diagram().route(birthRateArrow->id()).mode, RouteMode::Bezier);
+    QCOMPARE(document.diagram().route(birthRateArrow->id()).controlPoints.size(), 1);
     QVERIFY(connector(document, lifetime->id(), deaths->id()));
     QVERIFY(connector(document, population->id(), births->id()));
     QVERIFY(connector(document, population->id(), deaths->id()));
@@ -481,7 +484,10 @@ void TestMdlFile::complexNetRate()
 
 void TestMdlFile::openCloudLifecycle()
 {
-    Document document = importFile(QStringLiteral(QDS_WFINV_MDL_PATH));
+    Document document;
+    QString error;
+    QVector<ModelIssue> warnings;
+    QVERIFY2(MdlFile::importFile(QStringLiteral(QDS_WFINV_MDL_PATH), document, &error, &warnings), qPrintable(error));
     QCOMPARE(cloudCount(document), 3);
     QCOMPARE(unconnectedCloudCount(document), 0);
     const ModelElement *inventory = document.findByName("Inventory");
@@ -496,6 +502,30 @@ void TestMdlFile::openCloudLifecycle()
     QCOMPARE(document.find(sales->endpoints().to)->kind(), ElementKind::Cloud);
     QCOMPARE(document.find(hiring->endpoints().from)->kind(), ElementKind::Cloud);
     QCOMPARE(document.find(hiring->endpoints().to)->id(), workforce->id());
+
+    const auto expectStraightWithoutPoints = [&document](const QString &from, const QString &to) {
+        const Connector *arrow = connector(document, document.findByName(from)->id(), document.findByName(to)->id());
+        QVERIFY(arrow);
+        const Route route = document.diagram().route(arrow->id());
+        QCOMPARE(route.mode, RouteMode::Straight);
+        QVERIFY(route.controlPoints.empty());
+    };
+    expectStraightWithoutPoints("productivity", "production");
+    expectStraightWithoutPoints("time to correct inventory", "inventory correction");
+    expectStraightWithoutPoints("inventory coverage", "target inventory");
+
+    int straightArrows = 0;
+    int bezierArrows = 0;
+    for (const ViewElement &element : document.diagram().elements()) {
+        if (element.kind() != ElementKind::Connector)
+            continue;
+        const Route route = document.diagram().route(element.id());
+        straightArrows += route.mode == RouteMode::Straight ? 1 : 0;
+        bezierArrows += route.mode == RouteMode::Bezier ? 1 : 0;
+    }
+    QCOMPARE(straightArrows, 3);
+    QCOMPARE(bezierArrows, 12);
+    QCOMPARE(warnings.size(), 1);
 }
 
 void TestMdlFile::invalidInput_data()
@@ -516,6 +546,16 @@ void TestMdlFile::invalidInput_data()
     QTest::newRow("unsupported directive") << QStringLiteral(":THE CONDITION: x>0~~|\nx=1~~|");
     QTest::newRow("subrange") << QStringLiteral("part:a,b~~|\nfull:part~~|\nx=1~~|");
     QTest::newRow("string variable") << QStringLiteral("greeting :IS: \"hello\"~~|\nx=1~~|");
+    QTest::newRow("arrow point count") << QStringLiteral(
+        "x=1~~|\ny=2~~|\n\\\\\\---/// Sketch\nV300\n*View 1\n"
+        "10,1,x,100,100,20,8,8,3,0,0,0,0,0,0\n"
+        "10,2,y,200,200,20,8,8,3,0,0,0,0,0,0\n"
+        "1,3,1,2,0,0,0,0,0,0,0,-1--1--1,,2|(10,10)|\n");
+    QTest::newRow("multi-point arrow") << QStringLiteral(
+        "x=1~~|\ny=2~~|\n\\\\\\---/// Sketch\nV300\n*View 1\n"
+        "10,1,x,100,100,20,8,8,3,0,0,0,0,0,0\n"
+        "10,2,y,200,200,20,8,8,3,0,0,0,0,0,0\n"
+        "1,3,1,2,1,0,0,0,0,0,0,-1--1--1,,2|(10,10)|(20,20)|\n");
 }
 
 void TestMdlFile::invalidInput()

@@ -33,6 +33,8 @@ struct LayoutDef {
     int objectId = 0;
     int fromId = 0;
     int toId = 0;
+    int shape = 0;
+    int pointCount = 0;
     int bits = 0;
     EntityId entityId = 0;
     QString name;
@@ -570,22 +572,25 @@ QPointF normalFor(const QPointF &from, const QPointF &to)
     return length > 1e-9 ? QPointF(-delta.y() / length, delta.x() / length) : QPointF();
 }
 
-Route makeRoute(const QPointF &from, const QPointF &to, const QList<QPointF> &points)
+bool makeRoute(const QPointF &from, const QPointF &to, const QList<QPointF> &points,
+    Route &route, QString *errorMessage)
 {
-    Route route;
+    if (points.size() > 1)
+        return fail(errorMessage, QStringLiteral("Multi-point MDL arrows are not supported"));
+    const bool hasArcHandle = points.size() == 1 && points.front() != QPointF();
+    route.mode = hasArcHandle ? RouteMode::Bezier : RouteMode::Straight;
     route.manual = true;
-    route.mode = points.size() == 1 ? RouteMode::Bezier : RouteMode::Straight;
+    if (!hasArcHandle)
+        return true;
     const QPointF delta = to - from;
     const double lengthSquared = delta.x() * delta.x() + delta.y() * delta.y();
     if (lengthSquared < 1e-12)
-        return route;
+        return true;
     const QPointF normal = normalFor(from, to);
-    for (const QPointF &point : points) {
-        const QPointF offset = point - from;
-        route.controlPoints.push_back({QPointF::dotProduct(offset, delta) / lengthSquared,
-            QPointF::dotProduct(offset, normal), false});
-    }
-    return route;
+    const QPointF offset = points.front() - from;
+    route.controlPoints.push_back({QPointF::dotProduct(offset, delta) / lengthSquared,
+        QPointF::dotProduct(offset, normal), false});
+    return true;
 }
 
 QList<QPointF> parsePoints(const QString &text)
@@ -865,7 +870,7 @@ QString uniqueFlowName(const Document &document, const QString &base)
     return candidate;
 }
 
-bool parseSketchObject(const QString &line, LayoutDef &layout)
+bool parseSketchObject(const QString &line, LayoutDef &layout, QString *errorMessage)
 {
     const QStringList parts = splitOutside(line, ',');
     if (parts.size() < 2)
@@ -877,12 +882,20 @@ bool parseSketchObject(const QString &line, LayoutDef &layout)
     if (!typeOk || !idOk)
         return false;
     if (layout.type == 1) {
-        if (parts.size() < 4)
-            return false;
+        if (parts.size() < 14)
+            return fail(errorMessage, QStringLiteral("Incomplete MDL arrow record: %1").arg(layout.objectId));
         layout.fromId = parts[2].toInt();
         layout.toId = parts[3].toInt();
+        bool shapeOk = false;
+        bool countOk = false;
+        layout.shape = parts[4].toInt(&shapeOk);
+        const int countDelimiter = parts[13].indexOf('|');
+        const QString countText = countDelimiter >= 0 ? parts[13].left(countDelimiter) : parts[13];
+        layout.pointCount = countText.toInt(&countOk);
         const int split = line.indexOf('|');
         layout.points = parsePoints(split >= 0 ? line.mid(split + 1) : QString());
+        if (!shapeOk || !countOk || layout.pointCount != layout.points.size())
+            return fail(errorMessage, QStringLiteral("Invalid MDL arrow shape or point count: %1").arg(layout.objectId));
         return true;
     }
     if (parts.size() < 9)
@@ -925,8 +938,12 @@ bool importSketch(const QString &sketch, Document &document, const QHash<QString
             || line.startsWith(QStringLiteral("*View")))
             continue;
         LayoutDef layout;
-        if (!parseSketchObject(line, layout))
+        QString parseError;
+        if (!parseSketchObject(line, layout, &parseError)) {
+            if (!parseError.isEmpty())
+                return fail(errorMessage, parseError);
             continue;
+        }
         if (layout.type == 12 && (layout.bits & 4) != 0 && index + 1 < lines.size())
             layout.text = lines[++index].trimmed();
         objects.insert(layout.objectId, layout);
@@ -1031,7 +1048,9 @@ bool importSketch(const QString &sketch, Document &document, const QHash<QString
         connector.kind = ElementKind::Connector;
         connector.from = from;
         connector.to = to;
-        connector.route = makeRoute(sourceObject->position, targetObject->position, arrow.points);
+        if (!makeRoute(sourceObject->position, targetObject->position, arrow.points,
+                connector.route, errorMessage))
+            return false;
         if (!document.restore(connector))
             return fail(errorMessage, QStringLiteral("Cannot restore sketch connector"));
         connectors.insert(key);

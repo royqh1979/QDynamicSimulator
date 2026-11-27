@@ -36,9 +36,9 @@ operation,count,total_ms,per_operation_us,model_elements,warnings
 
 | operation | count | total_ms | per_operation_us | model_elements | warnings |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| small_abs | 50 | 7.7118 | 154.236 | 5 | 0 |
-| small_teacup | 50 | 12.5195 | 250.39 | 8 | 3 |
-| wfinv | 50 | 45.104 | 902.08 | 32 | 1 |
-| medium_300_variables | 50 | 316.257 | 6325.14 | 420 | 0 |
+| small_abs | 50 | 7.4437 | 148.874 | 5 | 0 |
+| small_teacup | 50 | 12.5931 | 251.862 | 8 | 3 |
+| wfinv | 50 | 45.6634 | 913.268 | 32 | 1 |
+| medium_300_variables | 50 | 312.979 | 6259.58 | 420 | 0 |
 
 WFINV 使用仓库夹具 `tests/data/wfinv.mdl`，不再依赖本机 `R:/WFINV.MDL`。

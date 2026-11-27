@@ -67,7 +67,10 @@ Heat Loss to Room / Characteristic Time
 - `V300` 起始标记后，类型 10 映射变量，类型 11 映射 Flow 阀门，类型 12 映射 Cloud 或 Comment；30/31 等不支持对象产生 warning。
 - 类型 12 的 `bits` 第 3 位表示下一行是 Comment 正文；48 图标表示 Cloud。Comment 正文不得误用声明行的图标编号，I/O 对象等非普通 Comment 结构明确报告或忽略并 warning。
 - 类型 1 按对象 ID 重建连接。阀门与 Stock 之间的 Flow 箭头用于确认端点；其余合法变量/阀门/Comment 箭头映射 Connector，不得误删真实因果关系。
-- 坐标使用像素中心。路径中间点转换为现有相对 RoutePoint；单点使用 Bezier，多点使用 Straight。
+- Arrow 必须保留 `shape`、`nc` 和 pointlist，不得把 `shape` 低两位直接猜测为 Polyline/Perpendicular 类型。WFINV 已验证 `shape=0/1/2` 均可用于普通直线或曲线，不能据此建立路径类型映射。
+- 首版只支持普通 Arrow 的直线和单手柄曲线：无弧形手柄的记录（包括该语义下的 `(0,0)` 占位）映射 Straight，真实单个弧形手柄映射 Bezier。多点结构明确拒绝，真正的 Polyline/Perpendicular 类型判别及精确映射留待对应 Vensim 样本确认，不能静默转成其它路径。
+- `nc` 必须与实际点数一致，损坏记录明确报错。shape 的完整样式语义、极性、隐藏级别和延迟标记列入后续工作。
+- 坐标使用像素中心。实际路径中间点转换为现有相对 RoutePoint。
 - 无 Sketch 时使用确定性自动布局，不能因此拒绝模型。
 
 ## API 与错误
