@@ -1012,7 +1012,9 @@ int main(int argc, char **argv)
     int tableRowCount = 0;
     for (int index = 0; index < count; ++index) {
         SimulationTableModel model;
-        model.setRun(result, stockVariable->nameKey());
+        model.setRuns({result, result}, stockVariable->nameKey());
+        if (model.columnCount() != 3)
+            return 64;
         tableRowCount += model.rowCount();
         if (model.data(model.index(model.rowCount() - 1, 1)).toString().isEmpty())
             return 59;
@@ -1031,6 +1033,14 @@ int main(int argc, char **argv)
     auto *resultsTable = resultsWidget.findChild<QTableView *>(QStringLiteral("resultsTable"));
     if (!resultsTable || resultsTable->model()->rowCount() != 2)
         return 60;
+    timer.restart();
+    int showCurrentCount = 0;
+    for (int index = 0; index < count; ++index) {
+        resultsWidget.showRun(result.id());
+        resultsWidget.showGraph();
+        ++showCurrentCount;
+    }
+    const qint64 showCurrentNs = timer.nsecsElapsed();
     session.reset();
 
     timer.restart();
@@ -1148,6 +1158,8 @@ int main(int argc, char **argv)
                         << "results_table_bind," << count << "," << tableBindNs / 1e6 << "," << tableBindNs / 1000.0 / count << "\n"
                         << "results_dock_refresh," << resultsRefreshCount << "," << resultsRefreshNs / 1e6 << ","
                         << resultsRefreshNs / 1000.0 / resultsRefreshCount << "\n"
+                        << "results_show_current," << showCurrentCount << "," << showCurrentNs / 1e6 << ","
+                        << showCurrentNs / 1000.0 / showCurrentCount << "\n"
                         << "simulation_settings_dialog," << settingsDialogCount << "," << settingsDialogNs / 1e6 << ","
                         << settingsDialogNs / 1000.0 / settingsDialogCount << "\n"
                         << "chart_build_render_100000x10,1," << chartRenderNs / 1e6 << "," << chartRenderNs / 1000.0 << "\n"
@@ -1175,7 +1187,7 @@ int main(int argc, char **argv)
         && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic
         && !dependentArrows.empty() && dependentEndpointChecksum != 0.0
         && sessionCount == count && sessionSamples == count * 2 && tableRowCount == count * 2
-        && resultsRefreshCount == count && settingsDialogCount == count
+        && resultsRefreshCount == count && showCurrentCount == count && settingsDialogCount == count
         && chartSeriesCount == 10 && chartImageValid && chartPngWritten
         && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)

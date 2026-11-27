@@ -1,42 +1,50 @@
 #include "SimulationTableModel.h"
 
+#include <algorithm>
+
 SimulationTableModel::SimulationTableModel(QObject *parent)
     : QAbstractTableModel(parent)
 {
 }
 
-void SimulationTableModel::setRun(const NamedRun &run, const QString &nameKey)
+void SimulationTableModel::setRuns(const QVector<NamedRun> &runs, const QString &nameKey)
 {
     beginResetModel();
-    m_run = run.run();
-    m_variable.reset();
-    for (const RunVariableInfo &variable : run.variables()) {
-        if (variable.nameKey() == nameKey) {
-            m_variable = variable;
-            break;
-        }
+    m_times.clear();
+    m_columns.clear();
+    for (const NamedRun &run : runs) {
+        const auto variable = std::find_if(run.variables().begin(), run.variables().end(), [&nameKey](const RunVariableInfo &candidate) {
+            return candidate.nameKey() == nameKey;
+        });
+        if (variable == run.variables().end())
+            continue;
+        const QVector<double> *values = run.run()->series(variable->id());
+        if (!values)
+            continue;
+        m_columns.push_back({run.name(), run.run(), values});
+        m_times += run.run()->times();
     }
+    std::sort(m_times.begin(), m_times.end());
+    m_times.erase(std::unique(m_times.begin(), m_times.end()), m_times.end());
     endResetModel();
 }
 
 void SimulationTableModel::clear()
 {
     beginResetModel();
-    m_run.reset();
-    m_variable.reset();
+    m_times.clear();
+    m_columns.clear();
     endResetModel();
 }
 
 int SimulationTableModel::rowCount(const QModelIndex &parent) const
 {
-    if (parent.isValid() || !m_run || !m_variable || !m_run->series(m_variable->id()))
-        return 0;
-    return m_run->times().size();
+    return parent.isValid() || m_columns.isEmpty() ? 0 : m_times.size();
 }
 
 int SimulationTableModel::columnCount(const QModelIndex &parent) const
 {
-    return parent.isValid() || !m_run || !m_variable ? 0 : 2;
+    return parent.isValid() || m_columns.isEmpty() ? 0 : 1 + m_columns.size();
 }
 
 QVariant SimulationTableModel::data(const QModelIndex &index, int role) const
@@ -48,11 +56,17 @@ QVariant SimulationTableModel::data(const QModelIndex &index, int role) const
     if (role != Qt::DisplayRole)
         return {};
     if (index.column() == 0)
-        return QString::number(m_run->times()[index.row()], 'g', 15);
-    const QVector<double> *series = m_run->series(m_variable->id());
-    if (!series || index.row() >= series->size())
+        return QString::number(m_times[index.row()], 'g', 15);
+
+    const Column &column = m_columns[index.column() - 1];
+    const QVector<double> &runTimes = column.run->times();
+    const auto found = std::lower_bound(runTimes.begin(), runTimes.end(), m_times[index.row()]);
+    if (found == runTimes.end() || *found != m_times[index.row()])
         return {};
-    return QString::number((*series)[index.row()], 'g', 15);
+    const int row = static_cast<int>(found - runTimes.begin());
+    if (row >= column.values->size())
+        return {};
+    return QString::number((*column.values)[row], 'g', 15);
 }
 
 QVariant SimulationTableModel::headerData(int section, Qt::Orientation orientation, int role) const
@@ -63,11 +77,7 @@ QVariant SimulationTableModel::headerData(int section, Qt::Orientation orientati
         return section + 1;
     if (section == 0)
         return tr("Time");
-    if (section == 1 && m_variable) {
-        return m_variable->unit().isEmpty()
-            ? m_variable->displayName()
-            : QStringLiteral("%1 [%2]").arg(m_variable->displayName(), m_variable->unit());
-    }
+    if (section > 0 && section <= m_columns.size())
+        return m_columns[section - 1].runName;
     return {};
 }
-

@@ -11,12 +11,36 @@ using namespace qds::core;
 
 namespace {
 
+class TimeSpinBox : public QDoubleSpinBox
+{
+public:
+    explicit TimeSpinBox(QWidget *parent)
+        : QDoubleSpinBox(parent)
+    {
+    }
+
+    QString textFromValue(double value) const override
+    {
+        QLocale locale = this->locale();
+        locale.setNumberOptions(QLocale::OmitGroupSeparator);
+        QString text = locale.toString(value, 'f', decimals());
+        if (!text.contains(locale.decimalPoint()))
+            return text;
+        while (text.endsWith(QLatin1Char('0')))
+            text.chop(1);
+        if (text.endsWith(locale.decimalPoint()))
+            text.chop(1);
+        return text;
+    }
+};
+
 QDoubleSpinBox *timeEditor(QWidget *parent, const QString &name, double value, bool positive)
 {
-    auto *editor = new QDoubleSpinBox(parent);
+    auto *editor = new TimeSpinBox(parent);
     editor->setObjectName(name);
-    editor->setDecimals(12);
-    editor->setRange(positive ? 1e-12 : -1e12, 1e12);
+    editor->setDecimals(6);
+    editor->setRange(positive ? 1e-6 : -1e12, 1e12);
+    editor->setSingleStep(positive ? 0.1 : 1.0);
     editor->setValue(value);
     editor->setKeyboardTracking(false);
     return editor;

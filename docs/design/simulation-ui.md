@@ -40,9 +40,9 @@
 
 **Run Name**
 
-- 工具栏在 Run 前提供可编辑 `Run name` 输入框，默认使用当前模型中未占用的 Run1、Run2 等名称；支持中文，修剪首尾空白，空名称不允许运行。
+- 工具栏在 Run 前提供可编辑 `Run name` ComboBox，既能输入新名称，也能从现有命名 Run 中选择；ComboBox 使用 NoInsert，输入尚未运行的名称不会提前占用列表。默认使用当前模型中未占用的 Run1、Run2 等名称；支持中文，修剪首尾空白，空名称不允许运行。
 - 输入框获得焦点时 Enter 与 Run/Ctrl+R 等价；不应要求双击才能编辑。
-- 新名称创建新命名结果。相同名称已存在时，运行前明确询问是否覆盖；取消询问则不启动 Worker，旧结果不变。
+- 新名称创建新命名结果。选择已有名称并运行时明确询问是否覆盖；取消询问则不启动 Worker，旧结果不变。当前会话暂不提供 Run 删除或改名；后续删除只删除会话数据，改名只改变显示名，均不修改历史结果内容。
 - 即使允许覆盖，也只有新 Run 成功完成后才替换同名旧结果；失败或取消不删除已有数据。
 - Run Name 是结果身份的一部分，但不是 EntityId，也不进入模型公式命名空间。新建/打开文档时清空结果名称占用。
 
@@ -53,7 +53,7 @@
 - 工具栏/结果区的 Variable Selection 控件提供同一变量列表和搜索；控件与画布选择双向同步。
 - 标题栏或紧邻标题的固定区域显示当前 Workbench Variable，修改画布选择、变量改名或文档替换后立即刷新。
 - Graph/Table 默认分析 Workbench Variable；若尚未设置则使用首个 Stock，再否则使用首个可输出变量。没有可用结果时提示先运行，不隐式启动新 Run。
-- Workbench Variable 只决定当前分析对象；Graph 默认叠加所有已加载 Run，变量列表仍可向图中加入其他变量。
+- Workbench Variable 只决定当前分析对象；Graph 默认叠加所有已加载 Run。变量下拉框汇总历史 Run 中可用变量，排除没有显示必要的 Constant，并按 displayName 的本地化顺序排序、以 nameKey 打破并列；后续变量列表仍可加入其他变量。
 
 **模型检查入口**
 
@@ -66,6 +66,7 @@
 - Start time、Stop time；
 - DT；
 - SAVEPER；
+- 时间数值最多保留 6 位小数并去除末尾零；DT/SAVEPER 的步长为 0.1，Start/Stop 为 1；正数输入下限为 0.000001，与显示精度一致；
 - Euler / RK4；
 - Time unit。
 
@@ -88,7 +89,7 @@ Run results
 
 - Datasets 同时是 Control Panel 的数据集页面；每个命名 Run 具有独立加载状态。最新运行排在前面，Graph/Table/Causes Strip 默认作用于全部已加载 Run。
 - 已加载 Run、Workbench Variable 和图中其他可见变量是三组不同状态，不得共用一个布尔选择字段。
-- 没有 Run 时 Dock 可保持隐藏；首次成功或失败运行后显示对应页面。即使小模型瞬间完成，也显示 Completed、样本数、Run Name 和结果 Dock，不让用户靠“是否弹出覆盖提示”判断是否运行。
+- 没有 Run 时 Dock 可保持隐藏；运行成功且完成时 Document 的 simulationRevision 与该 Run 一致，则自动显示 Graph、选择 lastRunId 对应的此次 Run，并显示 Completed、样本数和 Run Name。运行期间或完成后模型已修改时只保留过期结果，不自动弹出 Dock。即使小模型瞬间完成也遵循同一规则，不让用户靠“是否弹出覆盖提示”判断是否运行。失败/取消运行继续通过状态栏和 Diagnostics 显示，不产生虚假成功图表。
 - Diagnostics 复用现有模型检查面板或共享诊断视图，不复制诊断存储。
 - 变量列表显示名称、单位、可见勾选状态和 Run 状态，不把名称作为身份。
 - 默认显示 Workbench Variable；未设置时选择首个 Stock。Auxiliary/Flow/Constant 可搜索并追加。变量过多时使用列表虚拟化和延迟搜索，不一次生成图表点对象。
@@ -124,7 +125,7 @@ SimulationRunRequest（不可变、共享所有权）
 
 - 副本复用 QDS `document.xml` 的内存 XML 读写通道：DocumentFile 直接将 Document 序列化为 UTF-8 XML，再在内存中解析为新 Document；不写文件、不经过 ZIP 压缩/解压，也不依赖 Scene。新增语义字段只需维护同一持久化通道。
 - XML 加载允许重新分配 EntityId，因此 RunVariableInfo 完全基于运行副本建立，只保存 runElementId、当时的 displayName/nameKey 和单位；旧 Run 不保存原模型对象或双重 ID 映射。若界面需要定位当前模型，只能在相同修订下按 nameKey 做辅助导航，这不属于 Run 的身份语义。
-- 副本保留 EntityId、公式、Dimensions、Macros、FlowEndpoints 和 SimulationSettings；不需要 QGraphicsItem、Workspace 或窗口对象。
+- 副本保留 EntityId、公式、Dimensions、Macros、FlowEndpoints 和 SimulationSettings；不需要 QGraphicsItem、Workspace 或窗口对象。该副本只是 Worker 的执行输入，不属于对外保存的 Run 数据集。
 - Plan 只与这个副本配套，不能用于后续已修改的 Document。
 - RunVariableInfo 固定运行时的显示名称和单位；之后用户改名或删除元素，不改变历史结果中的名称，也不产生悬空 Document 指针。
 - 副本建立或编译失败时不启动线程，不产生半成品 Run。
@@ -156,7 +157,11 @@ NamedRun 发布后不可变；覆盖同名结果也创建新 RunId 和新结果�
 
 首批 UI 不使用“在 UI 线程反复 processEvents”的伪异步方案，避免重入修改 Document 或关闭窗口。
 
-### 3.3 结果与文档编辑
+### 3.3 结果文件与文档编辑
+
+QDS 只保存当前 Document，不包含 NamedRun。当前 Run 只存在于会话，新建/打开文档时清空。后续导出采用 CSV：单 Run 默认使用清理非法文件名字符后的 Run 名加 `.csv`，多 Run 对比使用首个 Run 名加 `-comparison.csv`。若增加 Run 保存/打开，文件只包含 Run 名、时间、变量显示名称/单位和结果序列，不包含模型信息；打开后只作为独立历史数据，不承担重算或模型定位。CSV 导出错误必须明确报告，不以部分文件冒充成功。
+
+### 3.4 结果与文档编辑
 
 多个 Run 用于比较同一模型在不同常量、Stock 初值、公式、结构、积分方法、DT/SAVEPER、Lookup、外部 Data 或随机种子下的结果；输入完全相同时也允许重复运行。每个 Run 都是完整不可变输入及设置产生的历史结果，而不是当前画布的另一块临时状态。
 
@@ -178,7 +183,7 @@ NamedRun 发布后不可变；覆盖同名结果也创建新 RunId 和新结果�
 
 首批交互：
 
-- Workbench Variable 及其他选中变量按时间叠加，并默认叠加全部已加载 Run；图例同时显示 Run Name 和变量名，内部用 RunId+EntityId 区分；
+- Workbench Variable 及其他选中变量按各自 `(time,value)` 样本叠加，并默认叠加全部已加载 Run；图例只显示 Run Name，内部用 RunId+EntityId 区分。各序列不需要插入其他 Run 的采样点，只共享实际时间/数值显示范围；
 - 图例点击显示/隐藏；
 - 缩放、拖动和恢复全范围；
 - 光标最近样本提示，显示时间、变量名和值；
@@ -192,9 +197,9 @@ NamedRun 发布后不可变；覆盖同名结果也创建新 RunId 和新结果�
 
 `SimulationTableModel : QAbstractTableModel` 按需为视图提供数据：
 
-- Data 页提供 Run 选择器，默认最新已加载 Run；第一列是时间，其余为选中变量。切换 Run 不修改其不可变结果；
-- 行对应当前 RunId 的 Run::times，列通过 EntityId 查询不可变序列；不强行对齐不同 Run 的时间网格；
-- 不复制完整结果矩阵；
+- Data 页显示全部已加载 Run，每个 Run 一列，列名只使用 Run Name；第一列是时间。Run 选择器仅用于当前状态摘要，不限制其他已加载 Run 的数据显示；
+- 行使用所有已加载 Run::times 的排序并集，每列通过 EntityId 查询不可变序列；没有该时刻采样的单元格为空，不插值、不强行对齐不同 Run 的时间网格；
+- 不复制完整结果矩阵；只构建时间并集，值按各 Run 原始时间下标查询；
 - 提供统一有效数字显示，底层 double 不因格式化而改变；
 - 支持复制选中区域和后续 CSV 导出；导出失败明确报告，不写部分文件冒充成功。
 - 表格必须能滚动到末时刻以核对恒定值或长期趋势；不能只显示首屏就宣称验证完成。

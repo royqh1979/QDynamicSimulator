@@ -188,6 +188,7 @@ private slots:
     void workspaceRestore();
     void simulationControls();
     void resultsDock();
+    void resultsAutoOpenCurrentRun();
     void simulationSettingsAction();
     void stockInitialValuePresentation();
     void recoveryRestoresWorkspace();
@@ -2708,27 +2709,34 @@ void TestEditor::simulationControls()
 {
     MainWindow window;
     auto *simulation = window.findChild<SimulationController *>();
-    auto *runName = window.findChild<QLineEdit *>("runNameEdit");
+    auto *runName = window.findChild<QComboBox *>("runNameCombo");
     auto *runAction = window.findChild<QAction *>("runAction");
     auto *cancelAction = window.findChild<QAction *>("cancelAction");
     QVERIFY(simulation && runName && runAction && cancelAction);
+    QVERIFY(runName->isEditable());
+    QCOMPARE(runName->currentText(), QStringLiteral("Run1"));
     QVERIFY(runAction->isEnabled());
     QVERIFY(!cancelAction->isEnabled());
 
-    runName->setText("equilib");
-    QTest::keyClick(runName, Qt::Key_Return);
+    runName->setCurrentText("equilib");
+    QTest::keyClick(runName->lineEdit(), Qt::Key_Return);
     QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
     QTRY_VERIFY(!simulation->isBusy());
     QCOMPARE(simulation->lastRunName(), QStringLiteral("equilib"));
     QCOMPARE(simulation->runs().size(), 1);
+    QVERIFY(runName->findText(QStringLiteral("equilib")) >= 0);
+    QCOMPARE(runName->currentText(), QStringLiteral("Run1"));
+    runName->setCurrentText(QStringLiteral("equilib"));
+    QCOMPARE(runName->currentText(), QStringLiteral("equilib"));
     QVERIFY(runAction->isEnabled());
     QVERIFY(!cancelAction->isEnabled());
 
-    runName->setText("growth");
+    runName->setCurrentText("growth");
     runAction->trigger();
     QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
     QTRY_VERIFY(!simulation->isBusy());
     QCOMPARE(simulation->runs().size(), 2);
+    runName->setCurrentText(QStringLiteral("growth"));
 
     QTimer::singleShot(0, &window, []() {
         if (auto *message = qobject_cast<QMessageBox *>(QApplication::activeModalWidget()))
@@ -2752,7 +2760,7 @@ void TestEditor::simulationControls()
     auto *documents = window.findChild<DocumentController *>();
     QVERIFY(documents);
     QVERIFY(documents->setSimulationSettings({0.0, 100000.0, 1.0, 1.0}));
-    runName->setText("long");
+    runName->setCurrentText("long");
     runAction->trigger();
     QVERIFY(cancelAction->isEnabled());
     cancelAction->trigger();
@@ -2762,7 +2770,7 @@ void TestEditor::simulationControls()
     QVERIFY(!cancelAction->isEnabled());
 
     documents->createVariable(ElementKind::Stock, QPointF());
-    runName->setText("invalid");
+    runName->setCurrentText("invalid");
     runAction->trigger();
     QCOMPARE(simulation->status(), SimulationSessionStatus::Failed);
     auto *issues = window.findChild<QListWidget *>();
@@ -2789,6 +2797,10 @@ void TestEditor::resultsDock()
     controller->renameElement(auxiliary, QStringLiteral("birth rate"));
     controller->setEquation(auxiliary, QStringLiteral("0.125"));
     controller->setUnit(auxiliary, QStringLiteral("fraction/Year"));
+    const EntityId constant = controller->createVariable(ElementKind::Constant, QPointF(400.0, 0.0));
+    controller->renameElement(constant, QStringLiteral("constant"));
+    controller->setEquation(constant, QStringLiteral("5"));
+    controller->setSimulationSettings({0.0, 1.0, 1.0, 1.0});
     scene->item(stock)->setSelected(true);
     QCOMPARE(simulation->workbenchVariable(), stock);
 
@@ -2805,13 +2817,16 @@ void TestEditor::resultsDock()
     auto *chart = window.findChild<TimeSeriesChartWidget *>();
     auto *tabs = window.findChild<QTabWidget *>();
     QVERIFY(variables && runs && datasets && table && status && model && chart && tabs);
+    QCOMPARE(tabs->currentWidget(), chart);
     QCOMPARE(variables->currentData().toString(), QStringLiteral("population"));
+    QCOMPARE(variables->findData(QStringLiteral("constant")), -1);
+    QVERIFY(variables->findData(QStringLiteral("birth_rate")) < variables->findData(QStringLiteral("population")));
     QCOMPARE(runs->currentText(), QStringLiteral("equilib"));
     QCOMPARE(datasets->count(), 1);
     QCOMPARE(datasets->item(0)->checkState(), Qt::Checked);
     QCOMPARE(model->columnCount(), 2);
     QCOMPARE(model->rowCount(), simulation->runs().front().run()->times().size());
-    QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("Population [rabbit]"));
+    QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("equilib"));
     const QModelIndex last = model->index(model->rowCount() - 1, 1);
     QCOMPARE(model->data(last).toString(), QStringLiteral("1000"));
     window.findChild<QAction *>(QStringLiteral("tableAction"))->trigger();
@@ -2854,10 +2869,10 @@ void TestEditor::resultsDock()
     scene->clearSelection();
     scene->item(auxiliary)->setSelected(true);
     QCOMPARE(variables->currentData().toString(), QStringLiteral("birth_rate"));
-    QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("birth rate [fraction/Year]"));
+    QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("equilib"));
     QCOMPARE(model->data(model->index(model->rowCount() - 1, 1)).toString(), QStringLiteral("0.125"));
     QCOMPARE(chart->chart()->series().size(), 1);
-    QVERIFY(chart->chart()->series().front()->name().contains(QStringLiteral("birth rate")));
+    QCOMPARE(chart->chart()->series().front()->name(), QStringLiteral("equilib"));
     auto *constantAxis = qobject_cast<QtCharts::QValueAxis *>(chart->chart()->axes(Qt::Vertical).front());
     QVERIFY(constantAxis->min() < 0.125 && constantAxis->max() > 0.125);
     const int populationIndex = variables->findData(QStringLiteral("population"));
@@ -2867,12 +2882,20 @@ void TestEditor::resultsDock()
     QVERIFY(scene->item(stock)->isSelected());
 
     controller->setEquation(auxiliary, QStringLiteral("0.25"));
+    controller->setSimulationSettings({0.0, 1.0, 0.5, 0.5});
     QVERIFY(simulation->start(QStringLiteral("growth")));
     QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
     QTRY_VERIFY(!simulation->isBusy());
     QCOMPARE(datasets->count(), 2);
     QCOMPARE(datasets->item(0)->text(), QStringLiteral("growth"));
     QCOMPARE(runs->currentText(), QStringLiteral("growth"));
+    QCOMPARE(model->columnCount(), 3);
+    QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("growth"));
+    QCOMPARE(model->headerData(2, Qt::Horizontal).toString(), QStringLiteral("equilib"));
+    QCOMPARE(model->rowCount(), 3);
+    QCOMPARE(model->data(model->index(1, 0)).toString(), QStringLiteral("0.5"));
+    QVERIFY(model->data(model->index(1, 1)).isValid());
+    QVERIFY(!model->data(model->index(1, 2)).isValid());
     QCOMPARE(chart->chart()->series().size(), 2);
     auto *firstSeries = qobject_cast<QtCharts::QLineSeries *>(chart->chart()->series().front());
     const auto markers = chart->chart()->legend()->markers(firstSeries);
@@ -2887,6 +2910,8 @@ void TestEditor::resultsDock()
     QVERIFY(!simulation->isRunLoaded(datasets->item(1)->data(Qt::UserRole).toULongLong()));
     QCOMPARE(simulation->runs().size(), 2);
     QCOMPARE(chart->chart()->series().size(), 1);
+    QCOMPARE(model->columnCount(), 2);
+    QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("growth"));
 
     runs->setCurrentIndex(1);
     QCOMPARE(variables->currentText(), QStringLiteral("Population"));
@@ -2909,6 +2934,47 @@ void TestEditor::resultsDock()
     QCOMPARE(variables->currentData().toString(), QStringLiteral("stock1"));
     QCOMPARE(model->rowCount(), simulation->runs().front().run()->times().size());
     QCOMPARE(chart->chart()->series().size(), 1);
+}
+
+void TestEditor::resultsAutoOpenCurrentRun()
+{
+    MainWindow window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    auto *controller = window.findChild<DocumentController *>();
+    auto *simulation = window.findChild<SimulationController *>();
+    auto *dock = window.findChild<QDockWidget *>(QStringLiteral("resultsDock"));
+    auto *runs = window.findChild<QComboBox *>(QStringLiteral("resultsRunCombo"));
+    auto *tabs = window.findChild<QTabWidget *>();
+    auto *chart = window.findChild<TimeSeriesChartWidget *>();
+    QVERIFY(controller && simulation && dock && runs && tabs && chart);
+    const EntityId stock = controller->createVariable(ElementKind::Stock, QPointF());
+    controller->setInitialEquation(stock, QStringLiteral("1000"));
+
+    QVERIFY(simulation->start(QStringLiteral("current")));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QVERIFY(dock->isVisible());
+    QCOMPARE(runs->currentText(), QStringLiteral("current"));
+    QCOMPARE(tabs->currentWidget(), chart);
+
+    dock->hide();
+    QVERIFY(simulation->start(QStringLiteral("unchanged")));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QVERIFY(dock->isVisible());
+    QCOMPARE(runs->currentText(), QStringLiteral("unchanged"));
+
+    dock->hide();
+    QVERIFY(controller->setSimulationSettings({0.0, 100000.0, 1.0, 1.0}));
+    QVERIFY(simulation->start(QStringLiteral("outdated")));
+    controller->setInitialEquation(stock, QStringLiteral("1001"));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QVERIFY(!dock->isVisible());
+    QCOMPARE(simulation->lastRunName(), QStringLiteral("outdated"));
+    const auto &completed = simulation->runs().front();
+    QVERIFY(simulation->isOutdated(completed));
 }
 
 void TestEditor::simulationSettingsAction()

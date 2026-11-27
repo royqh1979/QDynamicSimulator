@@ -18,6 +18,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QDir>
 #include <QDialog>
 #include <QDockWidget>
@@ -37,12 +38,15 @@
 #include <QMimeData>
 #include <QScrollBar>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTimer>
 #include <QToolBar>
 #include <QVBoxLayout>
 #include <QUrl>
+
+#include <algorithm>
 
 namespace {
 
@@ -113,6 +117,7 @@ MainWindow::MainWindow(QWidget *parent)
             if (run->status() == qds::core::SimulationRunStatus::Completed) {
                 statusBar()->showMessage(tr("Completed %1: %2 samples")
                     .arg(m_simulation->lastRunName()).arg(run->times().size()), 10000);
+                m_runName->setCurrentText(nextAvailableRunName());
             }
         });
     connect(m_simulation, &SimulationController::compilationFailed, this, &MainWindow::showCompilationIssues);
@@ -396,9 +401,11 @@ void MainWindow::createActions()
     simulationToolBar->setObjectName(QStringLiteral("simulationToolBar"));
     QLabel *runNameLabel = new QLabel(tr("Run name:"), simulationToolBar);
     simulationToolBar->addWidget(runNameLabel);
-    m_runName = new QLineEdit(simulationToolBar);
-    m_runName->setObjectName(QStringLiteral("runNameEdit"));
-    m_runName->setText(QStringLiteral("Run1"));
+    m_runName = new QComboBox(simulationToolBar);
+    m_runName->setObjectName(QStringLiteral("runNameCombo"));
+    m_runName->setEditable(true);
+    m_runName->setInsertPolicy(QComboBox::NoInsert);
+    m_runName->addItem(QStringLiteral("Run1"));
     m_runName->setMaximumWidth(180);
     simulationToolBar->addWidget(m_runName);
     m_runAction = new QAction(actionIcon("run"), tr("Run"), this);
@@ -430,7 +437,7 @@ void MainWindow::createActions()
         simulationToolBar->addAction(action);
     }
     connect(m_runAction, &QAction::triggered, this, &MainWindow::runSimulation);
-    connect(m_runName, &QLineEdit::returnPressed, this, &MainWindow::runSimulation);
+    connect(m_runName->lineEdit(), &QLineEdit::returnPressed, this, &MainWindow::runSimulation);
     connect(m_cancelAction, &QAction::triggered, m_simulation, &SimulationController::cancel);
     connect(m_simulationSettingsAction, &QAction::triggered, this, &MainWindow::openSimulationSettings);
     updateSimulationControls();
@@ -548,12 +555,24 @@ void MainWindow::createPropertyPanel()
     m_resultsDock->hide();
     connect(m_simulation, &SimulationController::runTerminated, this,
         [this](const std::shared_ptr<const qds::core::SimulationRun> &run) {
-            if (run->status() == qds::core::SimulationRunStatus::Completed)
+            if (run->status() != qds::core::SimulationRunStatus::Completed)
+                return;
+            const auto &runs = m_simulation->runs();
+            const auto completed = std::find_if(runs.begin(), runs.end(), [this](const NamedRun &candidate) {
+                return candidate.id() == m_simulation->lastRunId();
+            });
+            if (completed != runs.end() && !m_simulation->isOutdated(*completed)) {
                 m_resultsDock->show();
+                m_results->showRun(completed->id());
+                m_results->showGraph();
+            }
         });
     connect(m_simulation, &SimulationController::namedRunsChanged, this, [this]() {
-        if (m_simulation->runs().isEmpty())
+        updateRunNameChoices();
+        if (m_simulation->runs().isEmpty()) {
+            m_runName->setCurrentText(nextAvailableRunName());
             m_resultsDock->hide();
+        }
     });
     connect(m_scene, &QGraphicsScene::selectionChanged, this, [this]() {
         const QList<QGraphicsItem *> selection = m_scene->selectedItems();
@@ -631,7 +650,7 @@ void MainWindow::applyWorkspace(const qds::io::Workspace &workspace)
 
 void MainWindow::runSimulation()
 {
-    const QString name = m_runName->text().trimmed();
+    const QString name = m_runName->currentText().trimmed();
     const bool overwrite = m_simulation->hasRunName(name);
     if (overwrite) {
         const auto choice = QMessageBox::question(this, tr("Overwrite run"),
@@ -656,6 +675,24 @@ void MainWindow::updateSimulationControls()
         m_runAction->setEnabled(!busy);
     if (m_cancelAction)
         m_cancelAction->setEnabled(busy);
+}
+
+void MainWindow::updateRunNameChoices()
+{
+    const QString current = m_runName->currentText();
+    const QSignalBlocker blocker(m_runName);
+    m_runName->clear();
+    for (const NamedRun &run : m_simulation->runs())
+        m_runName->addItem(run.name());
+    m_runName->setCurrentText(current);
+}
+
+QString MainWindow::nextAvailableRunName() const
+{
+    int number = 1;
+    while (m_simulation->hasRunName(QStringLiteral("Run%1").arg(number)))
+        ++number;
+    return QStringLiteral("Run%1").arg(number);
 }
 
 void MainWindow::showCompilationIssues(const QVector<qds::core::ModelIssue> &issues)

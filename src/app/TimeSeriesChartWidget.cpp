@@ -70,7 +70,7 @@ void TimeSeriesChartWidget::setRuns(const QVector<NamedRun> &runs, const QString
             }
         }
         auto *series = new QLineSeries(m_chart);
-        series->setName(QStringLiteral("%1 — %2").arg(run.name(), variable->displayName()));
+        series->setName(run.name());
         series->append(points);
         m_chart->addSeries(series);
         for (QLegendMarker *marker : m_chart->legend()->markers(series)) {

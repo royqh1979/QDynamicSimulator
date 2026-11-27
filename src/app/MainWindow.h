@@ -8,6 +8,8 @@
 
 class QAction;
 class QCloseEvent;
+class QComboBox;
+class QDockWidget;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -63,6 +65,8 @@ private:
     void runSimulation();
     void openSimulationSettings();
     void updateSimulationControls();
+    void updateRunNameChoices();
+    QString nextAvailableRunName() const;
     void showCompilationIssues(const QVector<qds::core::ModelIssue> &issues);
     qds::io::Workspace currentWorkspace() const;
     void applyWorkspace(const qds::io::Workspace &workspace);
@@ -84,7 +88,7 @@ private:
     QAction *m_runAction = nullptr;
     QAction *m_cancelAction = nullptr;
     QAction *m_simulationSettingsAction = nullptr;
-    QLineEdit *m_runName = nullptr;
+    QComboBox *m_runName = nullptr;
     QPointF m_cursorScenePosition;
     RecentFiles m_recentFiles;
     QString m_fileName;

@@ -58,12 +58,15 @@ RK4 校验和约为 2.20265e+07。Euler 与 RK4 分列，不用不同方法的�
 
 ## 最小结果 Dock
 
-运行 Release `profile-editor.exe 1000`。`results_table_bind` 每轮将真实 NamedRun 与 Stock nameKey 绑定到新建 SimulationTableModel，读取行数和末时刻值；模型只共享不可变 Run，不复制完整矩阵。`results_dock_refresh` 反复切换同一 Run 的加载状态，覆盖 Datasets、Run/Variable 选择器、状态文本和表格的同步刷新；不包含 Worker 或积分时间。
+运行 Release `profile-editor.exe 1000`。`results_table_bind` 每轮将同一真实 NamedRun 的两个显示副本与 Stock nameKey 绑定到新建 SimulationTableModel，校验 Time+两个 Run 列、排序时间并集去重、行数和末时刻值；模型只共享不可变 Run，不复制完整矩阵。不同采样网格及缺失单元格由编辑器集成测试覆盖。`results_dock_refresh` 反复切换同一 Run 的加载状态，覆盖 Datasets、Run/Variable 选择器、状态文本和表格的同步刷新；不包含 Worker 或积分时间。
 
 | 操作 | 数量 | 总耗时 ms | 每操作 μs |
 | --- | ---: | ---: | ---: |
-| results_table_bind | 1000 | 2.6501 | 2.6501 |
+| results_table_bind | 1000 | 4.5362 | 4.5362 |
 | results_dock_refresh | 1000 | 35.3193 | 35.3193 |
+| results_show_current | 1000 | 1.0143 | 1.0143 |
+
+`results_show_current` 另覆盖按 RunId 选择此次运行并切换到 Graph 的调用路径；自动显示是否允许发生由 simulationRevision 和真实 MainWindow 集成测试验证。
 
 真实 MainWindow 测试覆盖首次成功显示、Workbench 与画布单选双向同步、表格末时刻可见、最新 Run 优先、加载状态不删除结果、历史名称、旧模型提示、文档重置清理及无显式选择时优先 Stock。163 条中文翻译全部完成，本次 profile stderr 无警告。
 

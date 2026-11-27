@@ -84,6 +84,13 @@ void SimulationResultsWidget::showTable()
     m_tabs->setCurrentIndex(1);
 }
 
+void SimulationResultsWidget::showRun(RunId id)
+{
+    const int index = m_runCombo->findData(id);
+    if (index >= 0)
+        m_runCombo->setCurrentIndex(index);
+}
+
 void SimulationResultsWidget::refreshRuns()
 {
     if (m_refreshing)
@@ -131,8 +138,22 @@ void SimulationResultsWidget::refreshWorkbench()
         return;
     }
 
+    QVector<RunVariableInfo> availableVariables;
+    QSet<QString> seenNames;
+    for (const NamedRun &candidate : m_controller->runs()) {
+        for (const RunVariableInfo &variable : candidate.variables()) {
+            if (variable.kind() != qds::core::ElementKind::Constant && !seenNames.contains(variable.nameKey())) {
+                seenNames.insert(variable.nameKey());
+                availableVariables.push_back(variable);
+            }
+        }
+    }
+    std::sort(availableVariables.begin(), availableVariables.end(), [](const RunVariableInfo &left, const RunVariableInfo &right) {
+        const int displayOrder = QString::localeAwareCompare(left.displayName(), right.displayName());
+        return displayOrder != 0 ? displayOrder < 0 : left.nameKey() < right.nameKey();
+    });
     int selectedIndex = -1;
-    for (const RunVariableInfo &variable : run->variables()) {
+    for (const RunVariableInfo &variable : availableVariables) {
         m_variableCombo->addItem(variable.displayName(), variable.nameKey());
         m_variableCombo->setItemData(m_variableCombo->count() - 1, static_cast<int>(variable.kind()), Qt::UserRole + 1);
         if (variable.nameKey() == m_controller->workbenchNameKey())
@@ -146,18 +167,18 @@ void SimulationResultsWidget::refreshWorkbench()
     const QString nameKey = m_variableCombo->currentData().toString();
     if (selectedIndex >= 0 && m_controller->workbenchNameKey() != nameKey)
         m_controller->setWorkbenchVariableName(nameKey);
-    if (selectedIndex >= 0)
-        m_tableModel->setRun(*run, nameKey);
-    else
-        m_tableModel->clear();
-    m_runStatusLabel->setText(tr("%1 — %2 samples%3")
-        .arg(run->name()).arg(run->run()->times().size())
-        .arg(m_controller->isOutdated(*run) ? tr(", older model") : QString()));
     QVector<NamedRun> loadedRuns;
     for (const NamedRun &candidate : m_controller->runs()) {
         if (m_controller->isRunLoaded(candidate.id()))
             loadedRuns.push_back(candidate);
     }
+    if (selectedIndex >= 0)
+        m_tableModel->setRuns(loadedRuns, nameKey);
+    else
+        m_tableModel->clear();
+    m_runStatusLabel->setText(tr("%1 — %2 samples%3")
+        .arg(run->name()).arg(run->run()->times().size())
+        .arg(m_controller->isOutdated(*run) ? tr(", older model") : QString()));
     m_chart->setRuns(loadedRuns, nameKey);
     m_refreshing = false;
 }

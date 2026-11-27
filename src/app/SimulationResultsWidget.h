@@ -23,6 +23,7 @@ public:
     explicit SimulationResultsWidget(SimulationController *controller, QWidget *parent = nullptr);
     void showGraph();
     void showTable();
+    void showRun(RunId id);
 
 private:
     void refreshRuns();

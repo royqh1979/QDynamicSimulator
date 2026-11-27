@@ -83,6 +83,7 @@ public:
     const QVector<NamedRun> &runs() const { return m_runs; }
     std::shared_ptr<const qds::core::SimulationRun> lastRun() const { return m_lastRun; }
     const QString &lastRunName() const { return m_lastRunName; }
+    RunId lastRunId() const { return m_lastRunId; }
     bool hasRunName(const QString &name) const;
     bool isOutdated(const NamedRun &run) const;
     void setRunLoaded(RunId id, bool loaded);
@@ -112,6 +113,7 @@ private:
     std::shared_ptr<const SimulationRunRequest> m_activeRequest;
     std::shared_ptr<const qds::core::SimulationRun> m_lastRun;
     QString m_lastRunName;
+    RunId m_lastRunId = 0;
     qds::core::EntityId m_workbenchVariable = 0;
     QString m_workbenchNameKey;
     QPointer<QThread> m_thread;

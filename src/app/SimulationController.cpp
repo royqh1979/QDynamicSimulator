@@ -205,6 +205,7 @@ void SimulationController::reset()
     m_cancelRequested.reset();
     m_lastRun.reset();
     m_lastRunName.clear();
+    m_lastRunId = 0;
     m_workbenchVariable = 0;
     m_workbenchNameKey.clear();
     emit workbenchVariableChanged();
@@ -297,6 +298,7 @@ void SimulationController::workerFinished(std::shared_ptr<const SimulationRun> r
     case SimulationRunStatus::Completed: {
         NamedRun named(m_nextRunId++, m_activeRequest->runName, m_lastRun, m_activeRequest->modelRevision,
             m_activeRequest->variables);
+        m_lastRunId = named.id();
         auto existing = std::find_if(m_runs.begin(), m_runs.end(), [this](const NamedRun &candidate) {
             return candidate.name() == m_activeRequest->runName;
         });

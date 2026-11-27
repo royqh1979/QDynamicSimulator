@@ -4,8 +4,6 @@
 
 #include <QAbstractTableModel>
 
-#include <optional>
-
 class SimulationTableModel : public QAbstractTableModel
 {
     Q_OBJECT
@@ -13,7 +11,7 @@ class SimulationTableModel : public QAbstractTableModel
 public:
     explicit SimulationTableModel(QObject *parent = nullptr);
 
-    void setRun(const NamedRun &run, const QString &nameKey);
+    void setRuns(const QVector<NamedRun> &runs, const QString &nameKey);
     void clear();
 
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
@@ -22,6 +20,12 @@ public:
     QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
 
 private:
-    std::shared_ptr<const qds::core::SimulationRun> m_run;
-    std::optional<RunVariableInfo> m_variable;
+    struct Column {
+        QString runName;
+        std::shared_ptr<const qds::core::SimulationRun> run;
+        const QVector<double> *values = nullptr;
+    };
+
+    QVector<double> m_times;
+    QVector<Column> m_columns;
 };
