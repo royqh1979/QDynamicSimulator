@@ -3,6 +3,7 @@
 #include <core/simulation/Simulation.h>
 
 #include <QObject>
+#include <QHash>
 #include <QPointer>
 #include <QString>
 #include <QSet>
@@ -42,13 +43,15 @@ class NamedRun
 {
 public:
     NamedRun(RunId id, QString name, std::shared_ptr<const qds::core::SimulationRun> run, quint64 modelRevision,
-        QVector<RunVariableInfo> variables);
+        QVector<RunVariableInfo> variables,
+        QHash<qds::core::EntityId, QVector<qds::core::EntityId>> causes = {});
 
     RunId id() const { return m_id; }
     const QString &name() const { return m_name; }
     std::shared_ptr<const qds::core::SimulationRun> run() const { return m_run; }
     quint64 modelRevision() const { return m_modelRevision; }
     const QVector<RunVariableInfo> &variables() const { return m_variables; }
+    QVector<qds::core::EntityId> causes(qds::core::EntityId dependent) const { return m_causes.value(dependent); }
 
 private:
     RunId m_id = 0;
@@ -56,6 +59,7 @@ private:
     std::shared_ptr<const qds::core::SimulationRun> m_run;
     quint64 m_modelRevision = 0;
     QVector<RunVariableInfo> m_variables;
+    QHash<qds::core::EntityId, QVector<qds::core::EntityId>> m_causes;
 };
 
 enum class SimulationSessionStatus {

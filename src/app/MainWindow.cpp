@@ -412,17 +412,22 @@ void MainWindow::createActions()
     m_cancelAction->setShortcut(QKeySequence(Qt::Key_Escape));
     QAction *graphAction = new QAction(actionIcon("graph"), tr("Graph"), this);
     graphAction->setObjectName(QStringLiteral("graphAction"));
+    QAction *causesStripAction = new QAction(actionIcon("causes-strip"), tr("Causes Strip"), this);
+    causesStripAction->setObjectName(QStringLiteral("causesStripAction"));
     QAction *tableAction = new QAction(actionIcon("table"), tr("Table"), this);
     tableAction->setObjectName(QStringLiteral("tableAction"));
     connect(graphAction, &QAction::triggered, this, [this]() {
-        showSimulationResults(true);
+        showSimulationResults(SimulationResultView::Graph);
+    });
+    connect(causesStripAction, &QAction::triggered, this, [this]() {
+        showSimulationResults(SimulationResultView::CausesStrip);
     });
     connect(tableAction, &QAction::triggered, this, [this]() {
-        showSimulationResults(false);
+        showSimulationResults(SimulationResultView::Table);
     });
     m_simulationSettingsAction = new QAction(actionIcon("simulation-settings"), tr("Simulation settings"), this);
     m_simulationSettingsAction->setObjectName(QStringLiteral("simulationSettingsAction"));
-    for (QAction *action : {m_runAction, m_cancelAction, graphAction, tableAction, m_simulationSettingsAction}) {
+    for (QAction *action : {m_runAction, m_cancelAction, graphAction, causesStripAction, tableAction, m_simulationSettingsAction}) {
         simulationMenu->addAction(action);
         simulationToolBar->addAction(action);
     }
@@ -553,7 +558,7 @@ void MainWindow::createPropertyPanel()
             });
             if (completed != runs.end() && !m_simulation->isOutdated(*completed)) {
                 m_results->showRun(completed->id());
-                showSimulationResults(true);
+                showSimulationResults(SimulationResultView::Graph);
             }
         });
     connect(m_simulation, &SimulationController::namedRunsChanged, this, [this]() {
@@ -631,7 +636,7 @@ void MainWindow::runSimulation()
     m_simulation->start(name, overwrite);
 }
 
-void MainWindow::showSimulationResults(bool graph)
+void MainWindow::showSimulationResults(SimulationResultView view)
 {
     if (!m_resultsDock || !m_results)
         return;
@@ -642,10 +647,12 @@ void MainWindow::showSimulationResults(bool graph)
             m_simulation->setWorkbenchVariable(item->id());
     }
     m_resultsDock->show();
-    if (graph)
+    if (view == SimulationResultView::Graph)
         m_results->showGraph();
-    else
+    else if (view == SimulationResultView::Table)
         m_results->showTable();
+    else
+        m_results->showCausesStrip();
 }
 
 void MainWindow::openSimulationSettings()

@@ -11,6 +11,7 @@
 #include "RecentFiles.h"
 #include "Routing.h"
 #include "SimulationController.h"
+#include "CausesStripWidget.h"
 #include "SimulationResultsWidget.h"
 #include "SimulationSettingsDialog.h"
 #include "SimulationTableModel.h"
@@ -191,6 +192,7 @@ private slots:
     void workspaceRestore();
     void simulationControls();
     void resultsDock();
+    void causesStripGraph();
     void resultsAutoOpenCurrentRun();
     void simulationSettingsAction();
     void stockInitialValuePresentation();
@@ -3091,6 +3093,108 @@ void TestEditor::resultsDock()
     QCOMPARE(variables->currentData().toString(), QStringLiteral("stock1"));
     QCOMPARE(model->rowCount(), simulation->runs().front().run()->times().size());
     QCOMPARE(chart->chart()->series().size(), 1);
+}
+
+void TestEditor::causesStripGraph()
+{
+    MainWindow window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    auto *controller = window.findChild<DocumentController *>();
+    auto *simulation = window.findChild<SimulationController *>();
+    auto *scene = window.findChild<DiagramScene *>();
+    auto *strip = window.findChild<CausesStripWidget *>();
+    QVERIFY(controller && simulation && scene && strip);
+
+    window.findChild<QAction *>(QStringLiteral("causesStripAction"))->trigger();
+    QVERIFY(strip->charts().isEmpty());
+
+    const EntityId population = controller->createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    controller->renameElement(population, QStringLiteral("Population"));
+    controller->setInitialEquation(population, QStringLiteral("1000"));
+    const EntityId source = controller->createCloud(QPointF(-300.0, 0.0));
+    const EntityId sink = controller->createCloud(QPointF(300.0, 0.0));
+    const EntityId births = controller->createFlow(source, population);
+    controller->renameElement(births, QStringLiteral("births"));
+    controller->setEquation(births, QStringLiteral("Population * birth_rate"));
+    const EntityId deaths = controller->createFlow(population, sink);
+    controller->renameElement(deaths, QStringLiteral("deaths"));
+    controller->setEquation(deaths, QStringLiteral("Population * death_rate"));
+    const EntityId birthRate = controller->createVariable(ElementKind::Variable, QPointF(0.0, 150.0));
+    controller->renameElement(birthRate, QStringLiteral("birth rate"));
+    controller->setEquation(birthRate, QStringLiteral("0.125"));
+    const EntityId deathRate = controller->createVariable(ElementKind::Variable, QPointF(0.0, 300.0));
+    controller->renameElement(deathRate, QStringLiteral("death rate"));
+    controller->setEquation(deathRate, QStringLiteral("0.05"));
+    controller->setSimulationSettings({0.0, 1.0, 1.0, 1.0});
+    scene->item(population)->setSelected(true);
+
+    QVERIFY(simulation->start(QStringLiteral("base")));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    const NamedRun base = simulation->runs().front();
+    const auto runVariableId = [](const NamedRun &run, const QString &nameKey) {
+        const auto found = std::find_if(run.variables().begin(), run.variables().end(), [&nameKey](const RunVariableInfo &variable) {
+            return variable.nameKey() == nameKey;
+        });
+        return found == run.variables().end() ? EntityId(0) : found->id();
+    };
+    QCOMPARE(base.causes(runVariableId(base, QStringLiteral("population"))).size(), 2);
+    QCOMPARE(base.causes(runVariableId(base, QStringLiteral("births"))).size(), 2);
+
+    window.findChild<QAction *>(QStringLiteral("causesStripAction"))->trigger();
+    auto charts = strip->charts();
+    QCOMPARE(charts.size(), 3);
+    const QStringList expectedTitles {QStringLiteral("Population"), QStringLiteral("births"), QStringLiteral("deaths")};
+    for (int index = 0; index < charts.size(); ++index) {
+        QCOMPARE(charts[index]->chart()->title(), expectedTitles[index]);
+        QCOMPARE(charts[index]->chart()->series().size(), 1);
+    }
+
+    const EntityId migrationRate = controller->createVariable(ElementKind::Variable, QPointF(0.0, 450.0));
+    controller->renameElement(migrationRate, QStringLiteral("migration rate"));
+    controller->setEquation(migrationRate, QStringLiteral("0.01"));
+    const EntityId migrationSource = controller->createCloud(QPointF(-300.0, 200.0));
+    const EntityId migration = controller->createFlow(migrationSource, population);
+    controller->renameElement(migration, QStringLiteral("migration"));
+    controller->setEquation(migration, QStringLiteral("Population * migration_rate"));
+    QVERIFY(simulation->start(QStringLiteral("expanded")));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QCOMPARE(simulation->runs().size(), 2);
+    QCOMPARE(simulation->runs().at(0).causes(runVariableId(simulation->runs().at(0), QStringLiteral("population"))).size(), 3);
+    QCOMPARE(simulation->runs().at(1).causes(runVariableId(simulation->runs().at(1), QStringLiteral("population"))).size(), 2);
+    QTRY_VERIFY(strip->charts().size() == 4);
+    charts = strip->charts();
+    const QStringList expandedTitles {QStringLiteral("Population"), QStringLiteral("births"),
+        QStringLiteral("deaths"), QStringLiteral("migration")};
+    for (int index = 0; index < charts.size(); ++index)
+        QCOMPARE(charts[index]->chart()->title(), expandedTitles[index]);
+    QCOMPARE(charts[0]->chart()->series().size(), 2);
+    QCOMPARE(charts[3]->chart()->series().size(), 1);
+
+    window.findChild<QAction *>(QStringLiteral("causesStripAction"))->trigger();
+    auto *migrationAxis = qobject_cast<QtCharts::QValueAxis *>(charts[3]->chart()->axes(Qt::Horizontal).front());
+    const double initialMin = migrationAxis->min();
+    const double initialMax = migrationAxis->max();
+    QVERIFY(strip->isVisible());
+    QVERIFY(charts[0]->isVisible());
+    const QPoint wheelPosition = charts[0]->rect().center();
+    QWheelEvent wheel(wheelPosition, charts[0]->mapToGlobal(wheelPosition), QPoint(), QPoint(0, 120),
+        Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(charts[0]->viewport(), &wheel);
+    QTRY_VERIFY(migrationAxis->max() - migrationAxis->min() < initialMax - initialMin);
+    QMouseEvent doubleClick(QEvent::MouseButtonDblClick, wheelPosition, charts[0]->mapToGlobal(wheelPosition),
+        Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(charts[0]->viewport(), &doubleClick);
+    QTRY_VERIFY(migrationAxis->min() == initialMin && migrationAxis->max() == initialMax);
+
+    scene->clearSelection();
+    scene->item(births)->setSelected(true);
+    window.findChild<QAction *>(QStringLiteral("causesStripAction"))->trigger();
+    QTRY_COMPARE(strip->charts().size(), 3);
+    charts = strip->charts();
+    QCOMPARE(charts[0]->chart()->title(), QStringLiteral("births"));
+    QCOMPARE(charts[1]->chart()->title(), QStringLiteral("birth rate"));
+    QCOMPARE(charts[2]->chart()->title(), QStringLiteral("Population"));
 }
 
 void TestEditor::resultsAutoOpenCurrentRun()

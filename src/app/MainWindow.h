@@ -62,8 +62,14 @@ private:
     void refreshValidation();
     void updateRecentFiles();
     void updateCursorStatus();
+    enum class SimulationResultView {
+        Graph,
+        Table,
+        CausesStrip
+    };
+
     void runSimulation();
-    void showSimulationResults(bool graph);
+    void showSimulationResults(SimulationResultView view);
     void openSimulationSettings();
     void updateSimulationControls();
     void updateRunNameChoices();

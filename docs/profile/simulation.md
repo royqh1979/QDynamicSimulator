@@ -68,7 +68,7 @@ RK4 校验和约为 2.20265e+07。Euler 与 RK4 分列，不用不同方法的�
 
 `results_show_current` 另覆盖按 RunId 选择此次运行并切换到 Graph 的调用路径；自动显示是否允许发生由 simulationRevision 和真实 MainWindow 集成测试验证。
 
-真实 MainWindow 测试覆盖首次成功显示、Workbench 与画布单选双向同步、表格末时刻可见、最新 Run 优先、加载状态不删除结果、历史名称、旧模型提示、文档重置清理及无显式选择时优先 Stock。163 条中文翻译全部完成，本次 profile stderr 无警告。
+真实 MainWindow 测试覆盖首次成功显示、Workbench 与画布单选双向同步、表格末时刻可见、最新 Run 优先、加载状态不删除结果、历史名称、旧模型提示、文档重置清理及无显式选择时优先 Stock。165 条中文翻译全部完成，本次 profile stderr 无警告。
 
 ## Qt Charts 大结果集
 
@@ -81,3 +81,13 @@ RK4 校验和约为 2.20265e+07。Euler 与 RK4 分列，不用不同方法的�
 | chart_zoom_reset_100000x10 | 10 | 4102.64 | 410264 |
 
 这些结果用于发现异常和后续同场景回归，不设置当前不需要的极限门槛。MainWindow 集成测试另覆盖 Graph/Table、已加载 Run 数量、图例显隐、常量值坐标余量、滚轮、拖动、双击复位和文档清空；profile stderr 无警告。
+
+## Causes Strip
+
+`causes_strip_refresh` 使用真实 Stock/Flow 运行结果，每轮清空并重新选择 Workbench Stock，重建 Stock 与其直接 Flow 两条曲线，覆盖运行副本原因映射、变量排序、历史原因并集和图表生命周期。测试另覆盖 Flow 公式原因、常量原因、不同 Run 原因集合、当前 `charts()` 与 `deleteLater` 旧对象的区分，以及可见图表的时间轴缩放、平移和复位同步。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| causes_strip_refresh | 100 | 482.178 | 4821.78 |
+
+该结果使用 Release `profile-editor.exe 100`，不包含 Worker 或积分时间，不设置额外性能门槛。

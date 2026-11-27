@@ -22,7 +22,7 @@ QDynamicSimulator 是一款跨平台系统动力学建模与仿真软件。项�
 - Ctrl+O 打开，Ctrl+S 保存；打开和拖放均支持 `.qds`、未压缩 `.xmile/.xml` 与 Vensim `.mdl`。QDS/XMILE 按内容选择加载通道，MDL 按后缀导入。Save As 只生成 `.qds`，Export XMILE 生成未压缩 XML。
 - 打开缺少视图或路径的纯 XMILE 时自动补齐可见变量、Flow 和 Cloud；原生 QDS 通过 uid 保持相同内容 Comment 的各自连接关系。
 - MDL 导入保留基本方程、数组定义、表达式宏、仿真设置和主要 Sketch，带空格变量引用自动转换为带引号的 XMILE 形式。不能映射的结构明确报错；当前兼容边界和后续项目见 `requirement.md` 与 `docs/design/vensim-mdl.md`。
-- Simulation 菜单设置起止时间、DT/SAVEPER 和 Euler/RK4，命名并运行模型；Run results 支持 Workbench Variable、Datasets 加载状态、时间表及多 Run 折线图。
+- Simulation 菜单设置起止时间、DT/SAVEPER 和 Euler/RK4，命名并运行模型；Run results 支持 Workbench Variable、Datasets 加载状态、时间表及多 Run 折线图。Causes Strip 按一级原因分组显示当前变量及其驱动变量，历史 Run 使用各自原因映射并同步时间轴缩放和平移。
 
 ## 环境要求
 
