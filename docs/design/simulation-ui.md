@@ -2,7 +2,7 @@
 
 ## 1. 范围与当前基础
 
-状态：运行会话、SimulationSettingsDialog、Run Name/Enter、Run/Cancel、设置撤销和诊断定位已实现并通过验证，等待审核；结果 Dock 与 Qt Charts 尚未开始。
+状态：运行会话、SimulationSettingsDialog、Run Name/Enter、Run/Cancel、设置撤销和诊断定位已实现；最小 Run results Dock 已覆盖 Workbench Variable、最新优先 Datasets、加载状态、单变量表格、历史名称和过期提示。多变量可见性、结果导出与 Qt Charts 尚未开始。
 
 当前 Core 已提供 SimulationSettings、SimulationPlan、同步 SimulationRunner 和不可变 SimulationRun。本设计覆盖建模到运行的完整工作流、命名结果、Workbench Variable、折线图和数据表。命名多 Run 与叠加比较属于基本结果管理；数组、参数扫描、批量实验和蒙特卡洛仍不提前混入首批实现。
 
@@ -75,7 +75,9 @@ OK 时一次性构造不可变 SimulationSettings 并由 DocumentController 提�
 
 ### 2.3 结果 Dock
 
-新增可隐藏、可停靠的 `Run results` Dock，默认位于底部并参与现有 saveState()/restoreState()：
+主窗口通过 `setCorner()` 将 BottomLeftCorner 分配给 LeftDockWidgetArea、BottomRightCorner 分配给 RightDockWidgetArea；左右 Dock 占据各自侧边的全部高度，底部 Dock 只占据中间剩余宽度。
+
+新增可隐藏、可停靠的 `Run results` Dock，默认位于底部并参与现有 saveState()/restoreState()。当前最小实现提供 Workbench Variable 与 Run 两个独立选择器、Datasets 勾选列表和单变量时间表；变量搜索、多变量可见性以及 Charts/Data/Diagnostics 三标签整合在后续阶段扩展：
 
 ```text
 Run results

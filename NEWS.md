@@ -49,6 +49,8 @@
 - 新增不可变仿真设置，支持起止时间、DT、SAVEPER、Euler/RK4 和时间单位校验；QDS 完整往返，XMILE 支持 sim_specs、倒数 DT、方法回退及模型级覆盖，并附独立性能 profile。
 - 新增标量模拟编译与同步 Euler/RK4 执行：初值/运行期拓扑排序、Stock 净流入、不可变 Run、取消、失败前缀和按保存间隔采样；解析解、Euler/RK4 阶数、不变量及 SDXorg ABS/Teacup/SIR 等参考结果纳入自动验证。
 - 新增模拟设置对话框、设置 undo/redo、Run Name/Enter、Run/Cancel、同名覆盖确认及编译诊断定位；Worker 使用不可变内存 XML 副本，模型修改保留旧 Run 并标记过期。
+- 新增 Run results Dock：Workbench Variable 与画布单选双向同步，支持最新优先的命名 Datasets、加载状态、单变量时间表、历史名称和旧模型提示。
+- 左右 Dock 占据各自侧边全部高度；文档标题使用无后缀文件名，新建按 Untitled N 编号，首次保存默认使用标题加 .qds。
 - Stock 使用独立 initialEquation，QDS 以 `<initial>` 保存；属性面板显示 Initial value 和只读流入/流出摘要，普通 equation 不再承担 Stock 初值语义。
 - 修复名称编辑无法输入空格的问题；编辑、实体拖动、框选和连线期间空格不再误触发画布平移，窗口失焦或获焦时清除空格按下状态。
 - Cloud 改为封闭实线云形，绘制、鼠标命中和 Flow 边界端点共用实际轮廓，不再使用椭圆近似。

@@ -64,11 +64,12 @@ private:
 
 } // namespace
 
-RunVariableInfo::RunVariableInfo(EntityId id, QString displayName, QString nameKey, QString unit)
+RunVariableInfo::RunVariableInfo(EntityId id, QString displayName, QString nameKey, QString unit, ElementKind kind)
     : m_id(id)
     , m_displayName(std::move(displayName))
     , m_nameKey(std::move(nameKey))
     , m_unit(std::move(unit))
+    , m_kind(kind)
 {
 }
 
@@ -91,8 +92,21 @@ SimulationController::SimulationController(DocumentController *documentControlle
     qRegisterMetaType<QVector<ModelIssue>>();
     connect(m_documentController, &DocumentController::documentChanged, this,
         [this](const ChangeNotification &notification) {
-            if (notification.documentReset)
+            if (notification.documentReset) {
                 reset();
+                return;
+            }
+            if (m_workbenchVariable == 0)
+                return;
+            const auto *element = dynamic_cast<const ModelElement *>(m_documentController->document().find(m_workbenchVariable));
+            if (!element) {
+                setWorkbenchVariable(0);
+                return;
+            }
+            if (m_workbenchNameKey != element->nameKey()) {
+                m_workbenchNameKey = element->nameKey();
+                emit workbenchVariableChanged();
+            }
         });
 }
 
@@ -141,7 +155,7 @@ bool SimulationController::start(const QString &runName, bool overwrite)
     for (EntityId id : compiled.plan->outputOrder()) {
         const auto *element = dynamic_cast<const ModelElement *>(model->find(id));
         if (element)
-            variables.push_back(RunVariableInfo(id, element->displayName(), element->nameKey(), element->unit()));
+            variables.push_back(RunVariableInfo(id, element->displayName(), element->nameKey(), element->unit(), element->kind()));
     }
     m_activeRequest = std::make_shared<SimulationRunRequest>(std::move(model), std::move(*compiled.plan), name,
         m_documentController->simulationRevision(), std::move(variables));
@@ -191,6 +205,9 @@ void SimulationController::reset()
     m_cancelRequested.reset();
     m_lastRun.reset();
     m_lastRunName.clear();
+    m_workbenchVariable = 0;
+    m_workbenchNameKey.clear();
+    emit workbenchVariableChanged();
     m_runs.clear();
     m_loadedRuns.clear();
     m_nextRunId = 1;
@@ -236,6 +253,29 @@ void SimulationController::setRunLoaded(RunId id, bool loaded)
 bool SimulationController::isRunLoaded(RunId id) const
 {
     return m_loadedRuns.contains(id);
+}
+
+void SimulationController::setWorkbenchVariable(EntityId id)
+{
+    const auto *element = dynamic_cast<const ModelElement *>(m_documentController->document().find(id));
+    const EntityId normalized = element ? id : 0;
+    const QString nameKey = element ? element->nameKey() : QString();
+    if (m_workbenchVariable == normalized && m_workbenchNameKey == nameKey)
+        return;
+    m_workbenchVariable = normalized;
+    m_workbenchNameKey = nameKey;
+    emit workbenchVariableChanged();
+}
+
+void SimulationController::setWorkbenchVariableName(const QString &nameKey)
+{
+    const ModelElement *element = nameKey.isEmpty() ? nullptr : m_documentController->document().findByName(nameKey);
+    const EntityId id = element ? element->id() : 0;
+    if (m_workbenchVariable == id && m_workbenchNameKey == nameKey)
+        return;
+    m_workbenchVariable = id;
+    m_workbenchNameKey = nameKey;
+    emit workbenchVariableChanged();
 }
 
 void SimulationController::setStatus(SimulationSessionStatus status)

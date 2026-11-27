@@ -51,7 +51,8 @@ private:
     bool exportXmile();
     bool exportPng();
     bool maybeSave();
-    void setCurrentFile(const QString &fileName);
+    void setCurrentFile(const QString &fileName, const QString &documentTitle = QString());
+    QString nextUntitledTitle();
     void setDirty(bool dirty);
     void setTool(DiagramScene::Tool tool);
     void refreshValidation();
@@ -83,5 +84,6 @@ private:
     QPointF m_cursorScenePosition;
     RecentFiles m_recentFiles;
     QString m_fileName;
+    QString m_documentTitle;
     bool m_dirty = false;
 };

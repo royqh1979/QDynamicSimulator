@@ -24,7 +24,11 @@ add_library(qds-editor STATIC
     Routing.h
     SimulationController.cpp
     SimulationController.h
+    SimulationResultsWidget.cpp
+    SimulationResultsWidget.h
     SimulationSettingsDialog.cpp
+    SimulationTableModel.cpp
+    SimulationTableModel.h
     SimulationSettingsDialog.h
     Translation.cpp
     Translation.h

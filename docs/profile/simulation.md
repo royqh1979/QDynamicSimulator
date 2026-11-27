@@ -55,3 +55,14 @@ Euler 与结果查询校验和均为约 2.09592e+07。时间由整数步序号�
 | simulation_rk4_evaluation | 4000000 | 2429.52 | 0.607379 |
 
 RK4 校验和约为 2.20265e+07。Euler 与 RK4 分列，不用不同方法的校验和互相替代；四阶收敛和阶段失败原子性由单元测试覆盖。
+
+## 最小结果 Dock
+
+运行 Release `profile-editor.exe 1000`。`results_table_bind` 每轮将真实 NamedRun 与 Stock nameKey 绑定到新建 SimulationTableModel，读取行数和末时刻值；模型只共享不可变 Run，不复制完整矩阵。`results_dock_refresh` 反复切换同一 Run 的加载状态，覆盖 Datasets、Run/Variable 选择器、状态文本和表格的同步刷新；不包含 Worker 或积分时间。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| results_table_bind | 1000 | 2.6501 | 2.6501 |
+| results_dock_refresh | 1000 | 35.3193 | 35.3193 |
+
+真实 MainWindow 测试覆盖首次成功显示、Workbench 与画布单选双向同步、表格末时刻可见、最新 Run 优先、加载状态不删除结果、历史名称、旧模型提示、文档重置清理及无显式选择时优先 Stock。163 条中文翻译全部完成，本次 profile stderr 无警告。

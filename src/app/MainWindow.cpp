@@ -7,6 +7,7 @@
 #include "MiniMapView.h"
 #include "PropertyPanel.h"
 #include "SimulationController.h"
+#include "SimulationResultsWidget.h"
 #include "SimulationSettingsDialog.h"
 #include <io/DocumentFile.h>
 #include <io/XmileFile.h>
@@ -76,6 +77,8 @@ MainWindow::MainWindow(QWidget *parent)
 {
     Q_INIT_RESOURCE(icons);
     setAcceptDrops(true);
+    setCorner(Qt::BottomLeftCorner, Qt::LeftDockWidgetArea);
+    setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
     setCentralWidget(m_view);
     connect(m_view, &DiagramView::fileOpenRequested, this, [this](const QString &fileName) {
         if (maybeSave())
@@ -130,7 +133,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_autoSaveTimer, &QTimer::timeout, this, &MainWindow::autoSave);
     m_autoSaveTimer->start(10000);
 
-    setCurrentFile(QString());
+    setCurrentFile(QString(), nextUntitledTitle());
     statusBar()->showMessage(tr("Drag elements with Select; zoom with the mouse wheel"), 5000);
     m_cursorPosition = new QLabel(this);
     m_cursorPosition->setObjectName(QStringLiteral("cursorPosition"));
@@ -145,6 +148,10 @@ MainWindow::MainWindow(QWidget *parent)
     updateCursorStatus();
     resize(1200, 800);
     restoreWindowLayout();
+    if (m_simulation->runs().isEmpty()) {
+        if (QDockWidget *resultsDock = findChild<QDockWidget *>(QStringLiteral("resultsDock")))
+            resultsDock->hide();
+    }
 }
 
 bool MainWindow::openFile(const QString &fileName)
@@ -159,7 +166,7 @@ bool MainWindow::openFile(const QString &fileName)
     }
 
     m_controller->replaceDocument(std::move(document));
-    setCurrentFile(nativeFormat ? fileName : QString());
+    setCurrentFile(nativeFormat ? fileName : QString(), QFileInfo(fileName).completeBaseName());
     setDirty(!nativeFormat);
     m_recentFiles.add(fileName);
     updateRecentFiles();
@@ -205,6 +212,7 @@ void MainWindow::createActions()
     fileToolBar->setObjectName(QStringLiteral("fileToolBar"));
 
     QAction *newAction = new QAction(actionIcon("new"), tr("&New"), this);
+    newAction->setObjectName(QStringLiteral("newAction"));
     newAction->setShortcut(QKeySequence::New);
     connect(newAction, &QAction::triggered, this, &MainWindow::newFile);
     fileMenu->addAction(newAction);
@@ -226,6 +234,7 @@ void MainWindow::createActions()
     fileToolBar->addAction(saveAction);
 
     QAction *saveAsAction = new QAction(actionIcon("save-as"), tr("Save &As..."), this);
+    saveAsAction->setObjectName(QStringLiteral("saveAsAction"));
     saveAsAction->setShortcut(QKeySequence::SaveAs);
     connect(saveAsAction, &QAction::triggered, this, [this]() {
         saveAs();
@@ -507,6 +516,40 @@ void MainWindow::createPropertyPanel()
             }
         }
     });
+    QDockWidget *resultsDock = new QDockWidget(tr("Run results"), this);
+    resultsDock->setObjectName(QStringLiteral("resultsDock"));
+    auto *results = new SimulationResultsWidget(m_simulation, resultsDock);
+    resultsDock->setWidget(results);
+    addDockWidget(Qt::BottomDockWidgetArea, resultsDock);
+    resultsDock->hide();
+    connect(m_simulation, &SimulationController::runTerminated, this,
+        [this, resultsDock](const std::shared_ptr<const qds::core::SimulationRun> &run) {
+            if (run->status() == qds::core::SimulationRunStatus::Completed)
+                resultsDock->show();
+        });
+    connect(m_simulation, &SimulationController::namedRunsChanged, this, [this, resultsDock]() {
+        if (m_simulation->runs().isEmpty())
+            resultsDock->hide();
+    });
+    connect(m_scene, &QGraphicsScene::selectionChanged, this, [this]() {
+        const QList<QGraphicsItem *> selection = m_scene->selectedItems();
+        if (selection.size() != 1)
+            return;
+        const auto *item = dynamic_cast<const DiagramItem *>(selection.front());
+        if (item && dynamic_cast<const qds::core::ModelElement *>(m_controller->document().find(item->id())))
+            m_simulation->setWorkbenchVariable(item->id());
+    });
+    connect(m_simulation, &SimulationController::workbenchVariableChanged, this, [this]() {
+        DiagramItem *item = m_scene->item(m_simulation->workbenchVariable());
+        if (!item)
+            return;
+        const QList<QGraphicsItem *> selection = m_scene->selectedItems();
+        if (selection.size() == 1 && selection.front() == item)
+            return;
+        m_scene->clearSelection();
+        item->setSelected(true);
+    });
+
     m_propertyPanel->refresh();
     refreshValidation();
 }
@@ -615,7 +658,7 @@ void MainWindow::newFile()
     if (!maybeSave())
         return;
     m_controller->replaceDocument(qds::core::Document());
-    setCurrentFile(QString());
+    setCurrentFile(QString(), nextUntitledTitle());
     setDirty(false);
     m_propertyPanel->refresh();
 }
@@ -645,7 +688,7 @@ bool MainWindow::saveAs()
     QString fileName = QFileDialog::getSaveFileName(
         this,
         tr("Save QDS document"),
-        m_fileName,
+        m_fileName.isEmpty() ? m_documentTitle + QStringLiteral(".qds") : m_fileName,
         tr("QDS documents (*.qds);;All files (*)"));
     if (fileName.isEmpty())
         return false;
@@ -746,12 +789,18 @@ bool MainWindow::maybeSave()
     return choice == QMessageBox::Discard;
 }
 
-void MainWindow::setCurrentFile(const QString &fileName)
+void MainWindow::setCurrentFile(const QString &fileName, const QString &documentTitle)
 {
     m_fileName = fileName;
-    const QString displayName = fileName.isEmpty() ? tr("Untitled.qds") : QFileInfo(fileName).fileName();
-    setWindowTitle(tr("%1[*] - QDynamicSimulator").arg(displayName));
+    m_documentTitle = fileName.isEmpty() ? documentTitle : QFileInfo(fileName).completeBaseName();
+    setWindowTitle(tr("%1[*] - QDynamicSimulator").arg(m_documentTitle));
     setWindowModified(false);
+}
+
+QString MainWindow::nextUntitledTitle()
+{
+    static int number = 0;
+    return tr("Untitled %1").arg(++number);
 }
 
 void MainWindow::setDirty(bool dirty)
@@ -849,7 +898,7 @@ void MainWindow::offerRecovery()
     }
     m_controller->replaceDocument(std::move(document));
     applyWorkspace(workspace);
-    setCurrentFile(QString());
+    setCurrentFile(QString(), nextUntitledTitle());
     setDirty(true);
 }
 

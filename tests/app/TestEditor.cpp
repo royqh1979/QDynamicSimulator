@@ -11,12 +11,15 @@
 #include "RecentFiles.h"
 #include "Routing.h"
 #include "SimulationController.h"
+#include "SimulationResultsWidget.h"
 #include "SimulationSettingsDialog.h"
+#include "SimulationTableModel.h"
 #include <io/DocumentFile.h>
 #include <io/XmileFile.h>
 
 #include <QAbstractButton>
 #include <QClipboard>
+#include <QComboBox>
 #include <QVector>
 #include <QDir>
 #include <QDockWidget>
@@ -24,6 +27,7 @@
 #include <QDoubleSpinBox>
 #include <QFile>
 #include <QFileInfo>
+#include <QFileDialog>
 #include <QFocusEvent>
 #include <QFontComboBox>
 #include <QFrame>
@@ -48,8 +52,10 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QToolBar>
+#include <QTableView>
 #include <QTranslator>
 #include <QUrl>
+#include <QRegularExpression>
 #include <QtTest>
 
 #include <cmath>
@@ -170,9 +176,11 @@ private slots:
     void unifiedIdUndoRedo();
     void modifierDragOperations();
     void fileDropOpen();
+    void documentTitlesAndSaveNames();
     void pngExportAndClipboard();
     void workspaceRestore();
     void simulationControls();
+    void resultsDock();
     void simulationSettingsAction();
     void stockInitialValuePresentation();
     void recoveryRestoresWorkspace();
@@ -1870,6 +1878,10 @@ void TestEditor::rubberBandReverseRepaint()
     QVERIFY(scene && viewPointer);
     DiagramView &view = *viewPointer;
     scene->setGridVisible(false);
+    for (QDockWidget *dock : window.findChildren<QDockWidget *>())
+        dock->hide();
+    view.setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    view.setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     window.resize(1000, 800);
     window.show();
     QVERIFY(QTest::qWaitForWindowExposed(&window));
@@ -2490,7 +2502,8 @@ void TestEditor::fileDropOpen()
     QDropEvent drop(QPoint(20, 20), Qt::CopyAction, &data, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view->viewport(), &drop);
     QVERIFY(drop.isAccepted());
-    QVERIFY(window.windowTitle().contains(QStringLiteral("\u62D6\u653E\u6A21\u578B.qds")));
+    QVERIFY(window.windowTitle().startsWith(QStringLiteral("\u62D6\u653E\u6A21\u578B[*]")));
+    QVERIFY(!window.windowTitle().contains(QStringLiteral(".qds")));
     QVERIFY(scene->item(1));
     QCOMPARE(scene->selectedModelElement(), nullptr);
     QCOMPARE(scene->findElements(QStringLiteral("\u4E2D\u6587\u5E93\u5B58")).size(), std::size_t(1));
@@ -2509,14 +2522,51 @@ void TestEditor::fileDropOpen()
     QDropEvent plainDrop(QPoint(20, 20), Qt::CopyAction, &data, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view->viewport(), &plainDrop);
     QVERIFY(plainDrop.isAccepted());
-    QVERIFY(window.windowTitle().contains(QStringLiteral("Untitled.qds")));
+    QVERIFY(window.windowTitle().startsWith(QStringLiteral("plain[*]")));
     QCOMPARE(scene->findElements(QStringLiteral("Plain")).size(), std::size_t(1));
+
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs, true);
+    QTimer::singleShot(0, &window, [&window]() {
+        auto *dialog = qobject_cast<QFileDialog *>(QApplication::activeModalWidget());
+        QVERIFY(dialog);
+        QCOMPARE(QFileInfo(dialog->selectedFiles().value(0)).fileName(), QStringLiteral("plain.qds"));
+        dialog->reject();
+    });
+    window.findChild<QAction *>(QStringLiteral("saveAsAction"))->trigger();
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs, false);
 
     QMimeData invalid;
     invalid.setUrls({QUrl::fromLocalFile(directory.filePath(QStringLiteral("not-model.txt")))});
     QDragEnterEvent rejected(QPoint(20, 20), Qt::CopyAction, &invalid, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(view->viewport(), &rejected);
     QVERIFY(!rejected.isAccepted());
+}
+
+void TestEditor::documentTitlesAndSaveNames()
+{
+    MainWindow first;
+    MainWindow second;
+    const QRegularExpression pattern(QStringLiteral("^Untitled (\\d+)\\[\\*\\]"));
+    const QRegularExpressionMatch firstMatch = pattern.match(first.windowTitle());
+    const QRegularExpressionMatch secondMatch = pattern.match(second.windowTitle());
+    QVERIFY(firstMatch.hasMatch() && secondMatch.hasMatch());
+    const int firstNumber = firstMatch.captured(1).toInt();
+    QCOMPARE(secondMatch.captured(1).toInt(), firstNumber + 1);
+    second.findChild<QAction *>(QStringLiteral("newAction"))->trigger();
+    const QRegularExpressionMatch newMatch = pattern.match(second.windowTitle());
+    QVERIFY(newMatch.hasMatch());
+    QCOMPARE(newMatch.captured(1).toInt(), firstNumber + 2);
+
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs, true);
+    QTimer::singleShot(0, &second, [&second, firstNumber]() {
+        auto *dialog = qobject_cast<QFileDialog *>(QApplication::activeModalWidget());
+        QVERIFY(dialog);
+        QCOMPARE(QFileInfo(dialog->selectedFiles().value(0)).fileName(),
+                 QStringLiteral("Untitled %1.qds").arg(firstNumber + 2));
+        dialog->reject();
+    });
+    second.findChild<QAction *>(QStringLiteral("saveAsAction"))->trigger();
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs, false);
 }
 
 void TestEditor::pngExportAndClipboard()
@@ -2712,6 +2762,97 @@ void TestEditor::simulationControls()
     QVERIFY(issues && issues->count() > 0);
 }
 
+void TestEditor::resultsDock()
+{
+    MainWindow window;
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    auto *controller = window.findChild<DocumentController *>();
+    auto *simulation = window.findChild<SimulationController *>();
+    auto *scene = window.findChild<DiagramScene *>();
+    auto *dock = window.findChild<QDockWidget *>(QStringLiteral("resultsDock"));
+    QVERIFY(controller && simulation && scene && dock);
+    QVERIFY(!dock->isVisible());
+
+    const EntityId stock = controller->createVariable(ElementKind::Stock, QPointF());
+    const EntityId auxiliary = controller->createVariable(ElementKind::Auxiliary, QPointF(200.0, 0.0));
+    controller->renameElement(stock, QStringLiteral("Population"));
+    controller->setInitialEquation(stock, QStringLiteral("1000"));
+    controller->setUnit(stock, QStringLiteral("rabbit"));
+    controller->renameElement(auxiliary, QStringLiteral("birth rate"));
+    controller->setEquation(auxiliary, QStringLiteral("0.125"));
+    controller->setUnit(auxiliary, QStringLiteral("fraction/Year"));
+    scene->item(stock)->setSelected(true);
+    QCOMPARE(simulation->workbenchVariable(), stock);
+
+    QVERIFY(simulation->start(QStringLiteral("equilib")));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QVERIFY(dock->isVisible());
+    auto *variables = window.findChild<QComboBox *>(QStringLiteral("workbenchVariableCombo"));
+    auto *runs = window.findChild<QComboBox *>(QStringLiteral("resultsRunCombo"));
+    auto *datasets = window.findChild<QListWidget *>(QStringLiteral("datasetsList"));
+    auto *table = window.findChild<QTableView *>(QStringLiteral("resultsTable"));
+    auto *status = window.findChild<QLabel *>(QStringLiteral("runStatusLabel"));
+    auto *model = qobject_cast<SimulationTableModel *>(table->model());
+    QVERIFY(variables && runs && datasets && table && status && model);
+    QCOMPARE(variables->currentData().toString(), QStringLiteral("population"));
+    QCOMPARE(runs->currentText(), QStringLiteral("equilib"));
+    QCOMPARE(datasets->count(), 1);
+    QCOMPARE(datasets->item(0)->checkState(), Qt::Checked);
+    QCOMPARE(model->columnCount(), 2);
+    QCOMPARE(model->rowCount(), simulation->runs().front().run()->times().size());
+    QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("Population [rabbit]"));
+    const QModelIndex last = model->index(model->rowCount() - 1, 1);
+    QCOMPARE(model->data(last).toString(), QStringLiteral("1000"));
+    table->scrollTo(last);
+    QTRY_VERIFY(table->viewport()->rect().intersects(table->visualRect(last)));
+    QCOMPARE(table->verticalScrollBar()->value(), table->verticalScrollBar()->maximum());
+
+    scene->clearSelection();
+    scene->item(auxiliary)->setSelected(true);
+    QCOMPARE(variables->currentData().toString(), QStringLiteral("birth_rate"));
+    QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("birth rate [fraction/Year]"));
+    QCOMPARE(model->data(model->index(model->rowCount() - 1, 1)).toString(), QStringLiteral("0.125"));
+    const int populationIndex = variables->findData(QStringLiteral("population"));
+    QVERIFY(populationIndex >= 0);
+    variables->setCurrentIndex(populationIndex);
+    QCOMPARE(simulation->workbenchVariable(), stock);
+    QVERIFY(scene->item(stock)->isSelected());
+
+    controller->renameElement(stock, QStringLiteral("Rabbit Population"));
+    controller->setEquation(auxiliary, QStringLiteral("0.25"));
+    QVERIFY(simulation->start(QStringLiteral("growth")));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QCOMPARE(datasets->count(), 2);
+    QCOMPARE(datasets->item(0)->text(), QStringLiteral("growth"));
+    QCOMPARE(runs->currentText(), QStringLiteral("growth"));
+    datasets->item(1)->setCheckState(Qt::Unchecked);
+    QVERIFY(!simulation->isRunLoaded(datasets->item(1)->data(Qt::UserRole).toULongLong()));
+    QCOMPARE(simulation->runs().size(), 2);
+
+    runs->setCurrentIndex(1);
+    QCOMPARE(variables->currentText(), QStringLiteral("Population"));
+    QVERIFY(status->text().contains(QStringLiteral("older model")));
+    QCOMPARE(model->data(model->index(model->rowCount() - 1, 1)).toString(), QStringLiteral("1000"));
+    QVERIFY(!model->data(QModelIndex()).isValid());
+
+    controller->replaceDocument(Document());
+    QVERIFY(simulation->runs().isEmpty());
+    QCOMPARE(simulation->workbenchVariable(), EntityId(0));
+    QVERIFY(!dock->isVisible());
+    QCOMPARE(model->rowCount(), 0);
+
+    controller->createVariable(ElementKind::Stock, QPointF());
+    controller->setInitialEquation(controller->document().findByName("Stock1")->id(), QStringLiteral("10"));
+    QVERIFY(simulation->start(QStringLiteral("fallback")));
+    QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
+    QTRY_VERIFY(!simulation->isBusy());
+    QCOMPARE(variables->currentData().toString(), QStringLiteral("stock1"));
+    QCOMPARE(model->rowCount(), simulation->runs().front().run()->times().size());
+}
+
 void TestEditor::simulationSettingsAction()
 {
     MainWindow window;
@@ -2843,6 +2984,8 @@ void TestEditor::windowLayoutPersistence()
     QCoreApplication::setApplicationName(QStringLiteral("WindowLayout"));
 
     MainWindow window;
+    QCOMPARE(window.corner(Qt::BottomLeftCorner), Qt::LeftDockWidgetArea);
+    QCOMPARE(window.corner(Qt::BottomRightCorner), Qt::RightDockWidgetArea);
     window.show();
     QVERIFY(QTest::qWaitForWindowExposed(&window));
     window.resize(977, 633);
@@ -2855,17 +2998,17 @@ void TestEditor::windowLayoutPersistence()
     const QList<QDockWidget *> docks = window.findChildren<QDockWidget *>();
     for (const QDockWidget *dock : docks)
         QVERIFY(!dock->objectName().isEmpty());
+    const QSize expectedSize = window.size();
     QVERIFY(window.close());
 
     QSettings settings;
-    const QByteArray geometry = settings.value(QStringLiteral("mainWindow/geometry")).toByteArray();
-    const QByteArray state = settings.value(QStringLiteral("mainWindow/state")).toByteArray();
-    QVERIFY(!geometry.isEmpty());
-    QVERIFY(!state.isEmpty());
+    QVERIFY(!settings.value(QStringLiteral("mainWindow/geometry")).toByteArray().isEmpty());
+    QVERIFY(!settings.value(QStringLiteral("mainWindow/state")).toByteArray().isEmpty());
 
     MainWindow restored;
-    QCOMPARE(restored.saveGeometry(), geometry);
-    QCOMPARE(restored.saveState(), state);
+    QCOMPARE(restored.size(), expectedSize);
+    QCOMPARE(restored.corner(Qt::BottomLeftCorner), Qt::LeftDockWidgetArea);
+    QCOMPARE(restored.corner(Qt::BottomRightCorner), Qt::RightDockWidgetArea);
     auto *restoredProperties = restored.findChild<QDockWidget *>(QStringLiteral("propertyDock"));
     auto *restoredNavigation = restored.findChild<QDockWidget *>(QStringLiteral("navigationDock"));
     QVERIFY(restoredProperties && restoredNavigation);
@@ -2880,6 +3023,7 @@ void TestEditor::simplifiedChineseTranslation()
     QVERIFY(translator.load(QStringLiteral(":/i18n/qds_zh_CN.qm")));
     QApplication::installTranslator(&translator);
     MainWindow window;
+    QVERIFY(window.windowTitle().startsWith(QStringLiteral("\u672A\u547D\u540D ")));
     const QList<QAction *> menus = window.menuBar()->actions();
     QVERIFY(menus.size() >= 5);
     QCOMPARE(menus[0]->text(), QStringLiteral("\u6587\u4EF6(&F)"));
@@ -2891,6 +3035,14 @@ void TestEditor::simplifiedChineseTranslation()
     for (QAction *action : window.findChildren<QAction *>())
         hasStock = hasStock || action->text() == QStringLiteral("\u5B58\u91CF");
     QVERIFY(hasStock);
+    auto *resultsDock = window.findChild<QDockWidget *>(QStringLiteral("resultsDock"));
+    auto *results = window.findChild<SimulationResultsWidget *>();
+    QVERIFY(resultsDock && results);
+    QCOMPARE(resultsDock->windowTitle(), QStringLiteral("\u8FD0\u884C\u7ED3\u679C"));
+    QCOMPARE(results->findChild<QLabel *>(QStringLiteral("runStatusLabel"))->text(),
+             QStringLiteral("\u5C1A\u65E0\u5DF2\u5B8C\u6210\u7684\u8FD0\u884C"));
+    auto *table = results->findChild<QTableView *>(QStringLiteral("resultsTable"));
+    QCOMPARE(table->model()->headerData(0, Qt::Horizontal).toString(), QStringLiteral("\u65F6\u95F4"));
     QApplication::removeTranslator(&translator);
 
     QFile source(QStringLiteral(QDS_ZH_CN_TS_PATH));

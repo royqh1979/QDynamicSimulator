@@ -47,6 +47,7 @@
 ### 3.1 模型文档管理
 
 - 新建、打开、保存、另存为和关闭模型。
+- 文档标题使用去掉最后一个后缀的文件名，不显示完整路径；新建及未命名恢复文档按 Untitled 1、2…递增。首次保存及导入后另存时，以 documentTitle.qds 作为 Save As 初始文件名；已有 QDS 的另存保留完整原路径。保存成功后按实际文件名更新标题。
 - 保存状态、修改标记和关闭前确认。
 - 保存失败时不破坏原文件。
 - 最近文件列表。
@@ -103,7 +104,7 @@
 
 ### 3.5 选择与编辑操作
 
-- 单选、框选、多选、全选、反选和取消选择。框选不使用 Qt 原生 QRubberBand：DiagramView 在 viewport 上显示透明穿透的 QFrame，并调用 `setSelectionArea()` 保持 Replace/Add 选择语义；每次移动合并旧/新矩形精确更新，释放后隐藏，避免 Windows 样式或高频反向拖动留下轨迹。选区颜色来自 DiagramPalette，中键/空格平移和 RoutedItem 控制句柄行为不变。
+- 单选、框选、多选、全选和取消选择。框选不使用 Qt 原生 QRubberBand：DiagramView 在 viewport 上显示透明穿透的 QFrame，并调用 `setSelectionArea()` 保持 Replace/Add 选择语义；每次移动合并旧/新矩形精确更新，释放后隐藏，避免 Windows 样式或高频反向拖动留下轨迹。选区颜色来自 DiagramPalette，中键/空格平移和 RoutedItem 控制句柄行为不变。
 - 空格状态由 DiagramScene 记录，按键仍走 Qt 默认 Scene 转发，内联名称编辑器因此可直接接收空格，不注册全局快捷键。DiagramView 仅在新的左键按下时读取该状态并决定是否平移，已经进行的编辑、拖动、框选或连线不因空格键改变操作。窗口以 `ActiveWindowFocusReason` 失焦或获焦时清空状态，普通控件间焦点切换不清空。
 - 单元素及多元素移动。
 - 复制、剪切、粘贴及跨模型粘贴。

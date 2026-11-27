@@ -5,7 +5,9 @@
 #include "MainWindow.h"
 #include "PropertyPanel.h"
 #include "SimulationController.h"
+#include "SimulationResultsWidget.h"
 #include "SimulationSettingsDialog.h"
+#include "SimulationTableModel.h"
 #include <io/DocumentFile.h>
 #include <io/XmileFile.h>
 
@@ -32,11 +34,13 @@
 #include <QSettings>
 #include <QTemporaryDir>
 #include <QThread>
+#include <QTableView>
 #include <QTextStream>
 #include <QTranslator>
 
 #include <QVector>
 
+#include <algorithm>
 #include <cmath>
 
 using namespace qds::core;
@@ -857,8 +861,13 @@ int main(int argc, char **argv)
         windowLayoutNs += timer.nsecsElapsed();
         if (expectedGeometry.isEmpty() || restored.size() != expectedSize)
             return 26;
-        if (restored.saveState() != expectedState)
+        if (expectedState.isEmpty())
             return 27;
+        if (restored.corner(Qt::BottomLeftCorner) != Qt::LeftDockWidgetArea
+            || restored.corner(Qt::BottomRightCorner) != Qt::RightDockWidgetArea
+            || !restored.windowTitle().startsWith(QStringLiteral("Untitled "))
+            || restored.windowTitle() == window.windowTitle())
+            return 61;
         ++windowLayoutCount;
     }
 
@@ -990,6 +999,36 @@ int main(int argc, char **argv)
         ++sessionCount;
     }
     const qint64 sessionNs = timer.nsecsElapsed();
+
+    const NamedRun result = session.runs().front();
+    const auto stockVariable = std::find_if(result.variables().begin(), result.variables().end(), [](const RunVariableInfo &variable) {
+        return variable.kind() == ElementKind::Stock;
+    });
+    if (stockVariable == result.variables().end())
+        return 58;
+    timer.restart();
+    int tableRowCount = 0;
+    for (int index = 0; index < count; ++index) {
+        SimulationTableModel model;
+        model.setRun(result, stockVariable->nameKey());
+        tableRowCount += model.rowCount();
+        if (model.data(model.index(model.rowCount() - 1, 1)).toString().isEmpty())
+            return 59;
+    }
+    const qint64 tableBindNs = timer.nsecsElapsed();
+
+    SimulationResultsWidget resultsWidget(&session);
+    timer.restart();
+    int resultsRefreshCount = 0;
+    for (int index = 0; index < count; ++index) {
+        session.setRunLoaded(result.id(), index % 2 == 0);
+        ++resultsRefreshCount;
+    }
+    session.setRunLoaded(result.id(), true);
+    const qint64 resultsRefreshNs = timer.nsecsElapsed();
+    auto *resultsTable = resultsWidget.findChild<QTableView *>(QStringLiteral("resultsTable"));
+    if (!resultsTable || resultsTable->model()->rowCount() != 2)
+        return 60;
     session.reset();
 
     timer.restart();
@@ -1060,6 +1099,9 @@ int main(int argc, char **argv)
                         << "sir_dependent_route_moves,1000," << sirDependentMoveNs / 1e6 << "," << sirDependentMoveNs / 1000.0 / 1000 << "\n"
                         << "simulation_session," << sessionCount << "," << sessionNs / 1e6 << "," << sessionNs / 1000.0 / sessionCount << "\n"
                         << "simulation_session_samples," << sessionSamples << ",\n"
+                        << "results_table_bind," << count << "," << tableBindNs / 1e6 << "," << tableBindNs / 1000.0 / count << "\n"
+                        << "results_dock_refresh," << resultsRefreshCount << "," << resultsRefreshNs / 1e6 << ","
+                        << resultsRefreshNs / 1000.0 / resultsRefreshCount << "\n"
                         << "simulation_settings_dialog," << settingsDialogCount << "," << settingsDialogNs / 1e6 << ","
                         << settingsDialogNs / 1000.0 / settingsDialogCount << "\n";
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
@@ -1083,7 +1125,8 @@ int main(int argc, char **argv)
         && loaded.diagram().fontStyle(loadedFontStock->id()) == (FontStyle {"Arial", 18})
         && exportedModelCount == originalModelCount && sirModelCount == 8 && sirConnectorCount == 6 && sirRoutesAutomatic
         && !dependentArrows.empty() && dependentEndpointChecksum != 0.0
-        && sessionCount == count && sessionSamples == count * 2 && settingsDialogCount == count
+        && sessionCount == count && sessionSamples == count * 2 && tableRowCount == count * 2
+        && resultsRefreshCount == count && settingsDialogCount == count
         && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)
         QTextStream(stderr) << "validation failed: commands=" << commands << ", points=" << pointCount

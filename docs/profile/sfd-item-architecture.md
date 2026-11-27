@@ -153,7 +153,7 @@
 | --- | ---: | ---: | ---: |
 | window_layout_restore | 100 | 13777.2 | 137772 |
 
-单元测试使用隔离 QSettings 目录，覆盖窗口 geometry 原始字节、Dock 隐藏/浮动状态、稳定 objectName 和第二次启动恢复，不读写开发者真实配置。profile 的尺寸断言使用关闭前实际尺寸，避免不同平台窗口管理器对未显示窗口 frame 的调整影响结果。
+单元测试使用隔离 QSettings 目录，验证 geometry/state 确实写入，并检查恢复后的窗口尺寸、Dock 隐藏/浮动状态、稳定 objectName 和角落归属，不比较 Qt 不透明布局字节，也不依赖固定面板宽度。profile 的尺寸断言使用关闭前实际尺寸，避免不同平台窗口管理器对未显示窗口 frame 的调整影响结果。窗口构造同时校验左右底部角落归属、Untitled 标题及编号递增；真实 Save As 对话框的默认 documentTitle.qds 由编辑器单元测试覆盖，不另设无意义的对话框计时指标。
 
 ## 元素字体编辑
 

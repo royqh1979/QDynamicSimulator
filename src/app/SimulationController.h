@@ -20,18 +20,20 @@ using RunId = quint64;
 class RunVariableInfo
 {
 public:
-    RunVariableInfo(qds::core::EntityId id, QString displayName, QString nameKey, QString unit);
+    RunVariableInfo(qds::core::EntityId id, QString displayName, QString nameKey, QString unit, qds::core::ElementKind kind);
 
     qds::core::EntityId id() const { return m_id; }
     const QString &displayName() const { return m_displayName; }
     const QString &nameKey() const { return m_nameKey; }
     const QString &unit() const { return m_unit; }
+    qds::core::ElementKind kind() const { return m_kind; }
 
 private:
     qds::core::EntityId m_id;
     QString m_displayName;
     QString m_nameKey;
     QString m_unit;
+    qds::core::ElementKind m_kind;
 };
 
 class NamedRun
@@ -78,19 +80,24 @@ public:
 
     SimulationSessionStatus status() const { return m_status; }
     bool isBusy() const;
-    QVector<NamedRun> runs() const { return m_runs; }
+    const QVector<NamedRun> &runs() const { return m_runs; }
     std::shared_ptr<const qds::core::SimulationRun> lastRun() const { return m_lastRun; }
     const QString &lastRunName() const { return m_lastRunName; }
     bool hasRunName(const QString &name) const;
     bool isOutdated(const NamedRun &run) const;
     void setRunLoaded(RunId id, bool loaded);
     bool isRunLoaded(RunId id) const;
+    qds::core::EntityId workbenchVariable() const { return m_workbenchVariable; }
+    const QString &workbenchNameKey() const { return m_workbenchNameKey; }
+    void setWorkbenchVariable(qds::core::EntityId id);
+    void setWorkbenchVariableName(const QString &nameKey);
 
 signals:
     void statusChanged(SimulationSessionStatus status);
     void busyChanged(bool busy);
     void runTerminated(std::shared_ptr<const qds::core::SimulationRun> run);
     void namedRunsChanged();
+    void workbenchVariableChanged();
     void compilationFailed(const QVector<qds::core::ModelIssue> &issues);
     void errorOccurred(const QString &message);
 
@@ -105,6 +112,8 @@ private:
     std::shared_ptr<const SimulationRunRequest> m_activeRequest;
     std::shared_ptr<const qds::core::SimulationRun> m_lastRun;
     QString m_lastRunName;
+    qds::core::EntityId m_workbenchVariable = 0;
+    QString m_workbenchNameKey;
     QPointer<QThread> m_thread;
     std::shared_ptr<std::atomic_bool> m_cancelRequested;
     SimulationSessionStatus m_status = SimulationSessionStatus::Idle;
