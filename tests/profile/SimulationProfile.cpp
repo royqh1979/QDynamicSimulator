@@ -124,7 +124,7 @@ int main(int argc, char **argv)
                 QTextStream(stderr) << row << ":" << QString::number(run.times()[row], 'g', 17) << "\n";
             return 10;
         }
-        runChecksum += run.series(stock)->back();
+        runChecksum += run.series("stock")->back();
         savedPoints += run.times().size();
         ++runCount;
     }
@@ -140,7 +140,7 @@ int main(int argc, char **argv)
     timer.restart();
     double lookupChecksum = 0.0;
     for (int index = 0; index < count; ++index) {
-        const QVector<double> *series = lookupRun.series(stock);
+        const QVector<double> *series = lookupRun.series("stock");
         if (!series)
             return 12;
         lookupChecksum += series->back();
@@ -158,7 +158,7 @@ int main(int argc, char **argv)
         const SimulationRun run = SimulationRunner(exponential, *rk4Compiled.plan).run();
         if (run.status() != SimulationRunStatus::Completed || run.times().size() != steps + 1)
             return 14;
-        rk4Checksum += run.series(stock)->back();
+        rk4Checksum += run.series("stock")->back();
         ++rk4Count;
     }
     const qint64 rk4Ns = timer.nsecsElapsed();
@@ -190,7 +190,7 @@ int main(int argc, char **argv)
     double arrayChecksum = 0.0;
     for (int index = 0; index < count; ++index) {
         const SimulationRun run = SimulationRunner(arrayDocument, *arrayCompiled.plan).run();
-        const QVector<ArrayValue> *series = run.arraySeries(arrayStock);
+        const QVector<ArrayValue> *series = run.arraySeries("stock");
         if (run.status() != SimulationRunStatus::Completed || run.times().size() != steps + 1
             || !series || series->size() != steps + 1)
             return 18;
@@ -206,8 +206,8 @@ int main(int argc, char **argv)
     if (std::abs(arrayChecksum / arrayRunCount - arrayExpected) > 1e-8 * arrayExpected) {
         const SimulationRun diagnostic = SimulationRunner(arrayDocument, *arrayCompiled.plan).run();
         QTextStream(stderr) << "Array checksum mismatch: actual=" << arrayChecksum / arrayRunCount
-                            << " expected=" << arrayExpected << " first=" << diagnostic.arraySeries(arrayStock)->back().values.front()
-                            << " last=" << diagnostic.arraySeries(arrayStock)->back().values.back() << "\n";
+                            << " expected=" << arrayExpected << " first=" << diagnostic.arraySeries("stock")->back().values.front()
+                            << " last=" << diagnostic.arraySeries("stock")->back().values.back() << "\n";
         return 19;
     }
 

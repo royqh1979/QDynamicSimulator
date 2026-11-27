@@ -22,7 +22,6 @@ class RunVariableInfo
 public:
     RunVariableInfo(EntityId id, QString displayName, QString nameKey, QString unit, ElementKind kind, bool constant);
 
-    EntityId id() const { return m_id; }
     const QString &displayName() const { return m_displayName; }
     const QString &nameKey() const { return m_nameKey; }
     const QString &unit() const { return m_unit; }
@@ -30,6 +29,10 @@ public:
     bool isConstant() const { return m_constant; }
 
 private:
+    friend class SimulationRun;
+
+    EntityId id() const { return m_id; }
+
     EntityId m_id;
     QString m_displayName;
     QString m_nameKey;
@@ -90,7 +93,7 @@ public:
     const QString &name() const { return m_name; }
     quint64 modelRevision() const { return m_modelRevision; }
     const QVector<RunVariableInfo> &variables() const { return m_variables; }
-    QVector<EntityId> causes(EntityId dependent) const { return m_causes.value(dependent); }
+    QVector<QString> causes(const QString &nameKey) const;
     SimulationRun withMetadata(SimulationRunMetadata metadata) const;
 
     SimulationRunStatus status() const { return m_status; }
@@ -98,12 +101,18 @@ public:
     const QVector<double> &times() const { return m_times; }
     const QVector<ModelIssue> &issues() const { return m_issues; }
     std::optional<double> endTime() const { return m_endTime; }
-    const QVector<double> *series(EntityId id) const;
-    const QVector<ArrayValue> *arraySeries(EntityId id) const;
+    const QVector<double> *series(const QString &nameKey) const;
+    const QVector<ArrayValue> *arraySeries(const QString &nameKey) const;
 
 private:
     friend class SimulationRunner;
     SimulationRun() = default;
+
+    const RunVariableInfo *variable(const QString &nameKey) const;
+    const RunVariableInfo *variable(EntityId id) const;
+    const QVector<double> *series(EntityId id) const;
+    const QVector<ArrayValue> *arraySeries(EntityId id) const;
+    QVector<EntityId> causes(EntityId dependent) const { return m_causes.value(dependent); }
 
     RunId m_id = 0;
     QString m_name;

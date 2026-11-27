@@ -14,7 +14,7 @@
 创建模型 → 编辑结构/方程 → 模型与单位检查 → 命名并运行 → 选择 Workbench Variable → 折线/表格/多 Run 分析
 ```
 
-界面只调用 Core 公开接口，不在 Widget、Action 或图表中实现公式解析、拓扑排序或积分算法。
+界面只调用 Core 公开接口，不在 Widget、Action 或图表中实现公式解析、拓扑排序或积分算法。结果查询统一使用 nameKey，视图不得读取 RunVariableInfo.id；运行副本 EntityId 仅由 SimulationRun 内部用于 nameKey 映射。
 
 ## 2. 主窗口组织
 

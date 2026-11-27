@@ -1057,7 +1057,7 @@ int main(int argc, char **argv)
     int causesStripCount = 0;
     for (int index = 0; index < count; ++index) {
         session.setWorkbenchVariable(0);
-        session.setWorkbenchVariable(stockVariable->id());
+        session.setWorkbenchVariable(sessionDocument.document().findByName(stockVariable->nameKey())->id());
         resultsWidget.showCausesStrip();
         ++causesStripCount;
     }
