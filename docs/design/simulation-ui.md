@@ -137,7 +137,7 @@ SimulationRunRequest（不可变、共享所有权）
 ```text
 SimulationController : QObject
 ├─ shared_ptr<const SimulationRunRequest> activeRequest
-├─ NamedRun 集合                            RunId、runName、shared_ptr<const SimulationRun>
+├─ SimulationRun 集合                            RunId、runName、shared_ptr<const SimulationRun>
 ├─ 已加载 RunId 顺序                        最新优先；加载状态独立于结果所有权
 ├─ Workbench Variable 与可见变量状态
 ├─ Worker/QThread 的受控生命周期
@@ -145,7 +145,7 @@ SimulationController : QObject
 └─ Idle / Compiling / Running / Completed / Cancelled / Failed
 ```
 
-NamedRun 发布后不可变；覆盖同名结果也创建新 RunId 和新结果对象，不修改旧 SimulationRun。Worker 和信号只持有 RunId/共享 const 指针，不持有界面对象地址。
+SimulationRun 发布后不可变；覆盖同名结果也创建新 RunId 和新结果对象，不修改旧 SimulationRun。Worker 和信号只持有 RunId/共享 const 指针，不持有界面对象地址。
 
 - Worker 在独立线程中使用共享 const Request 执行同步 Runner；Core 不依赖 Qt 线程或 Widgets。
 - 进度通过带 QObject context 的 queued signal 返回 UI；限制更新频率，不逐公式发送信号。
@@ -159,7 +159,7 @@ NamedRun 发布后不可变；覆盖同名结果也创建新 RunId 和新结果�
 
 ### 3.3 结果文件与文档编辑
 
-QDS 只保存当前 Document，不包含 NamedRun。当前 Run 只存在于会话，新建/打开文档时清空。后续导出采用 CSV：单 Run 默认使用清理非法文件名字符后的 Run 名加 `.csv`，多 Run 对比使用首个 Run 名加 `-comparison.csv`。若增加 Run 保存/打开，文件只包含 Run 名、时间、变量显示名称/单位和结果序列，不包含模型信息；打开后只作为独立历史数据，不承担重算或模型定位。CSV 导出错误必须明确报告，不以部分文件冒充成功。
+QDS 只保存当前 Document，不包含 SimulationRun。当前 Run 只存在于会话，新建/打开文档时清空。后续导出采用 CSV：单 Run 默认使用清理非法文件名字符后的 Run 名加 `.csv`，多 Run 对比使用首个 Run 名加 `-comparison.csv`。若增加 Run 保存/打开，文件只包含 Run 名、时间、变量显示名称/单位和结果序列，不包含模型信息；打开后只作为独立历史数据，不承担重算或模型定位。CSV 导出错误必须明确报告，不以部分文件冒充成功。
 
 ### 3.4 结果与文档编辑
 
@@ -171,8 +171,8 @@ QDS 只保存当前 Document，不包含 NamedRun。当前 Run 只存在于会�
 - 首批采用保守失效规则：常量/初值、公式、变量类型、数值对象和 Flow 增删、Flow 端点、数组、宏、Lookup/Data/随机输入、仿真设置以及影响结果解释的名称/单位变化都推进 simulationRevision。
 - 元素位置、Route、字体、选择/悬停、画布缩放滚动、窗口布局和不影响计算的 Comment/Connector 展示变化不推进 simulationRevision。undo 后即使内容碰巧恢复，首批也允许保守地保持 Outdated。
 - 运行后的普通模型编辑不修改旧 Run；界面标记 `Results are from an older model`，并提供 Run 按钮刷新。
-- 新名称生成新的 NamedRun，并置于已加载列表首部；相同名称经确认后也只在新 Run 成功时替换旧记录。失败 Run 可以显示自身诊断，任何失败/取消都不得静默删除旧结果。
-- NamedRun 的 RunId 在会话内单调递增；runName 用于显示与覆盖判断，RunId 用于信号、加载列表和界面索引，避免改名或同名覆盖时引用错位。
+- 新名称生成新的 SimulationRun，并置于已加载列表首部；相同名称经确认后也只在新 Run 成功时替换旧记录。失败 Run 可以显示自身诊断，任何失败/取消都不得静默删除旧结果。
+- SimulationRun 的 RunId 在会话内单调递增；runName 用于显示与覆盖判断，RunId 用于信号、加载列表和界面索引，避免改名或同名覆盖时引用错位。
 - 诊断定位只在当前 Document 仍存在相同 EntityId 且用户确认定位当前模型时跳转；历史元素已删除时只显示历史名称，不创建替代对象。
 
 ## 4. 折线图与数据表
@@ -209,7 +209,7 @@ QDS 只保存当前 Document，不包含 NamedRun。当前 Run 只存在于会�
 ### 4.3 原因与 Run 比较（后续分析工具）
 
 - Causes Strip 使用 Workbench Variable 在对应运行副本中的直接原因，显示该变量及 births/deaths 等原因；不能仅凭画面上的 Connector 猜测公式依赖。Variable/Flow 使用 AnalysisReport 的直接公式引用，Stock 使用与其端点相连的全部 Flow，不把 Stock 初值公式误当作运行期净流量。
-- 运行副本发布 NamedRun 时同时保存 `EntityId → 直接原因 EntityId`，与 RunVariableInfo 一样不可变。不同历史 Run 的原因集合取并集，根变量固定为第一条，其余按当时 displayName 排序；某 Run 缺少对应原因序列时跳过该 Run，不用当前 Document 补齐或改写历史原因。数值常量原因也显示为水平线，即使它不在普通变量下拉框中。
+- 运行副本发布 SimulationRun 时同时保存 `EntityId → 直接原因 EntityId`，与 RunVariableInfo 一样不可变。不同历史 Run 的原因集合取并集，根变量固定为第一条，其余按当时 displayName 排序；某 Run 缺少对应原因序列时跳过该 Run，不用当前 Document 补齐或改写历史原因。数值常量原因也显示为水平线，即使它不在普通变量下拉框中。
 - `CausesStripWidget` 在结果 Dock 的 Causes 标签中按变量纵向组织独立 `TimeSeriesChartWidget`。每条使用自己的 Y 轴并叠加该变量的全部已加载 Run；X 轴范围、滚轮缩放和拖动平移在各条之间同步，双击任一条恢复全部条带的完整时间范围。Chart/Data/Causes 标签行为相互独立，不修改模型、命名结果、画布选择或加载状态。
 - Runs Compare 默认比较加载列表的前两个 Run。较新的 Run 作为新值列，次新的作为旧值列；按 nameKey 对齐数值 Constant，显示变量、单位、旧值、新值和 `new-old` 差值。仅比较 `RunVariableInfo.isConstant()` 的 Variable，Stock 初值和非数值公式不混入 Constant 表。
 - 两侧常量名称取并集并按 displayName 排序，任一侧缺失时对应单元格留空，只有两侧都有序列值时才计算差值。数值格式与现有数据表一致。少于两个已加载 Run 时模型为空，不伪造比较结果；Datasets 的加载变化只重建视图，不修改 Run。
@@ -222,7 +222,7 @@ QDS 只保存当前 Document，不包含 NamedRun。当前 Run 只存在于会�
 - 非有限值、时间停滞和 Worker 内部错误终止当前 Run，UI 保持可编辑。
 - Cancel 是正常用户操作，不弹错误框；状态栏显示取消时的实际时间。
 - 无 Stock 的纯公式模型仍可运行并显示 Variable；数值常量不进入结果变量下拉框。
-- 不支持的数组、Data、Lookup、随机或状态函数不得显示“运行成功”。
+- 基本数组可以运行，但数组结果 UI 尚未实现，不得把首元素冒充为标量曲线；不支持的 Data、Lookup、随机或状态函数不得显示“运行成功”。
 
 ## 6. 测试与 profile
 

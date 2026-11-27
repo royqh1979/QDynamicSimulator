@@ -15,7 +15,7 @@ class CausesStripWidget : public QWidget
 public:
     explicit CausesStripWidget(QWidget *parent = nullptr);
 
-    void setRuns(const QVector<NamedRun> &runs, const QString &rootNameKey, const QVector<QString> &causeNameKeys);
+    void setRuns(const QVector<SimulationRun> &runs, const QString &rootNameKey, const QVector<QString> &causeNameKeys);
     const QVector<TimeSeriesChartWidget *> &charts() const { return m_charts; }
     void synchronizeTimeRange(TimeSeriesChartWidget *source, double minimum, double maximum);
 

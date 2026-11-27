@@ -58,7 +58,7 @@ RK4 校验和约为 2.20265e+07。Euler 与 RK4 分列，不用不同方法的�
 
 ## 最小结果 Dock
 
-运行 Release `profile-editor.exe 1000`。`results_table_bind` 每轮将同一真实 NamedRun 的两个显示副本与 Stock nameKey 绑定到新建 SimulationTableModel，校验 Time+两个 Run 列、排序时间并集去重、行数和末时刻值；模型只共享不可变 Run，不复制完整矩阵。不同采样网格及缺失单元格由编辑器集成测试覆盖。`results_dock_refresh` 反复切换同一 Run 的加载状态，覆盖 Datasets、Run/Variable 选择器、状态文本和表格的同步刷新；不包含 Worker 或积分时间。
+运行 Release `profile-editor.exe 1000`。`results_table_bind` 每轮将同一真实 SimulationRun 的两个显示副本与 Stock nameKey 绑定到新建 SimulationTableModel，校验 Time+两个 Run 列、排序时间并集去重、行数和末时刻值；模型只共享不可变 Run，不复制完整矩阵。不同采样网格及缺失单元格由编辑器集成测试覆盖。`results_dock_refresh` 反复切换同一 Run 的加载状态，覆盖 Datasets、Run/Variable 选择器、状态文本和表格的同步刷新；不包含 Worker 或积分时间。
 
 | 操作 | 数量 | 总耗时 ms | 每操作 μs |
 | --- | ---: | ---: | ---: |
@@ -72,7 +72,7 @@ RK4 校验和约为 2.20265e+07。Euler 与 RK4 分列，不用不同方法的�
 
 ## Qt Charts 大结果集
 
-固定场景由一次 Core 运行生成 100000 个样本和 10 个变量，再构造 10 个共享同一不可变结果的 NamedRun，避免把重复积分计入图表时间。`chart_build_render_100000x10` 包含 10 条 QLineSeries 的创建、批量点输入、坐标轴和真实 Widget 渲染；`chart_zoom_reset_100000x10` 执行 10 次放大、事件处理和完整范围复位；PNG 使用实际渲染 QImage 写盘。
+固定场景由一次 Core 运行生成 100000 个样本和 10 个变量，再构造 10 个共享同一不可变结果的 SimulationRun，避免把重复积分计入图表时间。`chart_build_render_100000x10` 包含 10 条 QLineSeries 的创建、批量点输入、坐标轴和真实 Widget 渲染；`chart_zoom_reset_100000x10` 执行 10 次放大、事件处理和完整范围复位；PNG 使用实际渲染 QImage 写盘。
 
 | 操作 | 数量 | 总耗时 ms | 每操作 μs |
 | --- | ---: | ---: | ---: |
@@ -94,10 +94,21 @@ RK4 校验和约为 2.20265e+07。Euler 与 RK4 分列，不用不同方法的�
 
 ## Runs Compare
 
-`runs_compare_bind` 每轮绑定两个相同真实 NamedRun，按 nameKey 对齐数值 Constant，验证单行结果和零差值；单元测试另覆盖修改、增加和删除常量、旧/新 Run 表头、缺失值、单位、非 Constant 排除以及少于两个已加载 Run 时的空表。
+`runs_compare_bind` 每轮绑定两个相同真实 SimulationRun，按 nameKey 对齐数值 Constant，验证单行结果和零差值；单元测试另覆盖修改、增加和删除常量、旧/新 Run 表头、缺失值、单位、非 Constant 排除以及少于两个已加载 Run 时的空表。
 
 | 操作 | 数量 | 总耗时 ms | 每操作 μs |
 | --- | ---: | ---: | ---: |
 | runs_compare_bind | 100 | 0.0869 | 0.869 |
 
 该结果使用 Release `profile-editor.exe 100`，不包含 Worker 或积分时间。
+
+## 数组执行
+
+固定 16 个数组元素的 Stock，初值均为 1，Flow 为 `Stock * N`，Euler、DT=0.01、1000 步。每轮检查 Completed、1001 个采样点和每个元素的独立递推结果，数组通过 `arraySeries()` 读取；不把首元素作为校验和。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| simulation_array_euler | 1000 | 50655.5 | 50655.5 |
+| simulation_array_element_step | 16000000 | 50655.5 | 3.16597 |
+
+共保存 16016000 个数组元素值，逐元素期望使用 `pow(1 + i*DT, steps)` 计算，校验和匹配。该结果使用 Release `profile-simulation.exe 1000`，用于后续同场景回归，不设置额外性能门槛。

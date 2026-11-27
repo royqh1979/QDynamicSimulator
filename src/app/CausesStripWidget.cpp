@@ -21,7 +21,7 @@ CausesStripWidget::CausesStripWidget(QWidget *parent)
     layout->addWidget(m_scrollArea);
 }
 
-void CausesStripWidget::setRuns(const QVector<NamedRun> &runs, const QString &rootNameKey,
+void CausesStripWidget::setRuns(const QVector<SimulationRun> &runs, const QString &rootNameKey,
     const QVector<QString> &causeNameKeys)
 {
     for (TimeSeriesChartWidget *chart : m_charts) {

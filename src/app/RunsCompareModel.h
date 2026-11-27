@@ -13,7 +13,7 @@ class RunsCompareModel : public QAbstractTableModel
 public:
     explicit RunsCompareModel(QObject *parent = nullptr);
 
-    void setRuns(const QVector<NamedRun> &loadedRuns);
+    void setRuns(const QVector<SimulationRun> &loadedRuns);
     void clear();
 
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;

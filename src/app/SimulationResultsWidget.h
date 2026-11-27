@@ -32,8 +32,8 @@ public:
 private:
     void refreshRuns();
     void refreshWorkbench();
-    void refreshCauses(const QVector<NamedRun> &loadedRuns, const QString &rootNameKey);
-    std::optional<NamedRun> currentRun() const;
+    void refreshCauses(const QVector<SimulationRun> &loadedRuns, const QString &rootNameKey);
+    std::optional<SimulationRun> currentRun() const;
 
     SimulationController *m_controller;
     QComboBox *m_variableCombo;

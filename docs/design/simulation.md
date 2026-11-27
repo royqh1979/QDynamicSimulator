@@ -14,7 +14,7 @@
 - 起止时间、DT、结果保存间隔；
 - 独立运行结果、诊断、取消及性能 profile。
 
-数组仿真、Lookup、随机函数、DELAY/SMOOTH、显式 INTEG 状态、Data 外部输入、多 Run 管理和图表界面分别作为后续明确阶段，不因公式可以解析就视为已经支持。
+基本数组执行已实现，支持 Apply-to-All、显式元素、Stock/Flow/Variable、Euler/RK4 和独立 arraySeries；数组结果 UI、Lookup、随机函数、DELAY/SMOOTH、显式 INTEG 状态、Data 外部输入分别作为后续明确阶段，不因公式可以解析就视为已经支持。
 
 ## 2. 当前公式能力边界
 
@@ -55,6 +55,14 @@ stock'(t) = sum(inflow values) - sum(outflow values)
 - Data 在外部时间序列语义实现前不参与首批运行。
 - Connector、Cloud、Comment 没有独立数值状态；Cloud 只参与 Flow 端点关系。
 - 无状态宏与普通公式使用同一求值器，不做宏体展开或复制。
+
+### 3.3 数组执行
+
+- 数组 ModelElement 使用与标量相同的初始化/运行期拓扑顺序。Apply-to-All 和逐元素方程均按当前下标求值：Apply-to-All 遍历维度笛卡尔积并设置 `EvaluationScope.dimensions/indices/self`，显式 `ArrayElementFormula` 使用其保存的下标。公式返回整体 ArrayValue 时也按当前下标提取，不把整组值误赋给单个元素。
+- 数组 Stock 的每个元素是独立状态，具有独立初值、净流量和 Euler/RK4 阶段值。数组 Flow 可以返回标量或与 Stock 兼容的 ArrayValue；标量按 Stock 全部元素广播，数组按维度名重排后逐元素累加。缺少维度、维度数不同或形状不兼容时以 `incompatible-stock-flow` 失败，不按位置猜测。
+- `Value=std::variant<double,ArrayValue>` 同时用于变量状态和净流量。标量保持原有逐元素一次求值路径；数组值检查形状、元素数及所有元素的有限性。数组维度或元素数溢出、非有限值和求值顺序错误均不得替换为零。
+- `SimulationRun::series(id)` 继续只返回标量序列，数组 ID 返回 nullptr；新增 `arraySeries(id)` 返回按采样时间排列的 ArrayValue。现有 Graph/Table/Causes Strip 因没有标量序列而跳过数组，数组结果 UI 另行设计，不把数组首元素伪装成标量曲线。
+- 首批数组执行覆盖 Apply-to-All、显式元素方程、数组 Stock/Flow/Variable、标量广播、维度重排、Euler/RK4、守恒和失败前缀。Vensim `:EXCEPT:` 混合分片、数组宏状态、Lookup/Data 和数组图表不属于本阶段。
 
 ## 4. 仿真设置与持久化
 
@@ -105,17 +113,22 @@ SimulationRunner
 ├─ const SimulationPlan &
 └─ SimulationState                当前时间、状态和取消标志
 
-SimulationRun                     一次已结束运行的不可变结果
+SimulationRun                     一次运行的完整不可变记录
+├─ RunId / runName / modelRevision
 ├─ settings / method
 ├─ times
-├─ EntityId → 标量时间序列
-├─ 完成/取消/失败状态
-└─ 诊断
+├─ EntityId → 标量时间序列 / ArrayValue 时间序列
+├─ 完成/取消/失败状态与诊断
+├─ RunVariableInfo：EntityId、displayName、nameKey、unit、kind
+└─ causes：EntityId → 直接原因 EntityId 列表
 ```
 
 约束：
 
 - SimulationPlan 不持有 AST、FormulaNode、ModelElement 或 MacroDefinition 指针；只保存 EntityId 顺序和关系。公式仍在 Document 中唯一持有。
+- RunId、runName、modelRevision、RunVariableInfo 和 causes 与数值结果属于同一个 SimulationRun，保证 EntityId 与运行副本元数据自洽；不再使用 NamedRun 平行保存这些字段。
+- `withMetadata()` 返回补齐身份的新对象，原结果不变，禁止发布后改写元数据。RunId 是运行记录身份，不是 EntityId，也不是跨 Run 的模型元素 ID。
+- Qt 容器利用写时复制，值拷贝不主动复制数值矩阵；Worker 和跨视图仍共享不可变对象。
 - Plan 和 Run 不进入 Document，也不进入编辑器 ChangeSet。
 - Document 修改后 Plan 必须重新编译；UI 不得让旧 Plan 静默作用于新模型。
 - 首批运行采用同步调用，Document、Plan 和 Runner 的生命周期由同一调用栈保证。异步执行需要单独设计模型只读快照或生命周期共享，不能只把 raw reference 移入线程。

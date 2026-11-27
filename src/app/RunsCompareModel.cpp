@@ -4,16 +4,18 @@
 
 #include <algorithm>
 
+using qds::core::RunVariableInfo;
+
 namespace {
 
-std::optional<double> initialValue(const NamedRun &run, const QString &nameKey)
+std::optional<double> initialValue(const SimulationRun &run, const QString &nameKey)
 {
     const auto variable = std::find_if(run.variables().begin(), run.variables().end(), [&nameKey](const RunVariableInfo &candidate) {
         return candidate.nameKey() == nameKey;
     });
     if (variable == run.variables().end())
         return std::nullopt;
-    const QVector<double> *values = run.run()->series(variable->id());
+    const QVector<double> *values = run.series(variable->id());
     return values && !values->isEmpty() ? std::optional<double>(values->front()) : std::nullopt;
 }
 
@@ -24,20 +26,20 @@ RunsCompareModel::RunsCompareModel(QObject *parent)
 {
 }
 
-void RunsCompareModel::setRuns(const QVector<NamedRun> &loadedRuns)
+void RunsCompareModel::setRuns(const QVector<SimulationRun> &loadedRuns)
 {
     beginResetModel();
     m_rows.clear();
     m_olderRunName.clear();
     m_newerRunName.clear();
     if (loadedRuns.size() >= 2) {
-        const NamedRun &newer = loadedRuns[0];
-        const NamedRun &older = loadedRuns[1];
+        const SimulationRun &newer = loadedRuns[0];
+        const SimulationRun &older = loadedRuns[1];
         m_newerRunName = newer.name();
         m_olderRunName = older.name();
         QMap<QString, QString> displayNames;
         QMap<QString, QString> units;
-        for (const NamedRun *run : {&older, &newer}) {
+        for (const SimulationRun *run : {&older, &newer}) {
             for (const RunVariableInfo &variable : run->variables()) {
                 if (!variable.isConstant())
                     continue;

@@ -59,8 +59,14 @@ private slots:
     void logisticAndOscillatorBenchmarks();
     void saveIntervalsAndTimeBounds();
     void macrosAndResultAccess();
+    void arrayStockEulerAndResults();
+    void arrayElementEquationsAndBroadcast();
+    void arrayRungeKutta4AndConservation();
+    void arrayDimensionReordering();
+    void arrayDimensionFailures();
     void rungeKutta4();
     void rungeKutta4StageFailure();
+    void unifiedRunMetadata();
     void compilationDiagnostics();
     void cancellationAndRuntimeFailure();
 };
@@ -217,6 +223,160 @@ void TestSimulation::macrosAndResultAccess()
     QCOMPARE(*run.series(stock), (QVector<double> {1.0, 3.0}));
 }
 
+void TestSimulation::arrayStockEulerAndResults()
+{
+    Document document;
+    QVERIFY(document.defineDimension("N", 2));
+    const EntityId stock = document.createVariable(ElementKind::Stock);
+    const EntityId cloud = document.createCloud();
+    const EntityId flow = document.createFlow(cloud, stock);
+    document.rename(stock, "Stock");
+    document.rename(flow, "Rate");
+    document.setDimensions(stock, {"N"});
+    document.setDimensions(flow, {"N"});
+    document.setInitialEquation(stock, "1");
+    document.setEquation(flow, "Stock * N");
+    document.setSimulationSettings({0.0, 1.0, 1.0, 1.0});
+
+    const SimulationRun run = runModel(document);
+    QCOMPARE(run.status(), SimulationRunStatus::Completed);
+    QVERIFY(run.series(stock) == nullptr);
+    const QVector<ArrayValue> *stocks = run.arraySeries(stock);
+    const QVector<ArrayValue> *rates = run.arraySeries(flow);
+    QVERIFY(stocks && rates);
+    QCOMPARE(stocks->size(), 2);
+    QCOMPARE(rates->size(), 2);
+    QCOMPARE(stocks->at(0).dimensions, QVector<QString> {"n"});
+    QCOMPARE(stocks->at(0).shape, QVector<std::size_t> {2});
+    QCOMPARE(stocks->at(0).values, (QVector<double> {1.0, 1.0}));
+    QCOMPARE(stocks->at(1).values, (QVector<double> {2.0, 3.0}));
+    QCOMPARE(rates->at(0).values, (QVector<double> {1.0, 2.0}));
+    QCOMPARE(rates->at(1).values, (QVector<double> {2.0, 6.0}));
+    QVERIFY(run.arraySeries(99999) == nullptr);
+}
+
+void TestSimulation::arrayElementEquationsAndBroadcast()
+{
+    Document document;
+    QVERIFY(document.defineDimension("N", 2));
+    const EntityId rate = document.createVariable(ElementKind::Variable);
+    document.rename(rate, "Rate");
+    document.setDimensions(rate, {"N"});
+    document.setElementEquation(rate, {0}, "0.01");
+    document.setElementEquation(rate, {1}, "0.2");
+    const EntityId stock = document.createVariable(ElementKind::Stock);
+    document.rename(stock, "Stock");
+    document.setDimensions(stock, {"N"});
+    document.setElementEquation(stock, {0}, "1");
+    document.setElementEquation(stock, {1}, "2");
+    const EntityId cloud = document.createCloud();
+    const EntityId flow = document.createFlow(cloud, stock);
+    document.setDimensions(flow, {"N"});
+    document.setEquation(flow, "Rate[N] + 1");
+    document.setSimulationSettings({0.0, 1.0, 1.0, 1.0});
+
+    const SimulationRun run = runModel(document);
+    QCOMPARE(run.status(), SimulationRunStatus::Completed);
+    const QVector<ArrayValue> *stocks = run.arraySeries(stock);
+    const QVector<ArrayValue> *flows = run.arraySeries(flow);
+    QVERIFY(stocks && flows);
+    QCOMPARE(stocks->at(0).values, (QVector<double> {1.0, 2.0}));
+    QCOMPARE(stocks->at(1).values, (QVector<double> {2.01, 3.2}));
+    QCOMPARE(flows->at(0).values, (QVector<double> {1.01, 1.2}));
+    QCOMPARE(flows->at(1).values, (QVector<double> {1.01, 1.2}));
+}
+
+void TestSimulation::arrayRungeKutta4AndConservation()
+{
+    Document document;
+    QVERIFY(document.defineDimension("N", 2));
+    const EntityId source = document.createVariable(ElementKind::Stock);
+    const EntityId target = document.createVariable(ElementKind::Stock);
+    const EntityId flow = document.createFlow(source, target);
+    document.rename(source, "Source");
+    document.rename(target, "Target");
+    document.setDimensions(source, {"N"});
+    document.setDimensions(target, {"N"});
+    document.setDimensions(flow, {"N"});
+    document.setElementEquation(source, {0}, "10");
+    document.setElementEquation(source, {1}, "20");
+    document.setInitialEquation(target, "0");
+    document.setEquation(flow, "2");
+    document.setSimulationSettings({0.0, 1.0, 1.0, 1.0, IntegrationMethod::RungeKutta4});
+
+    const SimulationRun run = runModel(document);
+    QCOMPARE(run.status(), SimulationRunStatus::Completed);
+    const QVector<ArrayValue> *sources = run.arraySeries(source);
+    const QVector<ArrayValue> *targets = run.arraySeries(target);
+    QVERIFY(sources && targets);
+    QCOMPARE(sources->at(0).values, (QVector<double> {10.0, 20.0}));
+    QCOMPARE(sources->at(1).values, (QVector<double> {8.0, 18.0}));
+    QCOMPARE(targets->at(0).values, (QVector<double> {0.0, 0.0}));
+    QCOMPARE(targets->at(1).values, (QVector<double> {2.0, 2.0}));
+    for (int index = 0; index < sources->size(); ++index) {
+        QCOMPARE(sources->at(index).values[0] + targets->at(index).values[0], 10.0);
+        QCOMPARE(sources->at(index).values[1] + targets->at(index).values[1], 20.0);
+    }
+}
+
+void TestSimulation::arrayDimensionReordering()
+{
+    Document document;
+    QVERIFY(document.defineDimension("A", 2));
+    QVERIFY(document.defineDimension("B", 2));
+    const EntityId matrix = document.createVariable(ElementKind::Variable);
+    document.rename(matrix, "Matrix");
+    document.setDimensions(matrix, {"A", "B"});
+    document.setElementEquation(matrix, {0, 0}, "1");
+    document.setElementEquation(matrix, {0, 1}, "2");
+    document.setElementEquation(matrix, {1, 0}, "3");
+    document.setElementEquation(matrix, {1, 1}, "4");
+    const EntityId stock = document.createVariable(ElementKind::Stock);
+    document.setDimensions(stock, {"B", "A"});
+    document.setInitialEquation(stock, "0");
+    const EntityId cloud = document.createCloud();
+    const EntityId flow = document.createFlow(cloud, stock);
+    document.setDimensions(flow, {"A", "B"});
+    document.setEquation(flow, "Matrix");
+    document.setSimulationSettings({0.0, 1.0, 1.0, 1.0});
+
+    const SimulationRun run = runModel(document);
+    QCOMPARE(run.status(), SimulationRunStatus::Completed);
+    const QVector<ArrayValue> *stocks = run.arraySeries(stock);
+    const QVector<ArrayValue> *flows = run.arraySeries(flow);
+    QVERIFY(stocks && flows);
+    QCOMPARE(stocks->at(0).dimensions, (QVector<QString> {"b", "a"}));
+    QCOMPARE(stocks->at(0).shape, (QVector<std::size_t> {2, 2}));
+    QCOMPARE(stocks->at(0).values, (QVector<double> {0.0, 0.0, 0.0, 0.0}));
+    QCOMPARE(stocks->at(1).values, (QVector<double> {1.0, 3.0, 2.0, 4.0}));
+    QCOMPARE(flows->at(0).dimensions, (QVector<QString> {"a", "b"}));
+    QCOMPARE(flows->at(0).values, (QVector<double> {1.0, 2.0, 3.0, 4.0}));
+}
+
+void TestSimulation::arrayDimensionFailures()
+{
+    Document document;
+    QVERIFY(document.defineDimension("N", 2));
+    QVERIFY(document.defineDimension("M", 3));
+    const EntityId stock = document.createVariable(ElementKind::Stock);
+    document.setDimensions(stock, {"N"});
+    document.setInitialEquation(stock, "1");
+    const EntityId cloud = document.createCloud();
+    const EntityId flow = document.createFlow(cloud, stock);
+    document.setDimensions(flow, {"M"});
+    document.setEquation(flow, "1");
+    document.setSimulationSettings({0.0, 1.0, 1.0, 1.0});
+
+    const SimulationRun run = runModel(document);
+    QCOMPARE(run.status(), SimulationRunStatus::Failed);
+    QVERIFY(!run.issues().isEmpty());
+    QCOMPARE(run.issues().front().code, QStringLiteral("incompatible-stock-flow"));
+    const QVector<ArrayValue> *stocks = run.arraySeries(stock);
+    QVERIFY(stocks);
+    QCOMPARE(stocks->size(), 1);
+    QCOMPARE(stocks->front().values, (QVector<double> {1.0, 1.0}));
+}
+
 void TestSimulation::rungeKutta4()
 {
     Document coarseDocument = exponentialDocument(0.25);
@@ -268,6 +428,36 @@ void TestSimulation::rungeKutta4StageFailure()
     QCOMPARE(run.issues().front().code, QStringLiteral("non-finite-simulation-value"));
 }
 
+void TestSimulation::unifiedRunMetadata()
+{
+    const Document document = exponentialDocument(1.0);
+    const SimulationRun numerical = runModel(document);
+    const EntityId stock = document.findByName("Stock")->id();
+    const EntityId flow = document.findByName("Flow1")->id();
+    SimulationRunMetadata metadata;
+    metadata.id = 42;
+    metadata.name = "experiment";
+    metadata.modelRevision = 7;
+    metadata.variables = {RunVariableInfo(stock, "Stock", "stock", "unit", ElementKind::Stock, false)};
+    metadata.causes.insert(stock, {flow});
+    const SimulationRun identified = numerical.withMetadata(std::move(metadata));
+
+    QCOMPARE(identified.id(), RunId(42));
+    QCOMPARE(identified.name(), QString("experiment"));
+    QCOMPARE(identified.modelRevision(), quint64(7));
+    QCOMPARE(identified.variables().size(), 1);
+    QCOMPARE(identified.variables().front().nameKey(), QString("stock"));
+    QCOMPARE(identified.causes(stock), QVector<EntityId> {flow});
+    QCOMPARE(identified.status(), numerical.status());
+    QCOMPARE(identified.times(), numerical.times());
+    QCOMPARE(identified.series(stock), numerical.series(stock));
+    QCOMPARE(numerical.id(), RunId(0));
+    QVERIFY(numerical.name().isEmpty());
+    QCOMPARE(numerical.modelRevision(), quint64(0));
+    QVERIFY(numerical.variables().isEmpty());
+    QVERIFY(numerical.causes(stock).isEmpty());
+}
+
 void TestSimulation::compilationDiagnostics()
 {
     Document missing;
@@ -290,7 +480,7 @@ void TestSimulation::compilationDiagnostics()
     array.setDimensions(arrayElement, {"N"});
     array.setElementEquation(arrayElement, {0}, "1");
     array.setElementEquation(arrayElement, {1}, "2");
-    QVERIFY(hasIssue(compileSimulation(array), "unsupported-simulation-array"));
+    QVERIFY(compileSimulation(array).plan);
 
     Document initialCycle;
     const EntityId firstStock = initialCycle.createVariable(ElementKind::Stock);

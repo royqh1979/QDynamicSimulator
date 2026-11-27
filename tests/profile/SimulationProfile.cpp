@@ -166,6 +166,51 @@ int main(int argc, char **argv)
     if (std::abs(rk4Checksum / rk4Count - rk4Expected) > 1e-9 * std::abs(rk4Expected))
         return 15;
 
+    Document arrayDocument;
+    constexpr int arraySize = 16;
+    arrayDocument.defineDimension("N", arraySize);
+    const EntityId arrayStock = arrayDocument.createVariable(ElementKind::Stock);
+    const EntityId arrayCloud = arrayDocument.createCloud();
+    const EntityId arrayFlow = arrayDocument.createFlow(arrayCloud, arrayStock);
+    arrayDocument.rename(arrayStock, "Stock");
+    arrayDocument.setDimensions(arrayStock, {"N"});
+    arrayDocument.setDimensions(arrayFlow, {"N"});
+    arrayDocument.setInitialEquation(arrayStock, "1");
+    arrayDocument.setEquation(arrayFlow, "Stock * N");
+    arrayDocument.setSimulationSettings({0.0, steps * 0.01, 0.01, 0.01});
+    const SimulationCompileResult arrayCompiled = compileSimulation(arrayDocument);
+    if (!arrayCompiled.plan) {
+        for (const ModelIssue &issue : arrayCompiled.issues)
+            QTextStream(stderr) << issue.code << ':' << issue.message << "\n";
+        return 17;
+    }
+    timer.restart();
+    int arrayRunCount = 0;
+    int arraySavedValues = 0;
+    double arrayChecksum = 0.0;
+    for (int index = 0; index < count; ++index) {
+        const SimulationRun run = SimulationRunner(arrayDocument, *arrayCompiled.plan).run();
+        const QVector<ArrayValue> *series = run.arraySeries(arrayStock);
+        if (run.status() != SimulationRunStatus::Completed || run.times().size() != steps + 1
+            || !series || series->size() != steps + 1)
+            return 18;
+        for (const double value : series->back().values)
+            arrayChecksum += value;
+        arraySavedValues += run.times().size() * arraySize;
+        ++arrayRunCount;
+    }
+    const qint64 arrayNs = timer.nsecsElapsed();
+    double arrayExpected = 0.0;
+    for (int element = 1; element <= arraySize; ++element)
+        arrayExpected += std::pow(1.0 + element * 0.01, steps);
+    if (std::abs(arrayChecksum / arrayRunCount - arrayExpected) > 1e-8 * arrayExpected) {
+        const SimulationRun diagnostic = SimulationRunner(arrayDocument, *arrayCompiled.plan).run();
+        QTextStream(stderr) << "Array checksum mismatch: actual=" << arrayChecksum / arrayRunCount
+                            << " expected=" << arrayExpected << " first=" << diagnostic.arraySeries(arrayStock)->back().values.front()
+                            << " last=" << diagnostic.arraySeries(arrayStock)->back().values.back() << "\n";
+        return 19;
+    }
+
     QTextStream output(stdout);
     output << "operation,count,total_ms,per_operation_us\n";
     output << "settings_validate," << validationCount << ',' << validationNs / 1.0e6 << ','
@@ -196,5 +241,11 @@ int main(int argc, char **argv)
     output << "simulation_rk4_evaluation," << rk4Count * steps * 4 << ',' << rk4Ns / 1.0e6 << ','
            << rk4Ns / 1000.0 / (rk4Count * steps * 4) << "\n";
     output << "simulation_rk4_checksum," << rk4Checksum << ",\n";
+    output << "simulation_array_euler," << arrayRunCount << ',' << arrayNs / 1.0e6 << ','
+           << arrayNs / 1000.0 / arrayRunCount << "\n";
+    output << "simulation_array_element_step," << arrayRunCount * steps * arraySize << ',' << arrayNs / 1.0e6 << ','
+           << arrayNs / 1000.0 / (arrayRunCount * steps * arraySize) << "\n";
+    output << "simulation_array_saved_values," << arraySavedValues << ",\n";
+    output << "simulation_array_checksum," << arrayChecksum << ",\n";
     return 0;
 }

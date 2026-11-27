@@ -1007,7 +1007,7 @@ int main(int argc, char **argv)
     }
     const qint64 sessionNs = timer.nsecsElapsed();
 
-    const NamedRun result = session.runs().front();
+    const SimulationRun result = session.runs().front();
     const auto stockVariable = std::find_if(result.variables().begin(), result.variables().end(), [](const RunVariableInfo &variable) {
         return variable.kind() == ElementKind::Stock;
     });
@@ -1109,9 +1109,9 @@ int main(int argc, char **argv)
         if (element)
             chartVariables.push_back(RunVariableInfo(id, element->displayName(), element->nameKey(), element->unit(), element->kind(), false));
     }
-    QVector<NamedRun> chartRuns;
+    QVector<SimulationRun> chartRuns;
     for (int index = 0; index < 10; ++index)
-        chartRuns.push_back(NamedRun(index + 1, QStringLiteral("Run%1").arg(index + 1), chartRun, 0, chartVariables));
+        chartRuns.push_back(chartRun->withMetadata({static_cast<RunId>(index + 1), QStringLiteral("Run%1").arg(index + 1), 0, chartVariables, {}}));
     TimeSeriesChartWidget chartWidget;
     chartWidget.resize(1000, 600);
     chartWidget.show();
