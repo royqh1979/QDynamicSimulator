@@ -37,6 +37,8 @@
 
 #include <QVector>
 
+#include <cmath>
+
 using namespace qds::core;
 
 QLineEdit *inlineNameEditor(QGraphicsScene &scene)
@@ -381,6 +383,17 @@ int main(int argc, char **argv)
     }
     const qint64 bezierGuideNs = timer.nsecsElapsed();
 
+    timer.restart();
+    int clippedCurveElementCount = 0;
+    double clippedCurveLength = 0.0;
+    for (int index = 0; index < 1000; ++index) {
+        guideItem->updatePosition();
+        const QPainterPath path = guideItem->geometryPath();
+        clippedCurveElementCount += path.elementCount();
+        clippedCurveLength += path.length();
+    }
+    const qint64 clippedCurveNs = timer.nsecsElapsed();
+
     guideScene.resetSelectedRoute();
     ControlPointHandle *automaticHandle = nullptr;
     for (QGraphicsItem *item : guideScene.items()) {
@@ -500,9 +513,12 @@ int main(int argc, char **argv)
         flowEndpointPreviewNs += timer.nsecsElapsed();
         const auto *flow = dynamic_cast<const Flow *>(previewFlowController.document().find(previewFlow));
         const QPainterPath arrowPath = previewFlowArrow->geometryPath();
-        const QPointF expectedEnd = previewFlowItem->boundaryPointToward(arrowPath.elementAt(arrowPath.elementCount() - 2));
-        if (!flow || flow->endpoints().to != target || previewFlowItem->previewing()
-            || QLineF(arrowPath.pointAtPercent(1.0), expectedEnd).length() > 0.75)
+        const QPointF actualEnd = arrowPath.pointAtPercent(1.0);
+        const QPointF localEnd = actualEnd - previewFlowItem->center();
+        const bool onValveBoundary = std::abs(localEnd.x()) <= 60.1 && std::abs(localEnd.y()) <= 25.1
+            && (std::abs(std::abs(localEnd.x()) - 60.0) < 0.75 || std::abs(std::abs(localEnd.y()) - 25.0) < 0.75);
+        if (!flow || flow->endpoints().to != target || previewFlowItem->previewing() || arrowPath.elementCount() < 2
+            || (!onValveBoundary && QLineF(actualEnd, previewFlowItem->center()).length() > 0.75))
             return 21;
         ++flowEndpointPreviewCount;
     }
@@ -1010,6 +1026,7 @@ int main(int argc, char **argv)
                         << "connector_line_style,1000," << connectorStyleNs / 1e6 << "," << connectorStyleNs / 1000.0 / 1000 << "\n"
                         << "orthogonal_auto_route,1000," << automaticRouteNs / 1e6 << "," << automaticRouteNs / 1000.0 / 1000 << "\n"
                         << "bezier_control_guide_updates,1000," << bezierGuideNs / 1e6 << "," << bezierGuideNs / 1000.0 / 1000 << "\n"
+                        << "bezier_clipped_geometry,1000," << clippedCurveNs / 1e6 << "," << clippedCurveNs / 1000.0 / 1000 << "\n"
                         << "automatic_bezier_edit_reset,1000," << automaticBezierEditNs / 1e6 << "," << automaticBezierEditNs / 1000.0 / 1000 << "\n"
                         << "connector_drag_selection,1000," << connectorDragStateNs / 1e6 << "," << connectorDragStateNs / 1000.0 / 1000 << "\n"
                         << "endpoint_preview_cancel,1000," << endpointPreviewNs / 1e6 << "," << endpointPreviewNs / 1000.0 / 1000 << "\n"
@@ -1048,7 +1065,8 @@ int main(int argc, char **argv)
     const bool valid = commands > 0 && pasted.size() == static_cast<std::size_t>(count) && pointCount > 0 && arrowCount > 0
         && inlineRenameCount == count && areaResizeCount == 1000 && spacePanCount == 1000
         && spaceFocusResetCount == 1000 && cursorStatusCount == 1000
-        && moveUndoCount == moveUndoIterations && matches > 0 && guideCount == 2000 && automaticGuideCount == 2000 && automaticGroupManual
+        && moveUndoCount == moveUndoIterations && matches > 0 && guideCount == 2000
+        && clippedCurveElementCount == 4000 && clippedCurveLength > 0.0 && automaticGuideCount == 2000 && automaticGroupManual
         && connectorDragGuideCount == 2000 && connectorDragStateValid
         && endpointPreviewGuideCount == 2000 && endpointPreviewHandlesValid
         && flowEndpointPreviewCount == count

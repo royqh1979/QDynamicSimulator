@@ -54,6 +54,100 @@ QPolygonF offsetPolygon(const QPolygonF &points, double offset)
     return result;
 }
 
+void splitBezier(const QVector<QPointF> &points, double t, QVector<QPointF> &left, QVector<QPointF> &right)
+{
+    QVector<QPointF> current = points;
+    left.clear();
+    right.clear();
+    while (current.size() > 1) {
+        left.append(current.front());
+        right.prepend(current.back());
+        QVector<QPointF> next;
+        next.reserve(current.size() - 1);
+        for (int index = 1; index < current.size(); ++index)
+            next.append(current[index - 1] + (current[index] - current[index - 1]) * t);
+        current = std::move(next);
+    }
+    left.append(current.front());
+    right.prepend(current.front());
+}
+
+QPointF bezierPoint(const QVector<QPointF> &points, double t)
+{
+    const double u = 1.0 - t;
+    if (points.size() == 4)
+        return points[0] * (u * u * u) + points[1] * (3.0 * u * u * t)
+            + points[2] * (3.0 * u * t * t) + points[3] * (t * t * t);
+    return points[0] * (u * u) + points[1] * (2.0 * u * t) + points[2] * (t * t);
+}
+
+double bezierBoundary(const QVector<QPointF> &curve, const QPainterPath &shape, bool source)
+{
+    if (shape.isEmpty())
+        return source ? 0.0 : 1.0;
+    constexpr int sampleCount = 64;
+    double inside = source ? 0.0 : 1.0;
+    if (!shape.contains(bezierPoint(curve, inside)))
+        return inside;
+    for (int index = 1; index <= sampleCount; ++index) {
+        const double t = source ? static_cast<double>(index) / sampleCount
+                                : 1.0 - static_cast<double>(index) / sampleCount;
+        if (shape.contains(bezierPoint(curve, t))) {
+            inside = t;
+            continue;
+        }
+        double low = source ? inside : t;
+        double high = source ? t : inside;
+        for (int iteration = 0; iteration < 20; ++iteration) {
+            const double middle = (low + high) / 2.0;
+            if (shape.contains(bezierPoint(curve, middle))) {
+                if (source)
+                    low = middle;
+                else
+                    high = middle;
+            } else if (source) {
+                high = middle;
+            } else {
+                low = middle;
+            }
+        }
+        return (low + high) / 2.0;
+    }
+    return source ? 0.0 : 1.0;
+}
+
+QPainterPath bezierPath(const QVector<QPointF> &points)
+{
+    QPainterPath path;
+    path.moveTo(points.front());
+    if (points.size() == 4)
+        path.cubicTo(points[1], points[2], points[3]);
+    else
+        path.quadTo(points[1], points[2]);
+    return path;
+}
+
+QPainterPath clippedBezierPath(const QVector<QPointF> &points, DiagramItem *from, DiagramItem *to)
+{
+    if (points.size() < 3)
+        return {};
+    const QVector<QPointF> curve = points.size() >= 4
+        ? QVector<QPointF> {points.front(), points[1], points[2], points.back()}
+        : points;
+    const double start = bezierBoundary(curve, from ? from->sceneShape() : QPainterPath(), true);
+    const double end = bezierBoundary(curve, to ? to->sceneShape() : QPainterPath(), false);
+    if (end <= start)
+        return bezierPath(curve);
+    QVector<QPointF> left;
+    QVector<QPointF> visible;
+    splitBezier(curve, start, left, visible);
+    if (end < 1.0) {
+        QVector<QPointF> right;
+        splitBezier(visible, (end - start) / (1.0 - start), visible, right);
+    }
+    return bezierPath(visible);
+}
+
 QList<QPolygonF> trimmedPolygons(const QPainterPath &path, double trailingLength)
 {
     QList<QPolygonF> result;
@@ -97,6 +191,16 @@ QPointF DiagramItem::boundaryPointToward(const QPointF &target) const
     const double xScale = std::abs(delta.x()) > 1e-12 ? bounds.width() / 2.0 / std::abs(delta.x()) : 1e12;
     const double yScale = std::abs(delta.y()) > 1e-12 ? bounds.height() / 2.0 / std::abs(delta.y()) : 1e12;
     return center() + delta * std::min(xScale, yScale);
+}
+
+QPainterPath DiagramItem::sceneShape() const
+{
+    return mapToScene(shape());
+}
+
+bool DiagramItem::containsScenePoint(const QPointF &position) const
+{
+    return sceneShape().contains(position);
 }
 
 void DiagramItem::setEndpointTargetHighlighted(bool highlighted)
@@ -164,6 +268,20 @@ int VariableItem::type() const
 QRectF VariableItem::boundingRect() const
 {
     return QRectF(-65.0, -32.0, 130.0, 72.0);
+}
+
+QPainterPath VariableItem::shape() const
+{
+    QPainterPath path;
+    if (m_kind == qds::core::ElementKind::Stock)
+        path.addRect(QRectF(-60.0, -25.0, 120.0, 50.0));
+    else if (m_kind == qds::core::ElementKind::Auxiliary)
+        path.addEllipse(QRectF(-45.0, -25.0, 90.0, 50.0));
+    else if (m_kind == qds::core::ElementKind::Constant)
+        path.addPolygon(QPolygonF({QPointF(0.0, -28.0), QPointF(50.0, 0.0), QPointF(0.0, 28.0), QPointF(-50.0, 0.0)}));
+    else
+        path.addRoundedRect(QRectF(-50.0, -25.0, 100.0, 50.0), 8.0, 8.0);
+    return path;
 }
 
 QRectF VariableItem::labelRect() const
@@ -260,7 +378,11 @@ QRectF ViewObjectItem::boundingRect() const
 
 QPainterPath ViewObjectItem::shape() const
 {
-    return m_kind == qds::core::ElementKind::Cloud ? cloudOutline() : QGraphicsObject::shape();
+    if (m_kind == qds::core::ElementKind::Cloud)
+        return cloudOutline();
+    QPainterPath path;
+    path.addRect(QRectF(-60.0, -25.0, 120.0, 50.0));
+    return path;
 }
 
 void ViewObjectItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
@@ -330,7 +452,10 @@ RoutedItem::RoutedItem(DiagramItem *from, DiagramItem *to, const qds::core::Rout
 QRectF RoutedItem::boundingRect() const
 {
     const QPainterPath path = geometryPath();
-    return path.boundingRect().united(path.controlPointRect()).adjusted(-16.0, -16.0, 16.0, 16.0);
+    QRectF bounds = path.boundingRect().united(path.controlPointRect());
+    for (const QLineF &guide : controlGuides())
+        bounds = bounds.united(QRectF(guide.p1(), guide.p2()).normalized());
+    return bounds.adjusted(-16.0, -16.0, 16.0, 16.0);
 }
 
 QPainterPath RoutedItem::shape() const
@@ -347,6 +472,7 @@ void RoutedItem::previewEndpoint(int index, const QPointF &position)
     prepareGeometryChange();
     m_previewEndpoint = index;
     m_previewPosition = position;
+    m_geometryCacheValid = false;
     update();
 }
 
@@ -357,6 +483,7 @@ void RoutedItem::clearEndpointPreview()
     prepareGeometryChange();
     m_previewEndpoint = 0;
     m_previewPosition = {};
+    m_geometryCacheValid = false;
     update();
 }
 
@@ -386,6 +513,13 @@ bool RoutedItem::connects(qds::core::EntityId id) const
     return (m_from && m_from->id() == id) || (m_to && m_to->id() == id);
 }
 
+QPainterPath RoutedItem::sceneShape() const
+{
+    QPainterPath path;
+    path.addRect(QRectF(center() - QPointF(60.0, 25.0), QSizeF(120.0, 50.0)));
+    return path;
+}
+
 QVector<QPainterPath> RoutedItem::linePaths() const
 {
     return {geometryPath()};
@@ -393,20 +527,27 @@ QVector<QPainterPath> RoutedItem::linePaths() const
 
 QPainterPath RoutedItem::geometryPath() const
 {
-    const QVector<QPointF> pathPoints = points();
+    if (m_geometryCacheValid)
+        return m_geometryCache;
+    m_geometryCacheValid = true;
+    if (m_route.mode == qds::core::RouteMode::Bezier) {
+        const QVector<QPointF> curve = points(false);
+        if (curve.size() >= 3) {
+            m_geometryCache = clippedBezierPath(curve,
+                m_previewEndpoint == -1 ? nullptr : m_from,
+                m_previewEndpoint == -2 ? nullptr : m_to);
+            return m_geometryCache;
+        }
+    }
+    const QVector<QPointF> pathPoints = points(true);
     QPainterPath path;
     if (pathPoints.size() < 2)
         return path;
     path.moveTo(pathPoints.front());
-    if (m_route.mode == qds::core::RouteMode::Bezier && pathPoints.size() >= 4)
-        path.cubicTo(pathPoints[1], pathPoints[2], pathPoints.back());
-    else if (m_route.mode == qds::core::RouteMode::Bezier && pathPoints.size() == 3)
-        path.quadTo(pathPoints[1], pathPoints.back());
-    else {
-        for (int index = 1; index < pathPoints.size(); ++index)
-            path.lineTo(pathPoints[index]);
-    }
-    return path;
+    for (int index = 1; index < pathPoints.size(); ++index)
+        path.lineTo(pathPoints[index]);
+    m_geometryCache = path;
+    return m_geometryCache;
 }
 
 qreal RoutedItem::arrowSize() const
@@ -416,13 +557,11 @@ qreal RoutedItem::arrowSize() const
 
 QPolygonF RoutedItem::arrowHead() const
 {
-    const QVector<QPointF> pathPoints = points();
-    if (pathPoints.size() < 2)
+    const QPainterPath path = geometryPath();
+    if (path.elementCount() < 2)
         return {};
-    const QPointF end = pathPoints.back();
-    const QPointF before = m_route.mode == qds::core::RouteMode::Bezier && pathPoints.size() >= 4
-        ? pathPoints[2]
-        : pathPoints[pathPoints.size() - 2];
+    const QPointF end = path.elementAt(path.elementCount() - 1);
+    const QPointF before = path.elementAt(path.elementCount() - 2);
     const QLineF tangent(before, end);
     if (tangent.length() < 1e-9)
         return {};
@@ -438,7 +577,7 @@ QVector<QLineF> RoutedItem::controlGuides() const
 {
     if (!m_controlGuidesVisible || m_route.mode != qds::core::RouteMode::Bezier)
         return {};
-    const QVector<QPointF> pathPoints = points();
+    const QVector<QPointF> pathPoints = points(false);
     if (pathPoints.size() < 3)
         return {};
     QVector<QLineF> guides {QLineF(pathPoints.front(), pathPoints[1])};
@@ -459,6 +598,7 @@ void RoutedItem::updateLayout(const qds::core::Route &route)
 {
     prepareGeometryChange();
     m_route = route;
+    m_geometryCacheValid = false;
     update();
 }
 
@@ -467,12 +607,14 @@ void RoutedItem::updateLayout(DiagramItem *from, DiagramItem *to)
     prepareGeometryChange();
     m_from = from;
     m_to = to;
+    m_geometryCacheValid = false;
     update();
 }
 
 void RoutedItem::updateLayout()
 {
     prepareGeometryChange();
+    m_geometryCacheValid = false;
     update();
 }
 
@@ -534,7 +676,7 @@ qds::core::RoutePoint RoutedItem::routePointFromScene(const QPointF &position) c
     return {{QPointF::dotProduct(offset, delta) / lengthSquared, QPointF::dotProduct(offset, normal)}, false};
 }
 
-QVector<QPointF> RoutedItem::points() const
+QVector<QPointF> RoutedItem::points(bool visible) const
 {
     const auto samePoint = [](const QPointF &left, const QPointF &right) {
         return QLineF(left, right).length() < 1e-9;
@@ -552,10 +694,16 @@ QVector<QPointF> RoutedItem::points() const
         : m_to ? m_to->center() : m_fallbackPosition;
     const QPointF toTarget = !controls.isEmpty() ? controls.back()
         : m_from ? m_from->center() : m_fallbackPosition;
-    const QPointF start = m_previewEndpoint == -1 ? m_previewPosition
-        : m_from ? m_from->boundaryPointToward(fromTarget) : m_fallbackPosition + QPointF(-60.0, 0.0);
-    const QPointF end = m_previewEndpoint == -2 ? m_previewPosition
-        : m_to ? m_to->boundaryPointToward(toTarget) : m_fallbackPosition + QPointF(60.0, 0.0);
+    QPointF start = m_fallbackPosition + QPointF(-60.0, 0.0);
+    if (m_previewEndpoint == -1)
+        start = m_previewPosition;
+    else if (m_from)
+        start = visible ? m_from->boundaryPointToward(fromTarget) : m_from->center();
+    QPointF end = m_fallbackPosition + QPointF(60.0, 0.0);
+    if (m_previewEndpoint == -2)
+        end = m_previewPosition;
+    else if (m_to)
+        end = visible ? m_to->boundaryPointToward(toTarget) : m_to->center();
     QVector<QPointF> result;
     if (m_route.mode == qds::core::RouteMode::Straight || m_route.mode == qds::core::RouteMode::Bezier
         || !controls.isEmpty()) {

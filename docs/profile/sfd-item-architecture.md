@@ -248,3 +248,16 @@ CMake 使用 `qt5_create_translation` 更新 TS 并生成 QM，再通过 RCC 内
 | 操作 | 数量 | 总耗时 ms | 每操作 μs |
 | --- | ---: | ---: | ---: |
 | cloud_outline_boundary | 8000 | 9.9499 | 1.24374 |
+
+## 贝塞尔原始路径与可见子曲线
+
+运行 `profile-editor 1000`，使用同上述静态 Release 环境。`bezier_clipped_geometry` 每轮通过 `updatePosition()` 使几何缓存失效，再计算原始三次贝塞尔的实体边界裁剪和 de Casteljau 子曲线，因此测量的是实际重算而不是缓存命中。`bezier_control_guide_updates` 同时覆盖 Route 更新、辅助线和相关 Scene 同步。
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| bezier_clipped_geometry | 1000 | 13.8712 | 13.8712 |
+| bezier_control_guide_updates | 1000 | 13.5479 | 13.5479 |
+| editor_connect | 667 | 48.7311 | 73.0601 |
+| route_edit | 667 | 117.004 | 175.418 |
+
+初版逐采样分配向量并重建场景轮廓时，裁剪为 39.1645 ms/1000 次。改为解析求值、每条曲线一次场景轮廓和按修改失效的几何缓存后，667 条连接创建为 48.7311 ms，667 次路径编辑为 117.004 ms；同帧重复几何读取由缓存覆盖。测试验证辅助线连接中心数学端点、二次/三次可见点属于原始曲线、实际轮廓交点、Flow 阀门、预览、重叠回退、undo/redo 和重绘。profile 进程退出码为 0；本机系统剪贴板被其他进程占用，产生 OpenClipboard 警告，该指标不用于几何性能判断。

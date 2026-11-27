@@ -139,6 +139,7 @@ private slots:
     void viewOperations();
     void cloudShapeAndBoundary();
     void routeModesAndGeometry();
+    void bezierControlGeometry();
     void flowRoutesAndValveGeometry();
     void flowLabelRepaint();
     void bezierControlGuideRendering();
@@ -915,6 +916,78 @@ void TestEditor::routeModesAndGeometry()
     QVERIFY(!controller.document().diagram().route(id).locked);
 }
 
+void TestEditor::bezierControlGeometry()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF());
+    const EntityId auxiliary = controller.createVariable(ElementKind::Auxiliary, QPointF(240.0, 0.0));
+    const EntityId connector = controller.createConnector(stock, auxiliary);
+    auto *arrow = dynamic_cast<ArrowItem *>(scene.item(connector));
+    arrow->setSelected(true);
+
+    Route route = defaultConnectorRoute();
+    route.manual = true;
+    const auto defaultPoints = route.controlPoints;
+    for (int controlCount : {1, 2}) {
+        route.controlPoints = defaultPoints;
+        route.controlPoints.resize(controlCount);
+        controller.setRoute(connector, route);
+        const QPointF source = scene.item(stock)->center();
+        const QPointF target = scene.item(auxiliary)->center();
+        const QPointF firstControl = arrow->scenePoint(route.controlPoints.front());
+        const QPointF lastControl = arrow->scenePoint(route.controlPoints.back());
+        const QVector<QLineF> guides = arrow->controlGuides();
+        QCOMPARE(guides.size(), 2);
+        QCOMPARE(guides[0].p1(), source);
+        QCOMPARE(guides[0].p2(), firstControl);
+        QCOMPARE(guides[1].p1(), lastControl);
+        QCOMPARE(guides[1].p2(), target);
+
+        QPainterPath original;
+        original.moveTo(source);
+        if (controlCount == 1)
+            original.quadTo(firstControl, target);
+        else
+            original.cubicTo(firstControl, lastControl, target);
+        const QPolygonF originalPolygon = original.toSubpathPolygons().front();
+        const QPolygonF visiblePolygon = arrow->geometryPath().toSubpathPolygons().front();
+        QVERIFY(visiblePolygon.size() > 2);
+        for (const QPointF &point : visiblePolygon) {
+            double nearest = std::numeric_limits<double>::max();
+            for (int index = 1; index < originalPolygon.size(); ++index) {
+                const QPointF start = originalPolygon[index - 1];
+                const QPointF segment = originalPolygon[index] - start;
+                const double lengthSquared = QPointF::dotProduct(segment, segment);
+                if (lengthSquared < 1e-12)
+                    continue;
+                const double ratio = std::clamp(QPointF::dotProduct(point - start, segment) / lengthSquared, 0.0, 1.0);
+                nearest = std::min(nearest, QLineF(point, start + ratio * segment).length());
+            }
+            QVERIFY2(nearest < 0.75, qPrintable(QStringLiteral("controls=%1 nearest=%2").arg(controlCount).arg(nearest)));
+        }
+        const auto distanceToOutline = [](const DiagramItem *item, const QPointF &scenePoint) {
+            const QPointF point = item->mapFromScene(scenePoint);
+            const QPolygonF polygon = item->shape().toSubpathPolygons().front();
+            double nearest = std::numeric_limits<double>::max();
+            for (int index = 1; index < polygon.size(); ++index) {
+                const QPointF start = polygon[index - 1];
+                const QPointF segment = polygon[index] - start;
+                const double lengthSquared = QPointF::dotProduct(segment, segment);
+                if (lengthSquared < 1e-12)
+                    continue;
+                const double ratio = std::clamp(QPointF::dotProduct(point - start, segment) / lengthSquared, 0.0, 1.0);
+                nearest = std::min(nearest, QLineF(point, start + ratio * segment).length());
+            }
+            return nearest;
+        };
+        QVERIFY(distanceToOutline(scene.item(stock), visiblePolygon.first()) < 0.75);
+        QVERIFY(distanceToOutline(scene.item(auxiliary), visiblePolygon.last()) < 0.75);
+        QVERIFY(QLineF(visiblePolygon.first(), source).length() > 1.0);
+        QVERIFY(QLineF(visiblePolygon.last(), target).length() > 1.0);
+    }
+}
+
 void TestEditor::flowRoutesAndValveGeometry()
 {
     const auto checkValve = [](const QPointF &targetPosition, bool bezier) {
@@ -1071,8 +1144,14 @@ void TestEditor::bezierControlGuideRendering()
     QVERIFY(item->controlGuides().isEmpty());
     QTest::qWait(20);
     const QImage deselected = view.grab().toImage();
-    for (const QPoint &sample : samples)
+    int exteriorSamples = 0;
+    for (const QPoint &sample : samples) {
+        if (scene.item(stock)->containsScenePoint(view.mapToScene(sample)))
+            continue;
         QCOMPARE(deselected.pixelColor(sample), background);
+        ++exteriorSamples;
+    }
+    QVERIFY(exteriorSamples > 0);
 
     auto visibleHandleCount = [&scene]() {
         int count = 0;
@@ -1357,9 +1436,12 @@ void TestEditor::sirCanvasConnections()
         const int endpointIndex = flowIsSource ? 0 : path.elementCount() - 1;
         const int neighborIndex = flowIsSource ? 1 : path.elementCount() - 2;
         QVERIFY(endpointIndex >= 0 && neighborIndex >= 0);
-        const QPointF neighbor(path.elementAt(neighborIndex));
         const QPointF endpoint(path.elementAt(endpointIndex));
-        QCOMPARE(endpoint, dependent.flow->boundaryPointToward(neighbor));
+        const QPointF localEndpoint = endpoint - dependent.flow->center();
+        const bool onValveBoundary = std::abs(localEndpoint.x()) <= 60.1 && std::abs(localEndpoint.y()) <= 25.1
+            && (std::abs(std::abs(localEndpoint.x()) - 60.0) < 0.75
+                || std::abs(std::abs(localEndpoint.y()) - 25.0) < 0.75);
+        QVERIFY(onValveBoundary || QLineF(endpoint, dependent.flow->center()).length() < 0.75);
         QVERIFY(QLineF(endpoint, dependent.flow->center()).length() <= 65.1);
     }
 
@@ -1550,11 +1632,12 @@ void TestEditor::flowEndpointPreviewDependentsRepaint()
     QCOMPARE(preview, view.grab().toImage());
     QVERIFY(arrow->geometryPath().pointAtPercent(0.5) != oldArrowPath.pointAtPercent(0.5));
     const QPainterPath previewArrowPath = arrow->geometryPath();
-    const QPointF expectedEnd = flowItem->boundaryPointToward(previewArrowPath.elementAt(previewArrowPath.elementCount() - 2));
     const QPointF actualEnd = previewArrowPath.pointAtPercent(1.0);
-    QVERIFY2(QLineF(actualEnd, expectedEnd).length() < 0.75,
-        qPrintable(QStringLiteral("actual=%1,%2 expected=%3,%4")
-            .arg(actualEnd.x()).arg(actualEnd.y()).arg(expectedEnd.x()).arg(expectedEnd.y())));
+    const QPointF localEnd = actualEnd - flowItem->center();
+    QVERIFY2(std::abs(localEnd.x()) <= 60.1 && std::abs(localEnd.y()) <= 25.1
+            && (std::abs(std::abs(localEnd.x()) - 60.0) < 0.75 || std::abs(std::abs(localEnd.y()) - 25.0) < 0.75),
+        qPrintable(QStringLiteral("actual=%1,%2 flowCenter=%3,%4")
+            .arg(actualEnd.x()).arg(actualEnd.y()).arg(flowItem->center().x()).arg(flowItem->center().y())));
 
     QMouseEvent release(QEvent::MouseButtonRelease, end, view.viewport()->mapToGlobal(end), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QApplication::sendEvent(view.viewport(), &release);
