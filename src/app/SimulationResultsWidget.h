@@ -13,6 +13,7 @@ class QListWidgetItem;
 class QTableView;
 class QTabWidget;
 class CausesStripWidget;
+class RunsCompareModel;
 class SimulationTableModel;
 class TimeSeriesChartWidget;
 
@@ -25,6 +26,7 @@ public:
     void showGraph();
     void showTable();
     void showCausesStrip();
+    void showRunsCompare();
     void showRun(RunId id);
 
 private:
@@ -41,6 +43,8 @@ private:
     SimulationTableModel *m_tableModel;
     TimeSeriesChartWidget *m_chart;
     CausesStripWidget *m_causesStrip;
+    RunsCompareModel *m_runsCompareModel;
+    QTableView *m_runsCompareTable;
     QTabWidget *m_tabs;
     QSet<RunId> m_knownRuns;
     bool m_refreshing = false;

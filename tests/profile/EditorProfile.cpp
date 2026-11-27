@@ -1,4 +1,5 @@
 #include "CausesStripWidget.h"
+#include "RunsCompareModel.h"
 #include "DiagramItems.h"
 #include "DiagramScene.h"
 #include "DiagramView.h"
@@ -977,6 +978,9 @@ int main(int argc, char **argv)
     const EntityId sessionStock = sessionModel.createVariable(ElementKind::Stock);
     const EntityId sessionCloud = sessionModel.createCloud();
     sessionModel.createFlow(sessionCloud, sessionStock);
+    const EntityId sessionParameter = sessionModel.createVariable(ElementKind::Variable);
+    sessionModel.rename(sessionParameter, "parameter");
+    sessionModel.setEquation(sessionParameter, "1");
     sessionModel.setInitialEquation(sessionStock, "0");
     sessionModel.setEquation(sessionModel.findByName("Flow1")->id(), "1");
     sessionModel.setSimulationSettings({0.0, 1.0, 1.0, 1.0});
@@ -1058,6 +1062,21 @@ int main(int argc, char **argv)
         ++causesStripCount;
     }
     const qint64 causesStripNs = timer.nsecsElapsed();
+    resultsWidget.showRunsCompare();
+    auto *runsCompareTable = resultsWidget.findChild<QTableView *>(QStringLiteral("runsCompareTable"));
+    if (!runsCompareTable || runsCompareTable->model()->rowCount() != 0)
+        return 66;
+    RunsCompareModel runsCompareModel;
+    timer.restart();
+    int runsCompareCount = 0;
+    for (int index = 0; index < count; ++index) {
+        runsCompareModel.setRuns({result, result});
+        if (runsCompareModel.rowCount() != 1
+            || runsCompareModel.data(runsCompareModel.index(0, 4)).toString() != QStringLiteral("0"))
+            return 67;
+        ++runsCompareCount;
+    }
+    const qint64 runsCompareNs = timer.nsecsElapsed();
     session.reset();
 
     timer.restart();
@@ -1179,6 +1198,8 @@ int main(int argc, char **argv)
                         << showCurrentNs / 1000.0 / showCurrentCount << "\n"
                         << "causes_strip_refresh," << causesStripCount << "," << causesStripNs / 1e6 << ","
                         << causesStripNs / 1000.0 / causesStripCount << "\n"
+                        << "runs_compare_bind," << runsCompareCount << "," << runsCompareNs / 1e6 << ","
+                        << runsCompareNs / 1000.0 / runsCompareCount << "\n"
                         << "simulation_settings_dialog," << settingsDialogCount << "," << settingsDialogNs / 1e6 << ","
                         << settingsDialogNs / 1000.0 / settingsDialogCount << "\n"
                         << "chart_build_render_100000x10,1," << chartRenderNs / 1e6 << "," << chartRenderNs / 1000.0 << "\n"
