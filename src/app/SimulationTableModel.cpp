@@ -20,10 +20,10 @@ void SimulationTableModel::setRuns(const QVector<SimulationRun> &runs, const QSt
         });
         if (variable == run.variables().end())
             continue;
-        const QVector<double> *values = run.series(nameKey);
-        if (!values)
+        const QVector<double> values = run.series(nameKey);
+        if (values.isEmpty())
             continue;
-        m_columns.push_back({run.name(), std::make_shared<const SimulationRun>(run), values});
+        m_columns.push_back({run.name(), run.times(), values});
         m_times += run.times();
     }
     std::sort(m_times.begin(), m_times.end());
@@ -61,14 +61,14 @@ QVariant SimulationTableModel::data(const QModelIndex &index, int role) const
         return QString::number(m_times[index.row()], 'g', 15);
 
     const Column &column = m_columns[index.column() - 1];
-    const QVector<double> &runTimes = column.run->times();
+    const QVector<double> &runTimes = column.times;
     const auto found = std::lower_bound(runTimes.begin(), runTimes.end(), m_times[index.row()]);
     if (found == runTimes.end() || *found != m_times[index.row()])
         return {};
     const int row = static_cast<int>(found - runTimes.begin());
-    if (row >= column.values->size())
+    if (row >= column.values.size())
         return {};
-    return QString::number((*column.values)[row], 'g', 15);
+    return QString::number(column.values[row], 'g', 15);
 }
 
 QVariant SimulationTableModel::headerData(int section, Qt::Orientation orientation, int role) const

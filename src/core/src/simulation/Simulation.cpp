@@ -435,28 +435,26 @@ QVector<QString> SimulationRun::causes(const QString &nameKey) const
     return result;
 }
 
-const QVector<double> *SimulationRun::series(const QString &nameKey) const
+QVector<double> SimulationRun::series(const QString &nameKey) const
 {
     const RunVariableInfo *match = variable(nameKey);
-    return match ? series(match->id()) : nullptr;
+    return match ? series(match->id()) : QVector<double> {};
 }
 
-const QVector<ArrayValue> *SimulationRun::arraySeries(const QString &nameKey) const
+QVector<ArrayValue> SimulationRun::arraySeries(const QString &nameKey) const
 {
     const RunVariableInfo *match = variable(nameKey);
-    return match ? arraySeries(match->id()) : nullptr;
+    return match ? arraySeries(match->id()) : QVector<ArrayValue> {};
 }
 
-const QVector<double> *SimulationRun::series(EntityId id) const
+QVector<double> SimulationRun::series(EntityId id) const
 {
-    const auto found = m_series.constFind(id);
-    return found == m_series.constEnd() ? nullptr : &found.value();
+    return m_series.value(id);
 }
 
-const QVector<ArrayValue> *SimulationRun::arraySeries(EntityId id) const
+QVector<ArrayValue> SimulationRun::arraySeries(EntityId id) const
 {
-    const auto found = m_arraySeries.constFind(id);
-    return found == m_arraySeries.constEnd() ? nullptr : &found.value();
+    return m_arraySeries.value(id);
 }
 
 SimulationRunner::SimulationRunner(const Document &document, const SimulationPlan &plan)

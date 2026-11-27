@@ -94,9 +94,13 @@ DiagramScene::DiagramScene(DocumentController *controller, QObject *parent)
 
 DiagramScene::~DiagramScene()
 {
+    blockSignals(true);
     finishInlineEdit(false);
-    disconnect(this, &QGraphicsScene::selectionChanged, this, &DiagramScene::syncControlPoints);
     m_controlHandles.clear();
+    m_items.clear();
+    m_rubberLine = nullptr;
+    m_endpointPreviewItem.clear();
+    m_endpointTarget.clear();
 }
 
 void DiagramScene::setTool(Tool tool)
@@ -110,6 +114,8 @@ void DiagramScene::setTool(Tool tool)
 
 qds::core::EntityId DiagramScene::createElementAt(ElementKind kind, const QPointF &position)
 {
+    if (!m_controller)
+        return 0;
     const QPointF snapped = snapPoint(position);
     EntityId id = 0;
     if (kind == ElementKind::Cloud)
@@ -132,19 +138,20 @@ DiagramScene::Tool DiagramScene::tool() const
 
 void DiagramScene::removeSelected()
 {
-    m_controller->removeElements(selectedElementIds());
+    if (m_controller)
+        m_controller->removeElements(selectedElementIds());
 }
 
 bool DiagramScene::renameSelected(const QString &newName)
 {
     DiagramItem *item = dynamic_cast<DiagramItem *>(selectedItems().value(0));
-    return item ? m_controller->renameElement(item->id(), newName) : false;
+    return m_controller && item ? m_controller->renameElement(item->id(), newName) : false;
 }
 
 bool DiagramScene::setSelectedEquation(const QString &equation)
 {
     DiagramItem *item = dynamic_cast<DiagramItem *>(selectedItems().value(0));
-    if (!item)
+    if (!m_controller || !item)
         return false;
     const DocumentElement *element = m_controller->document().find(item->id());
     if (element && element->kind() == ElementKind::Stock)
@@ -157,13 +164,13 @@ bool DiagramScene::setSelectedEquation(const QString &equation)
 const ModelElement *DiagramScene::selectedModelElement() const
 {
     DiagramItem *item = dynamic_cast<DiagramItem *>(selectedItems().value(0));
-    return item ? dynamic_cast<const ModelElement *>(m_controller->document().find(item->id())) : nullptr;
+    return m_controller && item ? dynamic_cast<const ModelElement *>(m_controller->document().find(item->id())) : nullptr;
 }
 
 const Comment *DiagramScene::selectedComment() const
 {
     DiagramItem *item = dynamic_cast<DiagramItem *>(selectedItems().value(0));
-    return item ? dynamic_cast<const Comment *>(m_controller->document().find(item->id())) : nullptr;
+    return m_controller && item ? dynamic_cast<const Comment *>(m_controller->document().find(item->id())) : nullptr;
 }
 
 QVector<EntityId> DiagramScene::selectedElementIds() const
@@ -179,6 +186,8 @@ QVector<EntityId> DiagramScene::selectedElementIds() const
 QVector<EntityId> DiagramScene::findElements(const QString &text) const
 {
     QVector<EntityId> matches;
+    if (!m_controller)
+        return matches;
     for (const DocumentElement &element : m_controller->document().elements()) {
         if (documentElementName(element).contains(text, Qt::CaseInsensitive))
             matches.push_back(element.id());
@@ -197,6 +206,8 @@ void DiagramScene::selectAllItems()
 
 void DiagramScene::alignSelected(Qt::Alignment alignment)
 {
+    if (!m_controller)
+        return;
     QVector<DiagramItem *> selected;
     for (QGraphicsItem *item : selectedItems()) {
         auto *diagramItem = dynamic_cast<DiagramItem *>(item);
@@ -239,6 +250,8 @@ void DiagramScene::alignSelected(Qt::Alignment alignment)
 
 void DiagramScene::distributeSelected(bool horizontal)
 {
+    if (!m_controller)
+        return;
     QVector<DiagramItem *> selected;
     for (QGraphicsItem *item : selectedItems()) {
         auto *diagramItem = dynamic_cast<DiagramItem *>(item);
@@ -358,6 +371,8 @@ QPointF DiagramScene::snapPoint(const QPointF &position) const
 
 void DiagramScene::setSelectedRouteMode(RouteMode mode)
 {
+    if (!m_controller)
+        return;
     for (QGraphicsItem *item : selectedItems()) {
         auto *routed = dynamic_cast<RoutedItem *>(item);
         if (!routed || (routed->type() == FlowItem::Type && mode == RouteMode::Orthogonal))
@@ -378,6 +393,8 @@ void DiagramScene::setSelectedRouteMode(RouteMode mode)
 
 void DiagramScene::resetSelectedRoute()
 {
+    if (!m_controller)
+        return;
     for (QGraphicsItem *item : selectedItems()) {
         if (auto *routed = dynamic_cast<RoutedItem *>(item)) {
             Route route;
@@ -508,7 +525,7 @@ void DiagramScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
         DiagramItem *target = connectionEndpointAt(*this, event->scenePos());
         const bool differentTarget = target && target->id() != m_connectionSource;
         EntityId created = 0;
-        if (m_tool == Tool::AddFlow && (!target || differentTarget)) {
+        if (m_controller && m_tool == Tool::AddFlow && (!target || differentTarget)) {
             const std::optional<QPointF> fromPosition = m_connectionSource == 0
                 ? std::optional<QPointF>(m_connectionStart)
                 : std::nullopt;
@@ -517,7 +534,7 @@ void DiagramScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
                 : std::nullopt;
             created = m_controller->createFlow(
                 m_connectionSource, target ? target->id() : 0, fromPosition, toPosition);
-        } else if (m_tool == Tool::Connect && differentTarget) {
+        } else if (m_controller && m_tool == Tool::Connect && differentTarget) {
             created = m_controller->createConnector(m_connectionSource, target->id());
         }
         if (created != 0) {
@@ -543,7 +560,7 @@ void DiagramScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 void DiagramScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
 {
     auto *routed = dynamic_cast<RoutedItem *>(itemAt(event->scenePos(), QTransform()));
-    if (!routed || isRouteTool(m_tool)) {
+    if (!m_controller || !routed || isRouteTool(m_tool)) {
         QGraphicsScene::contextMenuEvent(event);
         return;
     }
@@ -582,6 +599,8 @@ void DiagramScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
     locked->setCheckable(true);
     locked->setChecked(current.locked);
     connect(locked, &QAction::toggled, this, [this, id = routed->id()](bool checked) {
+        if (!m_controller)
+            return;
         Route route = m_controller->document().diagram().route(id);
         route.locked = checked;
         m_controller->setRoute(id, route);
@@ -596,6 +615,10 @@ void DiagramScene::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
 void DiagramScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
 {
     finishInlineEdit(true);
+    if (!m_controller) {
+        QGraphicsScene::mouseDoubleClickEvent(event);
+        return;
+    }
     DiagramItem *item = nullptr;
     const QList<QGraphicsItem *> candidates = items(event->scenePos(), Qt::IntersectsItemBoundingRect);
     for (QGraphicsItem *candidate : candidates) {
@@ -630,15 +653,19 @@ void DiagramScene::mouseDoubleClickEvent(QGraphicsSceneMouseEvent *event)
 
 void DiagramScene::applyChangeNotification(const ChangeNotification &notification)
 {
+    if (!m_controller)
+        return;
     if (notification.documentReset) {
+        m_bulkClear = true;
         finishInlineEdit(false);
         m_controlHandles.clear();
         m_obstacles.clear();
         m_rubberLine = nullptr;
         m_endpointPreviewItem.clear();
         m_endpointTarget.clear();
-        clear();
         m_items.clear();
+        clear();
+        m_bulkClear = false;
         m_connectionSource = 0;
         m_areaSelecting = false;
         QVector<EntityId> ids;
@@ -689,6 +716,8 @@ void DiagramScene::applyChangeNotification(const ChangeNotification &notificatio
 
 DiagramItem *DiagramScene::createCanvasItem(EntityId id)
 {
+    if (!m_controller)
+        return nullptr;
     const DocumentElement *element = m_controller->document().find(id);
     if (!element || m_items.contains(id))
         return m_items.value(id);
@@ -725,6 +754,8 @@ DiagramItem *DiagramScene::createCanvasItem(EntityId id)
 
 void DiagramScene::createCanvasItems(QVector<EntityId> ids)
 {
+    if (!m_controller)
+        return;
     std::sort(ids.begin(), ids.end(), [this](EntityId left, EntityId right) {
         const ElementKind leftKind = m_controller->document().find(left)->kind();
         const ElementKind rightKind = m_controller->document().find(right)->kind();
@@ -767,12 +798,14 @@ RoutedItem *DiagramScene::selectedRoutedItem() const
 
 void DiagramScene::syncControlPoints()
 {
+    if (m_bulkClear)
+        return;
     RoutedItem *selected = selectedRoutedItem();
     for (DiagramItem *item : m_items) {
         if (auto *routed = dynamic_cast<RoutedItem *>(item))
             routed->setControlGuidesVisible(routed == selected && !routed->previewing());
     }
-    const Route route = selected ? m_controller->document().diagram().route(selected->id()) : Route();
+    const Route route = selected && m_controller ? m_controller->document().diagram().route(selected->id()) : Route();
     int required = 0;
 
     auto updateHandle = [this](int handleIndex, EntityId id, int pointIndex,
@@ -810,6 +843,8 @@ void DiagramScene::syncControlPoints()
 
 void DiagramScene::previewControlPoint(EntityId id, int index, const QPointF &position)
 {
+    if (!m_controller)
+        return;
     if (index < 0) {
         auto *item = dynamic_cast<RoutedItem *>(m_items.value(id));
         if (!item || (index != -1 && index != -2))
@@ -833,6 +868,8 @@ void DiagramScene::previewControlPoint(EntityId id, int index, const QPointF &po
 
 void DiagramScene::finishControlPoint(EntityId id, int index, const QPointF &position)
 {
+    if (!m_controller)
+        return;
     auto *item = dynamic_cast<RoutedItem *>(m_items.value(id));
     const DocumentElement *element = m_controller->document().find(id);
     if (!item || !element)
@@ -873,6 +910,8 @@ void DiagramScene::finishControlPoint(EntityId id, int index, const QPointF &pos
 
 void DiagramScene::removeControlPoint(EntityId id, int index)
 {
+    if (!m_controller)
+        return;
     Route route = m_controller->document().diagram().route(id);
     if (index < 0 || index >= static_cast<int>(route.controlPoints.size()))
         return;
@@ -928,6 +967,8 @@ bool DiagramScene::eventFilter(QObject *watched, QEvent *event)
 
 void DiagramScene::beginInlineEdit(DiagramItem *item)
 {
+    if (!m_controller)
+        return;
     const DocumentElement *element = item ? m_controller->document().find(item->id()) : nullptr;
     const auto *model = dynamic_cast<const ModelElement *>(element);
     const auto *comment = dynamic_cast<const Comment *>(element);
@@ -971,7 +1012,7 @@ void DiagramScene::finishInlineEdit(bool commit)
     }
     QGraphicsProxyWidget *proxy = m_inlineEditor;
     auto *editor = qobject_cast<QLineEdit *>(proxy->widget());
-    if (commit && editor) {
+    if (commit && editor && m_controller) {
         if (dynamic_cast<const Comment *>(m_controller->document().find(m_inlineEditId))) {
             m_controller->setCommentContent(m_inlineEditId, editor->text());
         } else if (!m_controller->renameElement(m_inlineEditId, editor->text())) {
@@ -992,7 +1033,7 @@ void DiagramScene::finishInlineEdit(bool commit)
 
 void DiagramScene::updateAutomaticRoute(RoutedItem *item)
 {
-    if (!item || item->type() != ArrowItem::Type || !item->from() || !item->to())
+    if (!m_controller || !item || item->type() != ArrowItem::Type || !item->from() || !item->to())
         return;
     const Route route = m_controller->document().diagram().route(item->id());
     if (route.manual || route.locked || route.mode != RouteMode::Orthogonal)
@@ -1010,6 +1051,8 @@ void DiagramScene::rerouteAll()
 
 void DiagramScene::toggleSelectedRouteLock()
 {
+    if (!m_controller)
+        return;
     for (QGraphicsItem *item : selectedItems()) {
         if (auto *routed = dynamic_cast<RoutedItem *>(item)) {
             Route route = m_controller->document().diagram().route(routed->id());
@@ -1029,6 +1072,8 @@ void DiagramScene::updateSceneRect()
 
 void DiagramScene::finishMove(EntityId id, const QPointF &position, Qt::KeyboardModifiers modifiers)
 {
+    if (!m_controller)
+        return;
     const QList<QGraphicsItem *> selection = selectedItems();
     if (modifiers & Qt::ControlModifier) {
         const Vec2 origin = m_controller->document().diagram().position(id);

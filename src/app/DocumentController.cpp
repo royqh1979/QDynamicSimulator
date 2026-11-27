@@ -146,9 +146,9 @@ const Document &DocumentController::document() const
     return m_document;
 }
 
-QUndoStack *DocumentController::undoStack()
+QUndoStack &DocumentController::undoStack()
 {
-    return &m_undoStack;
+    return m_undoStack;
 }
 
 EntityId DocumentController::createVariable(ElementKind kind, const QPointF &position)

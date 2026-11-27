@@ -5,6 +5,7 @@
 #include <core/formula/Formula.h>
 #include <io/DocumentFile.h>
 
+#include <QSignalBlocker>
 #include <QThread>
 
 #include <algorithm>
@@ -69,8 +70,8 @@ private:
 
 } // namespace
 
-SimulationController::SimulationController(DocumentController *documentController)
-    : QObject(documentController)
+SimulationController::SimulationController(DocumentController *documentController, QObject *parent)
+    : QObject(parent)
     , m_documentController(documentController)
 {
     qRegisterMetaType<std::shared_ptr<const SimulationRun>>("std::shared_ptr<const SimulationRun>");
@@ -78,6 +79,10 @@ SimulationController::SimulationController(DocumentController *documentControlle
     qRegisterMetaType<QVector<ModelIssue>>();
     connect(m_documentController, &DocumentController::documentChanged, this,
         [this](const ChangeNotification &notification) {
+            if (!m_documentController) {
+                reset();
+                return;
+            }
             if (notification.documentReset) {
                 reset();
                 return;
@@ -94,10 +99,14 @@ SimulationController::SimulationController(DocumentController *documentControlle
                 emit workbenchVariableChanged();
             }
         });
+    connect(m_documentController, &QObject::destroyed, this, [this]() {
+        reset();
+    });
 }
 
 SimulationController::~SimulationController()
 {
+    const QSignalBlocker blocker(this);
     reset();
 }
 
@@ -105,6 +114,11 @@ bool SimulationController::start(const QString &runName, bool overwrite)
 {
     if (isBusy()) {
         emit errorOccurred(tr("A simulation is already running."));
+        return false;
+    }
+    if (!m_documentController) {
+        setStatus(SimulationSessionStatus::Failed);
+        emit errorOccurred(tr("The document is no longer available."));
         return false;
     }
     const QString name = runName.trimmed();
@@ -222,7 +236,7 @@ bool SimulationController::hasRunName(const QString &name) const
 
 bool SimulationController::isOutdated(const SimulationRun &run) const
 {
-    return run.modelRevision() != m_documentController->simulationRevision();
+    return !m_documentController || run.modelRevision() != m_documentController->simulationRevision();
 }
 
 void SimulationController::setRunLoaded(RunId id, bool loaded)
@@ -248,7 +262,8 @@ bool SimulationController::isRunLoaded(RunId id) const
 
 void SimulationController::setWorkbenchVariable(EntityId id)
 {
-    const auto *element = dynamic_cast<const ModelElement *>(m_documentController->document().find(id));
+    const auto *element = m_documentController
+        ? dynamic_cast<const ModelElement *>(m_documentController->document().find(id)) : nullptr;
     const EntityId normalized = element ? id : 0;
     const QString nameKey = element ? element->nameKey() : QString();
     if (m_workbenchVariable == normalized && m_workbenchNameKey == nameKey)
@@ -260,7 +275,8 @@ void SimulationController::setWorkbenchVariable(EntityId id)
 
 void SimulationController::setWorkbenchVariableName(const QString &nameKey)
 {
-    const ModelElement *element = nameKey.isEmpty() ? nullptr : m_documentController->document().findByName(nameKey);
+    const ModelElement *element = nameKey.isEmpty() || !m_documentController
+        ? nullptr : m_documentController->document().findByName(nameKey);
     const EntityId id = element ? element->id() : 0;
     if (m_workbenchVariable == id && m_workbenchNameKey == nameKey)
         return;

@@ -76,7 +76,7 @@ bool isDocumentFileDrop(const QMimeData *mime)
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_controller(new DocumentController(this))
-    , m_simulation(new SimulationController(m_controller))
+    , m_simulation(new SimulationController(m_controller, this))
     , m_scene(new DiagramScene(m_controller, this))
     , m_view(new DiagramView(m_scene, this))
 {
@@ -92,7 +92,7 @@ MainWindow::MainWindow(QWidget *parent)
     createActions();
     createPropertyPanel();
 
-    connect(m_controller->undoStack(), &QUndoStack::cleanChanged, this, [this](bool clean) {
+    connect(&m_controller->undoStack(), &QUndoStack::cleanChanged, this, [this](bool clean) {
         setDirty(!clean);
     });
     connect(m_controller, &DocumentController::documentChanged, this, &MainWindow::refreshValidation);
@@ -273,10 +273,10 @@ void MainWindow::createActions()
     QMenu *editMenu = menuBar()->addMenu(tr("&Edit"));
     QToolBar *editToolBar = addToolBar(tr("Edit"));
     editToolBar->setObjectName(QStringLiteral("editToolBar"));
-    QAction *undoAction = m_controller->undoStack()->createUndoAction(this, tr("&Undo"));
+    QAction *undoAction = m_controller->undoStack().createUndoAction(this, tr("&Undo"));
     undoAction->setIcon(actionIcon("undo"));
     undoAction->setShortcut(QKeySequence::Undo);
-    QAction *redoAction = m_controller->undoStack()->createRedoAction(this, tr("&Redo"));
+    QAction *redoAction = m_controller->undoStack().createRedoAction(this, tr("&Redo"));
     redoAction->setIcon(actionIcon("redo"));
     redoAction->setShortcut(QKeySequence::Redo);
     editMenu->addAction(undoAction);
@@ -827,7 +827,7 @@ bool MainWindow::saveFile(const QString &fileName)
         return false;
     }
     setCurrentFile(fileName);
-    m_controller->undoStack()->setClean();
+    m_controller->undoStack().setClean();
     setDirty(false);
     m_recentFiles.add(fileName);
     updateRecentFiles();

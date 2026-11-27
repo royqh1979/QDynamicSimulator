@@ -70,15 +70,15 @@ void compareReference(const Document &document, const SimulationRun &run, const 
             continue;
         const ModelElement *element = document.model().findByName(column.key());
         QVERIFY2(element, qPrintable("Missing model column: " + column.key()));
-        const QVector<double> *actual = run.series(element->nameKey());
-        QVERIFY(actual);
-        QCOMPARE(actual->size(), reference.times.size());
-        for (int row = 0; row < actual->size(); ++row) {
+        const QVector<double> actual = run.series(element->nameKey());
+        QVERIFY(!actual.isEmpty());
+        QCOMPARE(actual.size(), reference.times.size());
+        for (int row = 0; row < actual.size(); ++row) {
             const double expected = column.value()[row];
             const double tolerance = std::max(2e-6, 1e-4 * std::abs(expected));
-            QVERIFY2(std::abs(actual->at(row) - expected) <= tolerance,
+            QVERIFY2(std::abs(actual.at(row) - expected) <= tolerance,
                 qPrintable(QStringLiteral("%1 at row %2: actual=%3 expected=%4 tolerance=%5")
-                    .arg(column.key()).arg(row).arg(actual->at(row)).arg(expected).arg(tolerance)));
+                    .arg(column.key()).arg(row).arg(actual.at(row)).arg(expected).arg(tolerance)));
         }
     }
 }
@@ -142,13 +142,13 @@ void TestSimulationResults::sirModel()
     const SimulationCompileResult compiled = compileSimulation(document);
     QVERIFY(compiled.plan);
     const SimulationRun run = SimulationRunner(document, *compiled.plan).run();
-    const QVector<double> *susceptible = run.series("susceptible");
-    const QVector<double> *infectious = run.series("infectious");
-    const QVector<double> *recovered = run.series("recovered");
-    const double initialPopulation = susceptible->front() + infectious->front() + recovered->front();
+    const QVector<double> susceptible = run.series("susceptible");
+    const QVector<double> infectious = run.series("infectious");
+    const QVector<double> recovered = run.series("recovered");
+    const double initialPopulation = susceptible.front() + infectious.front() + recovered.front();
     QCOMPARE(initialPopulation, 1005.0);
     for (int index = 0; index < run.times().size(); ++index) {
-        QVERIFY(std::abs(susceptible->at(index) + infectious->at(index) + recovered->at(index) - initialPopulation) < 1e-8);
+        QVERIFY(std::abs(susceptible.at(index) + infectious.at(index) + recovered.at(index) - initialPopulation) < 1e-8);
     }
 }
 

@@ -27,7 +27,7 @@ public:
 
     const qds::core::Document &document() const;
     quint64 simulationRevision() const { return m_simulationRevision; }
-    QUndoStack *undoStack();
+    QUndoStack &undoStack();
 
     qds::core::EntityId createVariable(qds::core::ElementKind kind, const QPointF &position);
     qds::core::EntityId createFlow(qds::core::EntityId from, qds::core::EntityId to);

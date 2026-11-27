@@ -716,8 +716,8 @@ int ArrowItem::type() const
 
 Qt::PenStyle ArrowItem::lineStyle() const
 {
-    const auto *source = dynamic_cast<const ViewObjectItem *>(m_from);
-    const auto *target = dynamic_cast<const ViewObjectItem *>(m_to);
+    const auto *source = dynamic_cast<const ViewObjectItem *>(m_from.data());
+    const auto *target = dynamic_cast<const ViewObjectItem *>(m_to.data());
     const bool commented = (source && source->kind() == qds::core::ElementKind::Comment)
         || (target && target->kind() == qds::core::ElementKind::Comment);
     return commented ? Qt::DashLine : Qt::SolidLine;

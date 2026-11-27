@@ -34,7 +34,7 @@ class SimulationController : public QObject
     Q_OBJECT
 
 public:
-    explicit SimulationController(DocumentController *documentController);
+    explicit SimulationController(DocumentController *documentController, QObject *parent = nullptr);
     ~SimulationController() override;
 
     bool start(const QString &runName, bool overwrite = false);
@@ -70,7 +70,7 @@ private:
     void workerFinished(std::shared_ptr<const qds::core::SimulationRun> run, quint64 generation);
     void workerThreadFinished(quint64 generation);
 
-    DocumentController *m_documentController;
+    QPointer<DocumentController> m_documentController;
     QVector<SimulationRun> m_runs;
     QSet<RunId> m_loadedRuns;
     std::shared_ptr<const SimulationRunRequest> m_activeRequest;

@@ -101,8 +101,8 @@ public:
     const QVector<double> &times() const { return m_times; }
     const QVector<ModelIssue> &issues() const { return m_issues; }
     std::optional<double> endTime() const { return m_endTime; }
-    const QVector<double> *series(const QString &nameKey) const;
-    const QVector<ArrayValue> *arraySeries(const QString &nameKey) const;
+    QVector<double> series(const QString &nameKey) const;
+    QVector<ArrayValue> arraySeries(const QString &nameKey) const;
 
 private:
     friend class SimulationRunner;
@@ -110,8 +110,8 @@ private:
 
     const RunVariableInfo *variable(const QString &nameKey) const;
     const RunVariableInfo *variable(EntityId id) const;
-    const QVector<double> *series(EntityId id) const;
-    const QVector<ArrayValue> *arraySeries(EntityId id) const;
+    QVector<double> series(EntityId id) const;
+    QVector<ArrayValue> arraySeries(EntityId id) const;
     QVector<EntityId> causes(EntityId dependent) const { return m_causes.value(dependent); }
 
     RunId m_id = 0;

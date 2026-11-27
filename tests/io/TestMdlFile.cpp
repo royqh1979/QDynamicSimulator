@@ -205,7 +205,7 @@ void TestMdlFile::absModel()
     QVERIFY(compiled.plan);
     const SimulationRun run = SimulationRunner(document, *compiled.plan).run();
     QCOMPARE(run.status(), SimulationRunStatus::Completed);
-    QCOMPARE(run.series("test_abs")->front(), 10.0);
+    QCOMPARE(run.series("test_abs").front(), 10.0);
 }
 
 void TestMdlFile::teacupModel()
@@ -242,11 +242,11 @@ void TestMdlFile::teacupModel()
     QVERIFY(compiled.plan);
     const SimulationRun run = SimulationRunner(document, *compiled.plan).run();
     QCOMPARE(run.status(), SimulationRunStatus::Completed);
-    const QVector<double> *temperature = run.series("teacup_temperature");
-    QVERIFY(temperature);
-    QCOMPARE(temperature->front(), 180.0);
+    const QVector<double> temperature = run.series("teacup_temperature");
+    QVERIFY(!temperature.isEmpty());
+    QCOMPARE(temperature.front(), 180.0);
     const double expectedFinal = 70.0 + 110.0 * std::pow(1.0 - 0.125 / 10.0, 240);
-    QVERIFY(std::abs(temperature->back() - expectedFinal) < 1e-8);
+    QVERIFY(std::abs(temperature.back() - expectedFinal) < 1e-8);
 
     QString error;
     QVector<ModelIssue> warnings;
@@ -293,7 +293,7 @@ void TestMdlFile::rabbitModel()
     QVERIFY(compiled.plan);
     const SimulationRun run = SimulationRunner(document, *compiled.plan).run();
     QCOMPARE(run.status(), SimulationRunStatus::Completed);
-    QCOMPARE(run.series("population")->front(), 100.0);
+    QCOMPARE(run.series("population").front(), 100.0);
 }
 
 void TestMdlFile::additionalSketchViewIgnored()
@@ -479,7 +479,7 @@ void TestMdlFile::complexNetRate()
     QVERIFY(compiled.plan);
     const SimulationRun run = SimulationRunner(document, *compiled.plan).run();
     QCOMPARE(run.status(), SimulationRunStatus::Completed);
-    QCOMPARE(run.series("stock")->front(), 10.0);
+    QCOMPARE(run.series("stock").front(), 10.0);
 }
 
 void TestMdlFile::openCloudLifecycle()

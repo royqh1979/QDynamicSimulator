@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QPointer>
 #include <QWidget>
 
 class DocumentController;
@@ -24,8 +25,8 @@ public:
 private:
     void commitFontStyle(const QFont &font);
 
-    DocumentController *m_controller;
-    DiagramScene *m_scene;
+    QPointer<DocumentController> m_controller;
+    QPointer<DiagramScene> m_scene;
     QLineEdit *m_nameEdit;
     EquationEditor *m_equationEdit;
     QLabel *m_equationLabel;

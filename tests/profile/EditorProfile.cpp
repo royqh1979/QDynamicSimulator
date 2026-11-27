@@ -5,6 +5,7 @@
 #include "DiagramView.h"
 #include "DocumentController.h"
 #include "MainWindow.h"
+#include "MiniMapView.h"
 #include "PropertyPanel.h"
 #include "SimulationController.h"
 #include "SimulationResultsWidget.h"
@@ -33,6 +34,7 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QPointer>
 #include <QScreen>
 #include <QScrollBar>
 #include <QSettings>
@@ -141,21 +143,21 @@ int main(int argc, char **argv)
     const qint64 moveNs = timer.nsecsElapsed();
 
     timer.restart();
-    controller.undoStack()->undo();
-    controller.undoStack()->redo();
+    controller.undoStack().undo();
+    controller.undoStack().redo();
     const qint64 undoRedoNs = timer.nsecsElapsed();
 
     timer.restart();
     scene.selectAllItems();
     scene.alignSelected(Qt::AlignLeft);
     const qint64 alignNs = timer.nsecsElapsed();
-    controller.undoStack()->undo();
+    controller.undoStack().undo();
 
     const ClipboardData clipboard = controller.copyElements(ids);
     timer.restart();
     const auto pasted = controller.pasteClipboard(clipboard, QPointF(20.0, 20.0));
     const qint64 pasteNs = timer.nsecsElapsed();
-    controller.undoStack()->undo();
+    controller.undoStack().undo();
 
     timer.restart();
     std::size_t matches = 0;
@@ -293,7 +295,7 @@ int main(int argc, char **argv)
         const QPointF position = moveUndoItem->pos();
         timer.restart();
         moveUndoController.moveElements({{moveUndoContact->id(), position + QPointF(0.0, 400.0)}});
-        moveUndoController.undoStack()->undo();
+        moveUndoController.undoStack().undo();
         QApplication::processEvents();
         const QImage restored = viewportImage(moveUndoView);
         moveUndoNs += timer.nsecsElapsed();
@@ -345,7 +347,7 @@ int main(int argc, char **argv)
         if (!model || model->displayName() != "Population" || inlineNameEditor(renameScene))
             return 23;
         ++inlineRenameCount;
-        renameController.undoStack()->undo();
+        renameController.undoStack().undo();
     }
 
     DocumentController guideController;
@@ -563,7 +565,7 @@ int main(int argc, char **argv)
             || arrow->to() != flowTargetScene.item(flowTargetFlow))
             return 18;
         ++connectorToFlowCount;
-        flowTargetController.undoStack()->undo();
+        flowTargetController.undoStack().undo();
     }
 
     const QPoint highlightStart = flowTargetView.mapFromScene(flowTargetScene.item(flowTargetSource)->center());
@@ -694,14 +696,14 @@ int main(int argc, char **argv)
         if (id == 0)
             return 7;
         const FlowEndpoints endpoints = static_cast<const Flow *>(blankController.document().find(id))->endpoints();
-        blankController.undoStack()->undo();
+        blankController.undoStack().undo();
         if (blankController.document().find(id) || blankController.document().find(endpoints.from)
             || blankController.document().find(endpoints.to))
             return 8;
-        blankController.undoStack()->redo();
+        blankController.undoStack().redo();
         if (!blankScene.item(id))
             return 9;
-        blankController.undoStack()->undo();
+        blankController.undoStack().undo();
     }
     const qint64 blankFlowNs = timer.nsecsElapsed();
 
@@ -737,7 +739,7 @@ int main(int argc, char **argv)
             || fontScene.item(fontStock)->labelFont().pointSize() != font.pointSize())
             return 28;
         ++fontStyleCount;
-        fontController.undoStack()->undo();
+        fontController.undoStack().undo();
     }
 
     Document workspaceDocument;
@@ -1135,7 +1137,91 @@ int main(int argc, char **argv)
     }
     const qint64 chartZoomNs = timer.nsecsElapsed();
 
-    const qint64 commands = controller.undoStack()->count();
+    const int lifetimeIterations = std::max(10, std::min(100, count / 10));
+    timer.restart();
+    int windowLifetimeCount = 0;
+    for (int index = 0; index < lifetimeIterations; ++index) {
+        QPointer<DocumentController> controllerGuard;
+        {
+            MainWindow window;
+            auto *windowController = window.findChild<DocumentController *>();
+            auto *windowScene = window.findChild<DiagramScene *>();
+            controllerGuard = windowController;
+            const EntityId stock = windowController->createVariable(ElementKind::Stock, QPointF());
+            const EntityId cloud = windowController->createCloud(QPointF(300.0, 0.0));
+            windowController->createFlow(cloud, stock);
+            windowScene->item(stock)->setSelected(true);
+            window.show();
+            QApplication::processEvents();
+        }
+        if (controllerGuard)
+            return 68;
+        ++windowLifetimeCount;
+    }
+    const qint64 windowLifetimeNs = timer.nsecsElapsed();
+
+    timer.restart();
+    int controllerSceneLifetimeCount = 0;
+    for (int index = 0; index < lifetimeIterations; ++index) {
+        auto *lifetimeController = new DocumentController;
+        auto *lifetimeScene = new DiagramScene(lifetimeController);
+        auto *lifetimePanel = new PropertyPanel(lifetimeController, lifetimeScene);
+        auto *lifetimeMiniMap = new MiniMapView(lifetimeScene);
+        const EntityId stock = lifetimeController->createVariable(ElementKind::Stock, QPointF());
+        lifetimeScene->item(stock)->setSelected(true);
+        if (index % 2 == 0) {
+            delete lifetimeController;
+            delete lifetimeScene;
+        } else {
+            delete lifetimeScene;
+            delete lifetimeController;
+        }
+        delete lifetimeMiniMap;
+        delete lifetimePanel;
+        ++controllerSceneLifetimeCount;
+    }
+    const qint64 controllerSceneLifetimeNs = timer.nsecsElapsed();
+
+    timer.restart();
+    int documentResetLifetimeCount = 0;
+    DocumentController resetController;
+    DiagramScene resetScene(&resetController);
+    PropertyPanel resetPanel(&resetController, &resetScene);
+    for (int index = 0; index < lifetimeIterations; ++index) {
+        Document replacement;
+        const EntityId stock = replacement.createVariable(ElementKind::Stock, {0.0, 0.0});
+        const EntityId auxiliary = replacement.createVariable(ElementKind::Variable, {240.0, 0.0});
+        const EntityId connector = replacement.createConnector(stock, auxiliary);
+        resetController.replaceDocument(std::move(replacement));
+        resetScene.item(connector)->setSelected(true);
+        QApplication::processEvents();
+        ++documentResetLifetimeCount;
+    }
+    const qint64 documentResetLifetimeNs = timer.nsecsElapsed();
+
+    Document endpointDocument;
+    const EntityId endpointSourceId = endpointDocument.createVariable(ElementKind::Stock, {0.0, 0.0});
+    const EntityId endpointTargetId = endpointDocument.createVariable(ElementKind::Variable, {240.0, 0.0});
+    const auto *endpointSourceModel = static_cast<const ModelElement *>(endpointDocument.find(endpointSourceId));
+    const auto *endpointTargetModel = static_cast<const ModelElement *>(endpointDocument.find(endpointTargetId));
+    timer.restart();
+    int endpointLifetimeCount = 0;
+    for (int index = 0; index < lifetimeIterations; ++index) {
+        QGraphicsScene endpointScene;
+        auto *source = new VariableItem(*endpointSourceModel, QPointF(0.0, 0.0));
+        auto *target = new VariableItem(*endpointTargetModel, QPointF(240.0, 0.0));
+        auto *arrow = new ArrowItem(100, source, target, Route {});
+        endpointScene.addItem(source);
+        endpointScene.addItem(target);
+        endpointScene.addItem(arrow);
+        delete source;
+        if (arrow->from() || arrow->geometryPath().isEmpty())
+            return 69;
+        ++endpointLifetimeCount;
+    }
+    const qint64 endpointLifetimeNs = timer.nsecsElapsed();
+
+    const qint64 commands = controller.undoStack().count();
     QTextStream(stdout) << "operation,count,total_ms,per_operation_us\n"
                         << "editor_create," << count << "," << createNs / 1e6 << "," << createNs / 1000.0 / count << "\n"
                         << "editor_connect," << connectionCount << "," << connectNs / 1e6 << "," << connectNs / 1000.0 / connectionCount << "\n"
@@ -1202,6 +1288,14 @@ int main(int argc, char **argv)
                         << runsCompareNs / 1000.0 / runsCompareCount << "\n"
                         << "simulation_settings_dialog," << settingsDialogCount << "," << settingsDialogNs / 1e6 << ","
                         << settingsDialogNs / 1000.0 / settingsDialogCount << "\n"
+                        << "window_lifecycle," << windowLifetimeCount << "," << windowLifetimeNs / 1e6 << ","
+                        << windowLifetimeNs / 1000.0 / windowLifetimeCount << "\n"
+                        << "controller_scene_lifecycle," << controllerSceneLifetimeCount << "," << controllerSceneLifetimeNs / 1e6 << ","
+                        << controllerSceneLifetimeNs / 1000.0 / controllerSceneLifetimeCount << "\n"
+                        << "document_reset_lifecycle," << documentResetLifetimeCount << "," << documentResetLifetimeNs / 1e6 << ","
+                        << documentResetLifetimeNs / 1000.0 / documentResetLifetimeCount << "\n"
+                        << "routed_endpoint_lifecycle," << endpointLifetimeCount << "," << endpointLifetimeNs / 1e6 << ","
+                        << endpointLifetimeNs / 1000.0 / endpointLifetimeCount << "\n"
                         << "chart_build_render_100000x10,1," << chartRenderNs / 1e6 << "," << chartRenderNs / 1000.0 << "\n"
                         << "chart_png_100000x10,1," << chartPngNs / 1e6 << "," << chartPngNs / 1000.0 << "\n"
                         << "chart_zoom_reset_100000x10,10," << chartZoomNs / 1e6 << "," << chartZoomNs / 1000.0 / 10 << "\n";
@@ -1228,6 +1322,8 @@ int main(int argc, char **argv)
         && !dependentArrows.empty() && dependentEndpointChecksum != 0.0
         && sessionCount == count && sessionSamples == count * 2 && tableRowCount == count * 2
         && resultsRefreshCount == count && showCurrentCount == count && settingsDialogCount == count
+        && windowLifetimeCount == lifetimeIterations && controllerSceneLifetimeCount == lifetimeIterations
+        && documentResetLifetimeCount == lifetimeIterations && endpointLifetimeCount == lifetimeIterations
         && chartSeriesCount == 10 && chartImageValid && chartPngWritten
         && elementCount(loaded) == static_cast<std::size_t>(count) + connectionIds.size();
     if (!valid)

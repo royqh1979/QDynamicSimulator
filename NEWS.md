@@ -82,3 +82,5 @@
 - 仿真内核支持基本数组执行：Apply-to-All 与显式元素方程、数组 Stock/Flow/Variable、标量广播、维度重排、Euler/RK4 和独立 `arraySeries()`；数组结果 UI 留待后续阶段。
 - 统一 SimulationRun 结果对象：RunId、runName、modelRevision、结果变量元数据、直接原因与标量/数组序列同属一个不可变记录，移除 NamedRun 平行模型。
 - 结果查询统一使用 nameKey，EntityId 和 RunVariableInfo.id 私有化，仅由 SimulationRun 内部映射；Graph/Table、Causes Strip 和 Runs Compare 不再接触运行副本 ID。
+- 修复不同析构顺序下 Scene、属性面板和仿真结果视图可能访问失效 Controller 的随机崩溃；析构期停止业务通知，连接端点改用弱引用，文档批量重置阻止控制柄重入。
+- SimulationRun 标量/数组序列改为 QVector 值返回，结果表显式持有时间和数值容器，不再依赖 Run 内部指针寿命。

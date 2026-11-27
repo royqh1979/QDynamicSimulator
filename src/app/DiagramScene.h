@@ -95,7 +95,7 @@ private:
     void cancelRubberLine();
     void cancelEndpointPreview();
 
-    DocumentController *m_controller;
+    QPointer<DocumentController> m_controller;
     QHash<qds::core::EntityId, DiagramItem *> m_items;
     Tool m_tool = Tool::Select;
     qds::core::EntityId m_connectionSource = 0;
@@ -113,6 +113,7 @@ private:
     bool m_spacePressed = false;
     bool m_areaSelecting = false;
     bool m_variableDragging = false;
+    bool m_bulkClear = false;
     QPointF m_dragStart;
     QHash<qds::core::EntityId, QPointF> m_dragOrigins;
     double m_gridSize = 20.0;
