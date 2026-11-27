@@ -63,6 +63,7 @@ private:
     void updateRecentFiles();
     void updateCursorStatus();
     void runSimulation();
+    void showSimulationResults(bool graph);
     void openSimulationSettings();
     void updateSimulationControls();
     void updateRunNameChoices();

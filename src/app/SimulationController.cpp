@@ -211,9 +211,9 @@ void SimulationController::reset()
     m_lastRunId = 0;
     m_workbenchVariable = 0;
     m_workbenchNameKey.clear();
-    emit workbenchVariableChanged();
     m_runs.clear();
     m_loadedRuns.clear();
+    emit workbenchVariableChanged();
     m_nextRunId = 1;
     setStatus(SimulationSessionStatus::Idle);
     emit namedRunsChanged();

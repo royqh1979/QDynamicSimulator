@@ -49,7 +49,7 @@
 **Workbench Variable**
 
 - 当前分析变量称为 Workbench Variable，与画布多选集合和图表可见变量集合分开保存。
-- 单击画布中的数值 ModelElement 会同时选中它并设为 Workbench Variable；Connector、Cloud、Comment 不能成为 Workbench Variable。多选不改变“唯一当前分析变量”的规则。
+- 画布选择与 Workbench Variable 平时互不影响。仅在 Graph/Table 菜单、工具栏动作或运行成功后的自动打开时，若当前恰好单选一个数值 ModelElement，则尽力将它设为 Workbench Variable；无选择、多选、Connector、Cloud、Comment 或被结果列表过滤的数值常量均不阻止打开结果视图，也不改变画布选择状态。Workbench Variable 的选择不反向同步到画布。
 - 工具栏/结果区的 Variable Selection 控件提供同一变量列表和搜索；控件与画布选择双向同步。
 - 标题栏或紧邻标题的固定区域显示当前 Workbench Variable，修改画布选择、变量改名或文档替换后立即刷新。
 - Graph/Table 默认分析 Workbench Variable；若尚未设置则使用首个 Stock，再否则使用首个可输出变量。没有可用结果时提示先运行，不隐式启动新 Run。
@@ -92,7 +92,7 @@ Run results
 - 没有 Run 时 Dock 可保持隐藏；运行成功且完成时 Document 的 simulationRevision 与该 Run 一致，则自动显示 Graph、选择 lastRunId 对应的此次 Run，并显示 Completed、样本数和 Run Name。运行期间或完成后模型已修改时只保留过期结果，不自动弹出 Dock。即使小模型瞬间完成也遵循同一规则，不让用户靠“是否弹出覆盖提示”判断是否运行。失败/取消运行继续通过状态栏和 Diagnostics 显示，不产生虚假成功图表。
 - Diagnostics 复用现有模型检查面板或共享诊断视图，不复制诊断存储。
 - 变量列表显示名称、单位、可见勾选状态和 Run 状态，不把名称作为身份。
-- 默认显示 Workbench Variable；未设置时选择首个 Stock。Variable/Flow 可搜索并追加，数值常量不进入下拉框。变量过多时使用列表虚拟化和延迟搜索，不一次生成图表点对象。
+- 默认显示 Workbench Variable；仅在它为空时选择首个 Stock。Variable/Flow 可搜索并追加，数值常量不进入下拉框；若 Workbench 是被过滤的数值常量，则保留空当前项且不回退到其他变量。文档 reset 先清空 Runs，再发送 Workbench 通知，禁止用旧 Run 回填名称。变量过多时使用列表虚拟化和延迟搜索，不一次生成图表点对象。
 - Del/Close 只在结果视图具有焦点时关闭当前输出，不删除数据集，也不删除画布元素。Windows > Close All Output 只关闭输出视图，不清空 Datasets；清空结果需要独立明确操作。
 
 ### 2.4 结构、方程与完整性提示

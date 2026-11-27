@@ -2803,7 +2803,7 @@ void TestEditor::resultsDock()
     controller->setEquation(constant, QStringLiteral("5"));
     controller->setSimulationSettings({0.0, 1.0, 1.0, 1.0});
     scene->item(stock)->setSelected(true);
-    QCOMPARE(simulation->workbenchVariable(), stock);
+    QCOMPARE(simulation->workbenchVariable(), EntityId(0));
 
     QVERIFY(simulation->start(QStringLiteral("equilib")));
     QTRY_COMPARE(simulation->status(), SimulationSessionStatus::Completed);
@@ -2869,18 +2869,37 @@ void TestEditor::resultsDock()
 
     scene->clearSelection();
     scene->item(auxiliary)->setSelected(true);
+    QCOMPARE(variables->currentData().toString(), QStringLiteral("population"));
+    window.findChild<QAction *>(QStringLiteral("graphAction"))->trigger();
     QCOMPARE(variables->currentData().toString(), QStringLiteral("birth_rate"));
     QCOMPARE(model->headerData(1, Qt::Horizontal).toString(), QStringLiteral("equilib"));
     QCOMPARE(model->data(model->index(model->rowCount() - 1, 1)).toString(), QStringLiteral("125"));
     QCOMPARE(chart->chart()->series().size(), 1);
     QCOMPARE(chart->chart()->series().front()->name(), QStringLiteral("equilib"));
+    scene->clearSelection();
+    scene->item(constant)->setSelected(true);
+    QCOMPARE(simulation->workbenchVariable(), auxiliary);
+    window.findChild<QAction *>(QStringLiteral("graphAction"))->trigger();
+    QVERIFY(scene->item(constant)->isSelected());
+    QCOMPARE(simulation->workbenchVariable(), constant);
+    QCOMPARE(variables->currentIndex(), -1);
+    scene->clearSelection();
+    scene->item(auxiliary)->setSelected(true);
+    window.findChild<QAction *>(QStringLiteral("graphAction"))->trigger();
+    QCOMPARE(variables->currentData().toString(), QStringLiteral("birth_rate"));
     auto *constantAxis = qobject_cast<QtCharts::QValueAxis *>(chart->chart()->axes(Qt::Vertical).front());
     QVERIFY(constantAxis->min() < 125.0 && constantAxis->max() > 125.0);
     const int populationIndex = variables->findData(QStringLiteral("population"));
     QVERIFY(populationIndex >= 0);
     variables->setCurrentIndex(populationIndex);
     QCOMPARE(simulation->workbenchVariable(), stock);
-    QVERIFY(scene->item(stock)->isSelected());
+    QVERIFY(scene->item(auxiliary)->isSelected());
+    const EntityId cloud = controller->createCloud(QPointF(600.0, 0.0));
+    scene->clearSelection();
+    scene->item(cloud)->setSelected(true);
+    window.findChild<QAction *>(QStringLiteral("graphAction"))->trigger();
+    QVERIFY(scene->item(cloud)->isSelected());
+    QCOMPARE(simulation->workbenchVariable(), stock);
 
     controller->setEquation(auxiliary, QStringLiteral("Population * 0.25"));
     controller->setSimulationSettings({0.0, 1.0, 0.5, 0.5});
