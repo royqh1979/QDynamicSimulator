@@ -133,6 +133,7 @@ private slots:
     void createUndoRedo();
     void renameAndEquationUndo();
     void inlineRenameUndoRedo();
+    void flowAndCommentInlineEditing();
     void namesAllowSpaces();
     void commentContentEditing();
     void propertyPanelWidget();
@@ -155,6 +156,7 @@ private slots:
     void bezierControlGeometry();
     void flowRoutesAndValveGeometry();
     void flowLabelRepaint();
+    void flowDefaultAndSelectionColors();
     void bezierControlGuideRendering();
     void controlPointMouseRepaint();
     void automaticControlPointMouseEdit();
@@ -288,7 +290,8 @@ void TestEditor::inlineRenameUndoRedo()
     QVERIFY(!inlineNameEditor(scene));
     QCOMPARE(static_cast<const ModelElement *>(controller.document().find(stock))->displayName(), QString("Population"));
 
-    QTest::mouseDClick(view.viewport(), Qt::LeftButton, Qt::NoModifier, view.mapFromScene(scene.item(flow)->center()));
+    QTest::mouseDClick(view.viewport(), Qt::LeftButton, Qt::NoModifier,
+        view.mapFromScene(dynamic_cast<FlowItem *>(scene.item(flow))->labelRect().center()));
     editor = inlineNameEditor(scene);
     QVERIFY(editor);
     QCOMPARE(editor->text(), QStringLiteral("Flow1"));
@@ -300,6 +303,58 @@ void TestEditor::inlineRenameUndoRedo()
     QCOMPARE(static_cast<const ModelElement *>(controller.document().find(flow))->displayName(), QString("Flow1"));
     controller.undoStack()->redo();
     QCOMPARE(static_cast<const ModelElement *>(controller.document().find(flow))->displayName(), QString("Infection"));
+}
+
+void TestEditor::flowAndCommentInlineEditing()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    const EntityId cloud = controller.createCloud(QPointF(400.0, 0.0));
+    const EntityId flow = controller.createFlow(stock, cloud);
+    controller.renameElement(flow, QStringLiteral("Rate"));
+    const EntityId comment = controller.createComment(QStringLiteral("Original comment"), QPointF(200.0, 250.0));
+    auto *flowItem = dynamic_cast<FlowItem *>(scene.item(flow));
+    auto *commentItem = dynamic_cast<ViewObjectItem *>(scene.item(comment));
+    QVERIFY(flowItem && commentItem);
+
+    DiagramView view(&scene);
+    view.resize(800, 600);
+    view.centerOn(200.0, 100.0);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+
+    QTest::mouseDClick(view.viewport(), Qt::LeftButton, Qt::NoModifier,
+        view.mapFromScene(flowItem->labelRect().center()));
+    QLineEdit *nameEditor = inlineNameEditor(scene);
+    QVERIFY(nameEditor);
+    QCOMPARE(nameEditor->text(), QStringLiteral("Rate"));
+    nameEditor->setText(QStringLiteral("Edited rate"));
+    QTest::keyClick(nameEditor, Qt::Key_Return);
+    QCOMPARE(controller.document().findByName("Edited rate")->id(), flow);
+
+    QTest::mouseDClick(view.viewport(), Qt::LeftButton, Qt::NoModifier,
+        view.mapFromScene(flowItem->center()));
+    QVERIFY(!inlineNameEditor(scene));
+
+    QTest::mouseDClick(view.viewport(), Qt::LeftButton, Qt::NoModifier,
+        view.mapFromScene(commentItem->center()));
+    QLineEdit *commentEditor = nullptr;
+    for (QGraphicsItem *candidate : scene.items()) {
+        auto *proxy = qgraphicsitem_cast<QGraphicsProxyWidget *>(candidate);
+        auto *editor = proxy ? qobject_cast<QLineEdit *>(proxy->widget()) : nullptr;
+        if (editor && editor->objectName() == QStringLiteral("inlineCommentEditor"))
+            commentEditor = editor;
+    }
+    QVERIFY(commentEditor);
+    QCOMPARE(commentEditor->text(), QStringLiteral("Original comment"));
+    commentEditor->setText(QStringLiteral("Edited comment"));
+    QTest::keyClick(commentEditor, Qt::Key_Return);
+    QCOMPARE(dynamic_cast<const Comment *>(controller.document().find(comment))->content(), QStringLiteral("Edited comment"));
+    controller.undoStack()->undo();
+    QCOMPARE(dynamic_cast<const Comment *>(controller.document().find(comment))->content(), QStringLiteral("Original comment"));
+    controller.undoStack()->redo();
+    QCOMPARE(dynamic_cast<const Comment *>(controller.document().find(comment))->content(), QStringLiteral("Edited comment"));
 }
 
 void TestEditor::namesAllowSpaces()
@@ -869,7 +924,27 @@ void TestEditor::cloudShapeAndBoundary()
     QVERIFY(cloud);
     const QPainterPath outline = cloud->shape();
     QVERIFY(outline.elementCount() > 2);
+    QPainterPath unscaled;
+    unscaled.moveTo(-35.0, 12.0);
+    unscaled.cubicTo(-48.0, 12.0, -50.0, -4.0, -39.0, -10.0);
+    unscaled.cubicTo(-40.0, -24.0, -20.0, -28.0, -10.0, -17.0);
+    unscaled.cubicTo(0.0, -30.0, 20.0, -26.0, 25.0, -14.0);
+    unscaled.cubicTo(41.0, -20.0, 52.0, -5.0, 43.0, 6.0);
+    unscaled.cubicTo(48.0, 20.0, 25.0, 27.0, 12.0, 19.0);
+    unscaled.cubicTo(-5.0, 28.0, -30.0, 25.0, -35.0, 12.0);
+    unscaled.closeSubpath();
+    QCOMPARE(outline.elementCount(), unscaled.elementCount());
+    for (int index = 0; index < outline.elementCount(); ++index) {
+        const auto actual = outline.elementAt(index);
+        const auto original = unscaled.elementAt(index);
+        QCOMPARE(actual.type, original.type);
+        QVERIFY(std::abs(actual.x - original.x * 0.4) < 1e-9);
+        QVERIFY(std::abs(actual.y - original.y * 0.4) < 1e-9);
+    }
+    QVERIFY(cloud->boundingRect().width() < 50.0);
     QVERIFY(outline.contains(QPointF()));
+    QVERIFY(outline.contains(QPointF(-15.0, 0.0)));
+    QVERIFY(!outline.contains(QPointF(-45.0, 0.0)));
     const QList<QPolygonF> polygons = outline.toSubpathPolygons();
     QCOMPARE(polygons.size(), 1);
     QVERIFY(polygons.front().size() > 8);
@@ -1045,7 +1120,7 @@ void TestEditor::flowRoutesAndValveGeometry()
     DocumentController shortController;
     DiagramScene shortScene(&shortController);
     const EntityId shortStock = shortController.createVariable(ElementKind::Stock, QPointF());
-    const EntityId shortCloud = shortController.createCloud(QPointF(100.0, 0.0));
+    const EntityId shortCloud = shortController.createCloud(QPointF(70.0, 0.0));
     const EntityId shortFlow = shortController.createFlow(shortStock, shortCloud);
     QVERIFY(dynamic_cast<FlowItem *>(shortScene.item(shortFlow))->linePaths().isEmpty());
 
@@ -1111,6 +1186,39 @@ void TestEditor::flowLabelRepaint()
         }
     }
     QCOMPARE(remaining, 0);
+}
+
+void TestEditor::flowDefaultAndSelectionColors()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    scene.setGridVisible(false);
+    const EntityId stock = controller.createVariable(ElementKind::Stock, QPointF(0.0, 0.0));
+    const EntityId cloud = controller.createCloud(QPointF(400.0, 0.0));
+    const EntityId flow = controller.createFlow(stock, cloud);
+    auto *item = dynamic_cast<FlowItem *>(scene.item(flow));
+    QVERIFY(item);
+
+    DiagramView view(&scene);
+    view.resize(640, 480);
+    view.centerOn(200.0, 0.0);
+    view.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&view));
+    QTest::qWait(20);
+    const QImage normal = view.grab().toImage();
+    QVERIFY(itemColorCount(normal, view, item, diagram_palette::EntityOutlineColor) > 0);
+    QCOMPARE(itemColorCount(normal, view, item, diagram_palette::SelectionColor), 0);
+
+    item->setSelected(true);
+    QTest::qWait(20);
+    const QImage selected = view.grab().toImage();
+    QVERIFY(itemColorCount(selected, view, item, diagram_palette::SelectionColor) > 0);
+
+    item->setSelected(false);
+    QTest::qWait(20);
+    const QImage restored = view.grab().toImage();
+    QVERIFY(itemColorCount(restored, view, item, diagram_palette::EntityOutlineColor) > 0);
+    QCOMPARE(itemColorCount(restored, view, item, diagram_palette::SelectionColor), 0);
 }
 
 void TestEditor::bezierControlGuideRendering()

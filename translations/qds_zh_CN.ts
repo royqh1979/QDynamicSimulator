@@ -44,7 +44,7 @@
         <translation>删除</translation>
     </message>
     <message>
-        <location filename="../src/app/DiagramScene.cpp" line="961"/>
+        <location filename="../src/app/DiagramScene.cpp" line="978"/>
         <source>The name cannot be empty or duplicate another variable.</source>
         <translation>名称不能为空或与其他变量重名。</translation>
     </message>

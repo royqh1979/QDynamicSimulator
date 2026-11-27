@@ -81,6 +81,7 @@ public:
     qds::core::EntityId id() const override { return m_id; }
     qds::core::ElementKind kind() const { return m_kind; }
     QString text() const { return m_text; }
+    QRectF labelRect() const override { return QRectF(-60.0, -25.0, 120.0, 50.0); }
     QPointF boundaryPointToward(const QPointF &target) const override;
     void refresh(const qds::core::ViewElement &object, const QPointF &position);
 
