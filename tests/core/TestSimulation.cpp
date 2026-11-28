@@ -1008,6 +1008,25 @@ void TestSimulation::delayFunctionBoundaries()
     arrays.setEquation(arrayOutput, "delay(input, 16.25, N)");
     QCOMPARE(runModel(arrays).status(), SimulationRunStatus::Failed);
 
+    Document reordered;
+    reordered.defineDimension("A", 2);
+    reordered.defineDimension("B", 2);
+    const EntityId reorderedInput = reordered.createVariable(ElementKind::Variable);
+    reordered.rename(reorderedInput, "input");
+    reordered.setDimensions(reorderedInput, {"A", "B"});
+    reordered.setEquation(reorderedInput, "A + 10 * B");
+    const EntityId reorderedOutput = reordered.createVariable(ElementKind::Variable);
+    reordered.rename(reorderedOutput, "output");
+    reordered.setDimensions(reorderedOutput, {"B", "A"});
+    reordered.setEquation(reorderedOutput, "delayn(input, 4, input, 1)");
+    reordered.setSimulationSettings({0.0, 0.25, 0.25, 0.25});
+    const SimulationRun reorderedRun = runModel(reordered);
+    QCOMPARE(reorderedRun.status(), SimulationRunStatus::Completed);
+    QCOMPARE(reorderedRun.arraySeries("output").front().values(), (QVector<double> {11.0, 12.0, 21.0, 22.0}));
+    reordered.setSimulationSettings({0.0, 0.25, 0.25, 0.25, IntegrationMethod::RungeKutta4});
+    const SimulationRun reorderedRk4 = runModel(reordered);
+    QCOMPARE(reorderedRk4.arraySeries("output").front().values(), (QVector<double> {11.0, 12.0, 21.0, 22.0}));
+
     Document conditional;
     const EntityId conditionalOutput = conditional.createVariable(ElementKind::Variable);
     conditional.rename(conditionalOutput, "output");

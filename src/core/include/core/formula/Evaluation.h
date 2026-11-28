@@ -116,6 +116,8 @@ struct DelayPlan {
     int order = 1;
     bool initializeOrder = false;
     bool discrete = false;
+    QVector<QString> dimensions;
+    QVector<std::size_t> shape;
 };
 
 struct EvaluationScope {

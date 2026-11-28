@@ -30,6 +30,7 @@ python tests/profile/check_random_samples.py random-samples.csv
 - [Vensim MDL 导入性能](vensim-mdl.md)。
 - [UI 对象生命周期性能与压力验证](object-lifetime.md)。
 - [仿真计算热点审查](simulation-hotspots.md)。
+- [Delay 分场景热点分析](delay-hotspots.md)。
 - [随机函数、统计分布与独立 SciPy 校验](random-functions.md)。
 - [延迟、平滑、Fixed 与数组状态性能](delay-functions.md)。
 - [数组堆句柄与元素访问性能](array-values.md)。

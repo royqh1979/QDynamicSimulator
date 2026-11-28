@@ -535,9 +535,12 @@ public:
             if (element.kind() == ElementKind::Lookup)
                 continue;
             m_arrayCount = 1;
+            m_dimensions = element.dimensions();
+            m_shape.clear();
             for (const QString &name : element.dimensions()) {
                 const Dimension *dimension = m_document.findDimension(name);
                 const std::size_t count = dimension->elements.size();
+                m_shape.push_back(count);
                 if (count > std::numeric_limits<std::size_t>::max() / m_arrayCount) {
                     addIssue(result, element.id(), "Simulation array size overflows state storage",
                         "invalid-simulation-array-shape", {});
@@ -677,7 +680,8 @@ private:
                 return nullptr;
             }
             m_delaySlots += slots;
-            m_plan.m_delays.push_back({kind, m_arrayCount, base, order, generic, generic || kind == DelayKind::Fixed});
+            m_plan.m_delays.push_back({kind, m_arrayCount, base, order, generic, generic || kind == DelayKind::Fixed,
+                m_dimensions, m_shape});
             return std::make_unique<BoundCallNode>(node.nameKey(), index, std::move(arguments), node.span());
         }
         if (const FunctionSignature *signature = findFunctionSignature(node.nameKey())) {
@@ -745,6 +749,8 @@ private:
     SimulationPlan &m_plan;
     SimulationCompileResult *m_result = nullptr;
     QHash<QString, int> m_locals;
+    QVector<QString> m_dimensions;
+    QVector<std::size_t> m_shape;
     std::size_t m_arrayCount = 1;
     std::size_t m_delaySlots = 0;
     bool m_inMacro = false;
