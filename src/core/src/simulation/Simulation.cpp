@@ -175,6 +175,16 @@ QVector<std::size_t> coordinates(std::size_t flat, const QVector<std::size_t> &s
     return result;
 }
 
+void advanceIndices(QVector<std::size_t> &indices, const QVector<std::size_t> &shape)
+{
+    for (std::size_t position = indices.size(); position-- > 0;) {
+        ++indices[position];
+        if (indices[position] < shape[position])
+            return;
+        indices[position] = 0;
+    }
+}
+
 std::optional<std::size_t> flatIndex(const ArrayValue &array, const QVector<QString> &dimensions,
     const QVector<std::size_t> &indices)
 {
@@ -264,10 +274,15 @@ NetRateResult netRates(const QVector<StockFlows> &bindings, const QHash<EntityId
                 QVector<double>(stockArray->values.size(), 0.0)});
         else
             result.values.insert(binding.stock, 0.0);
-        const auto accumulate = [&](EntityId flowId, bool subtract) -> std::optional<ModelIssue> {
-            const Value &flow = state[flowId];
+        const auto accumulate = [&](const FlowRatePlan &alignment) -> std::optional<ModelIssue> {
+            const Value &flow = state[alignment.flow];
             Value &rate = result.values[binding.stock];
-            const double sign = subtract ? -1.0 : 1.0;
+            const double sign = alignment.subtract ? -1.0 : 1.0;
+            if (!alignment.compatible) {
+                return ModelIssue {binding.stock, IssueSeverity::Error,
+                    std::get_if<double>(&rate) ? "Array flow is incompatible with scalar stock"
+                        : "Flow dimensions are incompatible with stock", "incompatible-stock-flow", {}};
+            }
             if (auto *scalar = std::get_if<double>(&rate)) {
                 const auto *flowScalar = std::get_if<double>(&flow);
                 if (!flowScalar)
@@ -284,22 +299,13 @@ NetRateResult netRates(const QVector<StockFlows> &bindings, const QHash<EntityId
             }
             const ArrayValue &flowArray = std::get<ArrayValue>(flow);
             for (std::size_t flat = 0; flat < rateArray.values.size(); ++flat) {
-                const auto flowIndex = flatIndex(flowArray, rateArray.dimensions, coordinates(flat, rateArray.shape));
-                if (!flowIndex)
-                    return ModelIssue {binding.stock, IssueSeverity::Error,
-                        "Flow dimensions are incompatible with stock", "incompatible-stock-flow", {}};
-                rateArray.values[flat] += sign * flowArray.values[*flowIndex];
+                const std::size_t flowFlat = alignment.direct ? flat : alignment.mapping[flat];
+                rateArray.values[flat] += sign * flowArray.values[flowFlat];
             }
             return std::nullopt;
         };
-        for (const EntityId flow : binding.inflows) {
-            if (const auto issue = accumulate(flow, false)) {
-                result.issue = *issue;
-                return result;
-            }
-        }
-        for (const EntityId flow : binding.outflows) {
-            if (const auto issue = accumulate(flow, true)) {
+        for (const FlowRatePlan &flow : binding.flows) {
+            if (const auto issue = accumulate(flow)) {
                 result.issue = *issue;
                 return result;
             }
@@ -309,6 +315,57 @@ NetRateResult netRates(const QVector<StockFlows> &bindings, const QHash<EntityId
 }
 
 } // namespace
+
+ArrayLayout::ArrayLayout(QVector<QString> dimensions, QVector<std::size_t> shape,
+    QVector<std::size_t> strides, std::size_t count)
+    : m_dimensions(std::move(dimensions))
+    , m_shape(std::move(shape))
+    , m_strides(std::move(strides))
+    , m_count(count)
+{
+}
+
+std::optional<std::size_t> ArrayLayout::flatIndex(const QVector<std::size_t> &indices) const
+{
+    if (indices.size() != m_shape.size())
+        return std::nullopt;
+    std::size_t flat = 0;
+    for (std::size_t position = 0; position < indices.size(); ++position) {
+        if (indices[position] >= m_shape[position])
+            return std::nullopt;
+        flat += indices[position] * m_strides[position];
+    }
+    return flat;
+}
+
+QVector<std::size_t> ArrayLayout::mappingFrom(const ArrayLayout &source) const
+{
+    if (m_dimensions.size() != source.m_dimensions.size())
+        return {};
+    QVector<std::size_t> sourcePositions;
+    sourcePositions.reserve(m_dimensions.size());
+    for (std::size_t position = 0; position < m_dimensions.size(); ++position) {
+        const auto found = std::find(source.m_dimensions.begin(), source.m_dimensions.end(), m_dimensions[position]);
+        if (found == source.m_dimensions.end()
+            || m_shape[position] != source.m_shape[found - source.m_dimensions.begin()])
+            return {};
+        sourcePositions.push_back(found - source.m_dimensions.begin());
+    }
+
+    QVector<std::size_t> mapping;
+    mapping.reserve(m_count);
+    for (std::size_t flat = 0; flat < m_count; ++flat) {
+        const QVector<std::size_t> targetIndices = coordinates(flat, m_shape);
+        QVector<std::size_t> sourceIndices(sourcePositions.size());
+        for (std::size_t position = 0; position < sourcePositions.size(); ++position)
+            sourceIndices[sourcePositions[position]] = targetIndices[position];
+        const auto sourceFlat = source.flatIndex(sourceIndices);
+        if (!sourceFlat)
+            return {};
+        mapping.push_back(*sourceFlat);
+    }
+    return mapping;
+}
 
 SimulationCompileResult compileSimulation(const Document &document)
 {
@@ -364,20 +421,90 @@ SimulationCompileResult compileSimulation(const Document &document)
             plan.m_initializationOrder.push_back(id);
     }
     plan.m_evaluationOrder = topologicalOrder(runtimeRoots, document, analysis, false, result);
+    for (const ModelElement &element : document.model().elements()) {
+        if (element.dimensions().isEmpty())
+            continue;
+        QVector<std::size_t> shape;
+        for (const QString &name : element.dimensions()) {
+            const Dimension *dimension = document.findDimension(name);
+            if (!dimension) {
+                addIssue(result, element.id(), "Unknown array dimension: " + name, "invalid-simulation-array-shape");
+                continue;
+            }
+            shape.push_back(dimension->elements.size());
+        }
+        const std::size_t count = elementCount(shape);
+        if (count == 0) {
+            addIssue(result, element.id(), "Array shape is invalid or too large", "invalid-simulation-array-shape");
+            continue;
+        }
+        const QVector<std::size_t> steps = strides(shape);
+        plan.m_arrayLayouts.insert(element.id(),
+            ArrayLayout(element.dimensions(), std::move(shape), steps, count));
+    }
+    for (const ModelElement &element : document.model().elements()) {
+        plan.m_referenceBindings.insert(element.nameKey(),
+            {ReferenceBindingKind::Variable, element.id(), 0});
+    }
+    for (const Dimension &dimension : document.dimensions()) {
+        plan.m_referenceBindings.insert(dimension.nameKey,
+            {ReferenceBindingKind::Dimension, 0, 0});
+        for (std::size_t index = 0; index < dimension.elements.size(); ++index) {
+            const DimensionElement &element = dimension.elements[index];
+            if (!element.nameKey.isEmpty()) {
+                plan.m_referenceBindings.insert(dimension.nameKey + "." + element.nameKey,
+                    {ReferenceBindingKind::DimensionElement, 0, index + 1});
+            }
+        }
+    }
+    plan.m_referenceBindings.insert(QStringLiteral("self"), {ReferenceBindingKind::Self, 0, 0});
+    plan.m_referenceBindings.insert(QStringLiteral("time"), {ReferenceBindingKind::Time, 0, 0});
+    plan.m_referenceBindings.insert(QStringLiteral("dt"), {ReferenceBindingKind::Dt, 0, 0});
+    plan.m_referenceBindings.insert(QStringLiteral("starttime"), {ReferenceBindingKind::StartTime, 0, 0});
+    plan.m_referenceBindings.insert(QStringLiteral("stoptime"), {ReferenceBindingKind::StopTime, 0, 0});
+    plan.m_referenceBindings.insert(QStringLiteral("pi"), {ReferenceBindingKind::Pi, 0, 0});
+    plan.m_referenceBindings.insert(QStringLiteral("inf"), {ReferenceBindingKind::Infinity, 0, 0});
     for (EntityId stock : stocks) {
         StockFlows binding;
         binding.stock = stock;
+        QVector<EntityId> inflows;
+        QVector<EntityId> outflows;
         for (const ModelElement &element : document.model().elements()) {
             if (element.kind() != ElementKind::Flow)
                 continue;
             const FlowEndpoints endpoints = static_cast<const Flow &>(element).endpoints();
             if (endpoints.to == stock)
-                binding.inflows.push_back(element.id());
+                inflows.push_back(element.id());
             if (endpoints.from == stock)
-                binding.outflows.push_back(element.id());
+                outflows.push_back(element.id());
         }
-        std::sort(binding.inflows.begin(), binding.inflows.end());
-        std::sort(binding.outflows.begin(), binding.outflows.end());
+        std::sort(inflows.begin(), inflows.end());
+        std::sort(outflows.begin(), outflows.end());
+        const auto appendFlow = [&](EntityId flow, bool subtract) {
+            FlowRatePlan rate;
+            rate.flow = flow;
+            rate.subtract = subtract;
+            const auto stockLayout = plan.m_arrayLayouts.constFind(stock);
+            const auto flowLayout = plan.m_arrayLayouts.constFind(flow);
+            const bool stockArray = stockLayout != plan.m_arrayLayouts.constEnd();
+            const bool flowArray = flowLayout != plan.m_arrayLayouts.constEnd();
+            if (stockArray && flowArray) {
+                if (stockLayout->dimensions() == flowLayout->dimensions()
+                    && stockLayout->shape() == flowLayout->shape()) {
+                    rate.direct = true;
+                } else {
+                    rate.mapping = stockLayout->mappingFrom(*flowLayout);
+                    rate.compatible = rate.mapping.size() == stockLayout->count();
+                }
+            } else if (!stockArray && flowArray) {
+                rate.compatible = false;
+            }
+            binding.flows.push_back(std::move(rate));
+        };
+        for (EntityId flow : inflows)
+            appendFlow(flow, false);
+        for (EntityId flow : outflows)
+            appendFlow(flow, true);
         plan.m_stockFlows.push_back(std::move(binding));
     }
     if (result.issues.empty())
@@ -487,22 +614,73 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
             std::move(message), std::move(code), span});
         return run;
     };
+    EvaluationContext context;
+    context.startTime = m_plan.settings().startTime();
+    context.stopTime = m_plan.settings().stopTime();
+    struct ResolvedReferenceContext {
+        const SimulationPlan &plan;
+        const Document &document;
+        EvaluationContext &evaluation;
+        QHash<EntityId, Value> *target;
+    };
+    ResolvedReferenceContext resolved {m_plan, m_document, context, &values};
+    context.readDimension = [&resolved](const QString &name) {
+        return resolved.document.findDimension(name);
+    };
+    context.readMacro = makeMacroReader(m_document);
+    context.readVariable = [&resolved](const QString &name) -> std::optional<Value> {
+        const ModelElement *element = resolved.document.model().findByName(name);
+        if (!element || !resolved.target->contains(element->id()))
+            return std::nullopt;
+        return resolved.target->value(element->id());
+    };
+    context.readResolvedReference = [&resolved](const QString &name) -> std::optional<Value> {
+        const auto binding = resolved.plan.m_referenceBindings.constFind(name);
+        if (binding == resolved.plan.m_referenceBindings.constEnd())
+            return std::nullopt;
+        if (binding->kind == ReferenceBindingKind::Time)
+            return resolved.evaluation.time;
+        if (binding->kind == ReferenceBindingKind::Dt)
+            return resolved.evaluation.dt;
+        if (binding->kind == ReferenceBindingKind::StartTime)
+            return resolved.evaluation.startTime;
+        if (binding->kind == ReferenceBindingKind::StopTime)
+            return resolved.evaluation.stopTime;
+        if (binding->kind == ReferenceBindingKind::Pi)
+            return 3.14159265358979323846;
+        if (binding->kind == ReferenceBindingKind::Infinity)
+            return std::numeric_limits<double>::infinity();
+        EntityId variable = binding->variable;
+        if (binding->kind == ReferenceBindingKind::Self) {
+            const auto self = resolved.plan.m_referenceBindings.constFind(resolved.evaluation.scope.self);
+            if (self == resolved.plan.m_referenceBindings.constEnd()
+                || self->kind != ReferenceBindingKind::Variable)
+                return std::nullopt;
+            variable = self->variable;
+        } else if (binding->kind != ReferenceBindingKind::Variable) {
+            variable = 0;
+        }
+        if (variable != 0) {
+            const auto value = resolved.target->constFind(variable);
+            return value == resolved.target->constEnd() ? std::nullopt : std::optional<Value>(value.value());
+        }
+        if (binding->kind == ReferenceBindingKind::DimensionElement)
+            return static_cast<double>(binding->element);
+        if (binding->kind == ReferenceBindingKind::Dimension) {
+            for (std::size_t index = 0; index < resolved.evaluation.scope.dimensions.size(); ++index) {
+                if (resolved.evaluation.scope.dimensions[index] == name
+                    && index < resolved.evaluation.scope.indices.size())
+                    return static_cast<double>(resolved.evaluation.scope.indices[index] + 1);
+            }
+        }
+        return std::nullopt;
+    };
     const auto evaluate = [&](const QVector<EntityId> &order, double time, double dt,
                             QHash<EntityId, Value> &target) -> std::optional<ModelIssue> {
         evaluationTime = time;
-        EvaluationContext context;
         context.time = time;
         context.dt = dt;
-        context.startTime = m_plan.settings().startTime();
-        context.stopTime = m_plan.settings().stopTime();
-        context.readDimension = [this](const QString &name) { return m_document.findDimension(name); };
-        context.readMacro = makeMacroReader(m_document);
-        context.readVariable = [this, &target](const QString &name) -> std::optional<Value> {
-            const ModelElement *element = m_document.model().findByName(name);
-            if (!element || !target.contains(element->id()))
-                return std::nullopt;
-            return target.value(element->id());
-        };
+        resolved.target = &target;
         for (EntityId id : order) {
             const auto *element = dynamic_cast<const ModelElement *>(m_document.find(id));
             if (!element)
@@ -519,31 +697,26 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
                     return ModelIssue {id, IssueSeverity::Error, "Simulation formula did not produce a scalar", "non-scalar-simulation-value", {}};
                 target[id] = *scalar;
             } else {
-                QVector<std::size_t> shape;
-                for (const QString &name : element->dimensions()) {
-                    const Dimension *dimension = m_document.findDimension(name);
-                    if (!dimension)
-                        return ModelIssue {id, IssueSeverity::Error, "Unknown array dimension", "invalid-simulation-array-shape", {}};
-                    shape.push_back(dimension->elements.size());
-                }
-                const std::size_t count = elementCount(shape);
-                if (count == 0)
+                const auto layout = m_plan.m_arrayLayouts.constFind(id);
+                if (layout == m_plan.m_arrayLayouts.constEnd())
                     return ModelIssue {id, IssueSeverity::Error, "Array shape is invalid or too large", "invalid-simulation-array-shape", {}};
-                ArrayValue output {element->dimensions(), shape, QVector<double>(count)};
+                const std::size_t count = layout->count();
+                ArrayValue output {layout->dimensions(), layout->shape(), QVector<double>(count)};
                 if (element->elementEquations().empty()) {
+                    context.scope = {layout->dimensions(), QVector<std::size_t>(layout->shape().size(), 0),
+                        element->nameKey()};
                     for (std::size_t flat = 0; flat < count; ++flat) {
-                        const QVector<std::size_t> indices = coordinates(flat, shape);
-                        context.scope = {element->dimensions(), indices, element->nameKey()};
                         const EvaluationResult evaluated = evaluateFormula(formula.root(), context);
                         ModelIssue issue;
-                        const auto value = evaluatedScalar(evaluated, element->dimensions(), indices, id, issue);
+                        const auto value = evaluatedScalar(evaluated, element->dimensions(), context.scope.indices, id, issue);
                         if (!value)
                             return issue;
                         output.values[flat] = *value;
+                        advanceIndices(context.scope.indices, layout->shape());
                     }
                 } else {
                     for (const ArrayElementFormula &entry : element->elementEquations()) {
-                        const auto flat = flatIndex(output, element->dimensions(), entry.indices());
+                        const auto flat = layout->flatIndex(entry.indices());
                         if (!flat)
                             return ModelIssue {id, IssueSeverity::Error, "Array element index is invalid", "invalid-array-element-index", {}};
                         context.scope = {element->dimensions(), entry.indices(), element->nameKey()};

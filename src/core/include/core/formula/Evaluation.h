@@ -45,6 +45,7 @@ struct EvaluationContext {
     double startTime = 0.0;
     double stopTime = 0.0;
     VariableReader readVariable;
+    VariableReader readResolvedReference;
     DimensionReader readDimension;
     MacroReader readMacro;
     EvaluationScope scope;

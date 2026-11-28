@@ -49,10 +49,56 @@ struct SimulationRunMetadata {
     QHash<EntityId, QVector<EntityId>> causes;
 };
 
+class ArrayLayout
+{
+public:
+    const QVector<QString> &dimensions() const { return m_dimensions; }
+    const QVector<std::size_t> &shape() const { return m_shape; }
+    std::size_t count() const { return m_count; }
+    std::optional<std::size_t> flatIndex(const QVector<std::size_t> &indices) const;
+    QVector<std::size_t> mappingFrom(const ArrayLayout &source) const;
+
+private:
+    friend SimulationCompileResult compileSimulation(const Document &document);
+    ArrayLayout(QVector<QString> dimensions, QVector<std::size_t> shape,
+        QVector<std::size_t> strides, std::size_t count);
+
+    QVector<QString> m_dimensions;
+    QVector<std::size_t> m_shape;
+    QVector<std::size_t> m_strides;
+    std::size_t m_count;
+};
+
+enum class ReferenceBindingKind {
+    Variable,
+    Dimension,
+    DimensionElement,
+    Self,
+    Time,
+    Dt,
+    StartTime,
+    StopTime,
+    Pi,
+    Infinity
+};
+
+struct ReferenceBinding {
+    ReferenceBindingKind kind = ReferenceBindingKind::Variable;
+    EntityId variable = 0;
+    std::size_t element = 0;
+};
+
+struct FlowRatePlan {
+    EntityId flow = 0;
+    bool subtract = false;
+    bool direct = false;
+    bool compatible = true;
+    QVector<std::size_t> mapping;
+};
+
 struct StockFlows {
     EntityId stock = 0;
-    QVector<EntityId> inflows;
-    QVector<EntityId> outflows;
+    QVector<FlowRatePlan> flows;
 };
 
 class SimulationPlan
@@ -71,6 +117,8 @@ private:
     QVector<EntityId> m_evaluationOrder;
     QVector<EntityId> m_outputOrder;
     QVector<StockFlows> m_stockFlows;
+    QHash<EntityId, ArrayLayout> m_arrayLayouts;
+    QHash<QString, ReferenceBinding> m_referenceBindings;
 };
 
 struct SimulationCompileResult {

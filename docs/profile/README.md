@@ -22,3 +22,4 @@ cmake --build <RELEASE_BUILD_DIR> --target all-profile-targets --parallel
 - [SVG 图标验证与性能](icons.md)。
 - [Vensim MDL 导入性能](vensim-mdl.md)。
 - [UI 对象生命周期性能与压力验证](object-lifetime.md)。
+- [仿真计算热点审查](simulation-hotspots.md)。
