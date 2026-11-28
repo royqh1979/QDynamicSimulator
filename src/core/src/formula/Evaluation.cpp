@@ -172,10 +172,10 @@ private:
     {
     public:
         ArrayElementView(const EvaluationContext &context, const Value &value,
-            QVector<QString> dimensions, QVector<std::size_t> shape)
+            const QVector<QString> &dimensions, const QVector<std::size_t> &shape)
             : m_value(value)
-            , m_dimensions(std::move(dimensions))
-            , m_shape(std::move(shape))
+            , m_dimensions(dimensions)
+            , m_shape(shape)
         {
             if (std::get_if<double>(&m_value))
                 return;
@@ -184,6 +184,9 @@ private:
                 m_valid = false;
                 return;
             }
+            m_direct = m_array->dimensions() == m_dimensions && m_array->shape() == m_shape;
+            if (m_direct)
+                return;
             for (std::size_t index = 0; index < m_array->shape().size(); ++index) {
                 const Dimension *dimension = context.readDimension
                     ? context.readDimension(m_array->dimensions()[index]) : nullptr;
@@ -192,9 +195,6 @@ private:
                     return;
                 }
             }
-            m_direct = m_array->dimensions() == m_dimensions && m_array->shape() == m_shape;
-            if (m_direct)
-                return;
             m_positions.reserve(m_dimensions.size());
             for (const QString &name : m_dimensions) {
                 const auto found = std::find(m_array->dimensions().begin(), m_array->dimensions().end(), name);
@@ -251,8 +251,8 @@ private:
     private:
         const Value &m_value;
         const ArrayValue *m_array = nullptr;
-        QVector<QString> m_dimensions;
-        QVector<std::size_t> m_shape;
+        const QVector<QString> &m_dimensions;
+        const QVector<std::size_t> &m_shape;
         QVector<std::size_t> m_positions;
         QVector<std::size_t> m_steps;
         bool m_valid = true;
@@ -1103,11 +1103,16 @@ private:
         EvaluationResult time = evaluate(node.argument(1));
         if (!time.value)
             return time;
-        bool initialize = false;
-        for (std::size_t index = 0; index < plan.count; ++index) {
+        const bool currentElement = !m_context.scope.indices.isEmpty();
+        const auto initialized = [this, &plan](std::size_t index) {
             const int order = std::max(1, m_context.delayOrders->at(plan.base + index));
             const std::size_t slot = plan.base + (order - 1) * plan.count + index;
-            initialize = initialize || !m_context.delayInitialized->at(slot);
+            return m_context.delayInitialized->at(slot);
+        };
+        bool initialize = currentElement && !initialized(m_context.scope.elementIndex);
+        if (!currentElement) {
+            for (std::size_t index = 0; index < plan.count; ++index)
+                initialize = initialize || !initialized(index);
         }
         EvaluationResult initial;
         if (node.argumentCount() >= 3 && initialize) {
@@ -1122,21 +1127,16 @@ private:
                 return requestedOrder;
         }
 
-        const auto evaluateOne = [this, &node, &plan](const Value &inputValue, const Value &timeValue,
-            const Value &initialValue, const Value &orderValue, double minimumTime) -> std::optional<double> {
+        const auto evaluateOne = [this, &node, &plan](double inputValue, double timeValue,
+            double initialValue, double orderValue, double minimumTime) -> std::optional<double> {
             const std::size_t orderSlot = plan.base + m_context.scope.elementIndex;
-            const auto *inputScalar = std::get_if<double>(&inputValue);
-            const auto *timeScalar = std::get_if<double>(&timeValue);
-            const auto *initialScalar = std::get_if<double>(&initialValue);
-            if (!inputScalar || !timeScalar || !initialScalar || !std::isfinite(*inputScalar)
-                || !std::isfinite(*timeScalar) || !std::isfinite(*initialScalar) || *timeScalar <= 0.0)
+            if (!std::isfinite(inputValue) || !std::isfinite(timeValue) || !std::isfinite(initialValue)
+                || timeValue <= 0.0)
                 return std::nullopt;
             if (plan.initializeOrder && m_context.delayOrders->at(orderSlot) == 0) {
-                const auto *orderScalar = std::get_if<double>(&orderValue);
-                if (!orderScalar || !std::isfinite(*orderScalar) || *orderScalar < 1.0
-                    || *orderScalar > DelayPlan::maximumOrder)
+                if (!std::isfinite(orderValue) || orderValue < 1.0 || orderValue > DelayPlan::maximumOrder)
                     return std::nullopt;
-                int order = static_cast<int>(*orderScalar);
+                int order = static_cast<int>(orderValue);
                 while (order > 0 && order * m_context.dt > minimumTime)
                     --order;
                 if (order == 0)
@@ -1144,7 +1144,7 @@ private:
                 (*m_context.delayOrders)[orderSlot] = order;
             }
             if (plan.kind == DelayKind::Fixed && m_context.delayOrders->at(orderSlot) == 0) {
-                const int order = std::max(1, static_cast<int>(std::round(*timeScalar / m_context.dt + 1e-6)));
+                const int order = std::max(1, static_cast<int>(std::round(timeValue / m_context.dt + 1e-6)));
                 if (order > DelayPlan::maximumOrder)
                     return std::nullopt;
                 (*m_context.delayOrders)[orderSlot] = order;
@@ -1153,14 +1153,14 @@ private:
             const int order = m_context.delayOrders->at(orderSlot);
             const std::size_t slot = plan.base + (order - 1) * plan.count + m_context.scope.elementIndex;
             if (!m_context.delayInitialized->at(slot)) {
-                const double initial = node.argumentCount() >= 3 ? *initialScalar : *inputScalar;
+                const double initial = node.argumentCount() >= 3 ? initialValue : inputValue;
                 for (int stage = 0; stage < order; ++stage) {
                     const std::size_t state = plan.base + stage * plan.count + m_context.scope.elementIndex;
                     (*m_context.delayLevels)[state] = plan.kind == DelayKind::Material
-                        ? initial * *timeScalar : initial;
+                        ? initial * timeValue : initial;
                     if (plan.kind == DelayKind::Fixed)
                         (*m_context.delayLevels)[state] = initial;
-                    (*m_context.delayTimes)[state] = *timeScalar;
+                    (*m_context.delayTimes)[state] = timeValue;
                 }
                 (*m_context.delayInitialized)[slot] = true;
                 if (plan.kind == DelayKind::Fixed) {
@@ -1168,8 +1168,8 @@ private:
                     (*m_context.delayOutputValid)[slot] = true;
                 }
             }
-            (*m_context.delayInputs)[slot] = *inputScalar;
-            (*m_context.delayCurrentTimes)[slot] = *timeScalar;
+            (*m_context.delayInputs)[slot] = inputValue;
+            (*m_context.delayCurrentTimes)[slot] = timeValue;
             (*m_context.delayTouched)[slot] = true;
             if (plan.discrete && m_context.delayOutputValid->at(slot))
                 return m_context.delayOutputs->at(slot);
@@ -1180,7 +1180,7 @@ private:
                 output = m_context.delayLevels->at(plan.base + pointer * plan.count + m_context.scope.elementIndex);
             } else if (plan.kind == DelayKind::Material) {
                 output = plan.discrete ? level / m_context.delayTimes->at(plan.base + m_context.scope.elementIndex)
-                    : level / *timeScalar;
+                    : level / timeValue;
             }
             if (plan.discrete) {
                 (*m_context.delayOutputs)[slot] = output;
@@ -1194,34 +1194,45 @@ private:
         const ArrayValue *initialArray = initial.value ? arrayOf(*initial.value) : nullptr;
         const ArrayValue *orderArray = requestedOrder.value ? arrayOf(*requestedOrder.value) : nullptr;
         if (!inputArray && !timeArray && !initialArray && !orderArray) {
-            const Value initialValue = initial.value ? *initial.value : *input.value;
-            const Value orderValue = requestedOrder.value ? *requestedOrder.value : *input.value;
-            const auto result = evaluateOne(*input.value, *time.value, initialValue, orderValue,
-                *std::get_if<double>(&*time.value));
+            const auto *inputScalar = std::get_if<double>(&*input.value);
+            const auto *timeScalar = std::get_if<double>(&*time.value);
+            if (!inputScalar || !timeScalar)
+                return failure(&node, "Invalid delay parameters");
+            const double initialScalar = initial.value ? *std::get_if<double>(&*initial.value) : *inputScalar;
+            const double orderScalar = requestedOrder.value ? *std::get_if<double>(&*requestedOrder.value) : *inputScalar;
+            const auto result = evaluateOne(*inputScalar, *timeScalar, initialScalar, orderScalar, *timeScalar);
             return result ? success(*result) : failure(&node, "Invalid delay parameters");
         }
 
-        const QVector<QString> dimensions = !m_context.scope.dimensions.isEmpty() ? m_context.scope.dimensions
-            : inputArray ? inputArray->dimensions()
-            : timeArray ? timeArray->dimensions() : initialArray ? initialArray->dimensions() : orderArray->dimensions();
-        const auto shape = shapeFor(dimensions);
-        if (!shape)
-            return failure(&node, "Unknown delay array dimension");
+        const QVector<QString> &dimensions = plan.dimensions;
+        const QVector<std::size_t> &shape = plan.shape;
+        if (dimensions.isEmpty() || shape.size() != dimensions.size())
+            return failure(&node, "Invalid delay array layout");
         const Value &initialValue = initial.value ? *initial.value : *input.value;
         const Value &orderValue = requestedOrder.value ? *requestedOrder.value : *input.value;
-        ArrayElementView inputView(m_context, *input.value, dimensions, *shape);
-        ArrayElementView timeView(m_context, *time.value, dimensions, *shape);
-        ArrayElementView initialView(m_context, initialValue, dimensions, *shape);
-        ArrayElementView orderView(m_context, orderValue, dimensions, *shape);
-        if (!inputView.valid() || !timeView.valid() || !initialView.valid() || !orderView.valid())
+        ArrayElementView inputView(m_context, *input.value, dimensions, shape);
+        ArrayElementView timeView(m_context, *time.value, dimensions, shape);
+        std::optional<ArrayElementView> initialView;
+        std::optional<ArrayElementView> orderView;
+        if (initialize) {
+            if (node.argumentCount() >= 3)
+                initialView.emplace(m_context, initialValue, dimensions, shape);
+            if (plan.initializeOrder)
+                orderView.emplace(m_context, orderValue, dimensions, shape);
+        }
+        if (!inputView.valid() || !timeView.valid()
+            || (initialView && !initialView->valid()) || (orderView && !orderView->valid()))
             return failure(&node, "Invalid delay array element");
-        const auto minimumTime = timeView.minimum();
-        if (!minimumTime)
-            return failure(&node, "Invalid delay parameters");
+        double minimumTime = 0.0;
+        if (plan.initializeOrder && initialize) {
+            const auto value = timeView.minimum();
+            if (!value)
+                return failure(&node, "Invalid delay parameters");
+            minimumTime = *value;
+        }
 
-        const bool currentElement = !m_context.scope.indices.isEmpty();
         const std::size_t firstFlat = currentElement ? m_context.scope.elementIndex : 0;
-        const std::size_t count = currentElement ? 1 : elementCount(*shape);
+        const std::size_t count = currentElement ? 1 : elementCount(shape);
         const std::size_t previousElement = m_context.scope.elementIndex;
         QVector<double> outputValues(currentElement ? 0 : count);
         for (std::size_t offset = 0; offset < count; ++offset) {
@@ -1229,14 +1240,13 @@ private:
             m_context.scope.elementIndex = flat;
             const auto inputItem = inputView.at(flat);
             const auto timeItem = timeView.at(flat);
-            const auto initialItem = initialView.at(flat);
-            const auto orderItem = orderView.at(flat);
+            const auto initialItem = initialView ? initialView->at(flat) : inputItem;
+            const auto orderItem = orderView ? orderView->at(flat) : inputItem;
             if (!inputItem || !timeItem || !initialItem || !orderItem) {
                 m_context.scope.elementIndex = previousElement;
                 return failure(&node, "Invalid delay array element");
             }
-            const auto result = evaluateOne(Value(*inputItem), Value(*timeItem), Value(*initialItem), Value(*orderItem),
-                *minimumTime);
+            const auto result = evaluateOne(*inputItem, *timeItem, *initialItem, *orderItem, minimumTime);
             if (!result) {
                 m_context.scope.elementIndex = previousElement;
                 return failure(&node, "Invalid delay parameters");
@@ -1248,7 +1258,7 @@ private:
             outputValues[offset] = *result;
         }
         m_context.scope.elementIndex = previousElement;
-        return success(ArrayValue {dimensions, *shape, std::move(outputValues)});
+        return success(ArrayValue {dimensions, shape, std::move(outputValues)});
     }
 
     EvaluationResult boundCall(const BoundCallNode &node)

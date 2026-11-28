@@ -121,6 +121,7 @@ int main(int argc, char **argv)
     const int runs = argc > 1 ? QString(argv[1]).toInt() : 100;
     const int steps = argc > 2 ? QString(argv[2]).toInt() : 1000;
     const int arraySize = argc > 3 ? QString(argv[3]).toInt() : 16;
+    const QString scenarioFilter = argc > 4 ? QString(argv[4]) : QString();
     if (runs <= 0 || steps <= 0 || arraySize <= 0)
         return 2;
 
@@ -139,6 +140,8 @@ int main(int argc, char **argv)
     out << "scenario,phase,runs,steps,elements,state_levels,total_ms,ns_per_run,ns_per_step,"
            "ns_per_element_step,checksum,allocations,allocated_bytes\n";
     for (const Scenario &scenario : scenarios) {
+        if (!scenarioFilter.isEmpty() && scenario.name != scenarioFilter)
+            continue;
         int elements = 1;
         Document document = delayDocument(scenario, steps, arraySize, elements);
 

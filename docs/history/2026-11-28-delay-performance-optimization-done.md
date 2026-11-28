@@ -50,9 +50,24 @@
 
 目标：Run 内预分配可复用速率工作区，只清理和计算启用槽位；Fixed 和离散中间阶段不占用工作。不得共享跨 Run 工作区。先由阶段一/二结果确定该阶段是否仍有明显收益。
 
-## 阶段四：按证据决定 RK 阶段状态拆分
+## 阶段四：取消
 
-只有前述阶段后仍有明确热点时，才拆分 Run 稳定状态、连续阶段可变状态和离散输出缓存。数组槽/Arena 需要 shape、别名、宏寿命和结果移出分析，不属于当前 KISS 首选，不在证据不足时实施。
+用户决定取消 RK 阶段状态拆分。只有优化后仍存在明确且值得处理的剩余热点时才继续其它分析，不预设需要 DelayState 拆分、数组槽或 Arena。
+
+## Delay 访问寿命与参数装箱优化
+
+- 分支 `perf/delay-access-lifetime`。剩余插桩仍显示 input/time 视图的 dimensions/shape 元数据复制和构造/析构，Delay 每元素还将 double 重新装箱为 Value。
+- ArrayElementView 改为只持有调用期间有效的 dimensions/shape const 引用；Plan 或调用函数局部对象均覆盖视图寿命，不新增长期指针。
+- Delay 的 evaluateOne 直接接收 double，标量路径只拆箱一次，数组视图读取后不再构造四个 Value variant。保持状态推进、错误语义和现有执行路径。
+- 对比上一阶段相同负载并执行全量回归；本阶段不属于 RK 状态拆分，不自动提交。
+
+### 实施结果与计划收尾
+
+- ArrayElementView 的 dimensions/shape 改为 const 引用，Plan 或调用方局部对象覆盖视图寿命；未新增跨调用指针。
+- Delay 的 evaluateOne 直接接收 double，标量路径只拆箱一次，数组路径不再逐元素构造四个 Value variant。
+- 相对上一阶段，Material/Information 数组再降约 5.4%/5.6%；与最初基线相比每元素步约 576.0→290.9 ns、525.5→241.3 ns。checksum 不变。
+- 剩余主要是实际状态计算、RK 阶段和输出管理，没有足够证据继续做 DelayState 拆分、统一热循环或容器特判。Release 与 Debug 的 18/18 CTest 和完整 XMILE corpus 通过，当前阶段尚未提交。
+- 阶段四按用户决定取消；本优化计划到此结束，不再为完成计划寻找微优化。
 
 ## 每阶段验收与记录
 
@@ -101,3 +116,72 @@
 - 最终结论收窄为：标量临时 values 是共有冗余；重复唯一性检查影响很小；ArrayData 创建/发布是与稳定公式差距同量级的新增固定成本，共享复制收益会抵消一部分。早期大差距不作为设计归因。
 - 最后固定 `8622cda` 与 `8064c90` 两个独立可执行文件，每组 300000 次迭代正反向交替四轮：A+1 新句柄平均慢 4.48%/3.51%（16/4），A+A 快 1.70%/1.75%。可重复差距约 4%，不是早期约 40%。
 - 临时对照可执行文件、独立 worktree/构建与 nm 输出在记录后删除；详细数据见 `docs/profile/array-values.md`。
+
+## 普通数组运算统一阶段（放弃）
+
+- 分支 `perf/array-elementwise-views`。尝试以统一 `mapElements` 覆盖普通二元、一元、数组条件和 mapped functions，复用 ArrayElementView 与局部 values 输出。
+- 初版使 A+1 从约 121/111 ms 回退到 447/208 ms；增加坐标复用、减少结果包装和直接 double 读取后仍为 148/134 ms，未恢复基线。A+A 虽有改善，但不能抵消标量路径回退。
+- 评审结论：统一语义和校验不等于统一热循环。标量、同布局和重排访问需要不同的简单执行路径；继续增加 direct/atDirect 特例会形成补丁式抽象。相关生产改动已撤回，不提交；保留 master 的简单分派、ArrayValue 句柄及 Delay/mapped functions 的 ArrayElementView。
+- 后续不采用模板实例化掩盖同一路径重复，也不为了形式统一引入运行时多态。普通数组优化回到具体冗余和分配。
+
+## 热循环分类审查
+
+- 已按输入访问、整体/当前元素、可失败运算、归约/排序/布局转换、连续/离散/Fixed 状态、Euler/RK 阶段和 Run 输出重新分类，见 `docs/design/array-access-and-computation.md` 第 9 节。
+- 结论：标量直接、同布局直接、重排、可失败 mapped、归约、排序、布局转换、Apply-to-All、连续/离散/Fixed、Stock/Flow 与输出保存不能由一个抽象循环覆盖。
+- 一元/二元/条件可共享直接访问策略，时间/随机可共享可失败 mapped 策略；其它拆分必须有稳定热点证据。统一校验和所有权，不建立平行语义。
+
+## 阶段三：复用延迟速率工作区
+
+- 分支 `perf/delay-rate-workspace`。以 master 的 `197d845` 为基线，只修改 Run 内延迟速率结果的持有方式。
+- 目标：每个 Run 按 Euler/RK4 需要预分配 K1–K4 工作区，速率计算写入复用缓冲区；没有有效速率时清空逻辑结果，不跨 Run 共享，不改变 Fixed/离散/连续分流。
+- 保持数值序列、采样时点、错误/取消行为、数组状态独立性和历史 Run 不变。比较两轮 `profile-delay 100 1000 16` 的总耗时、归一化耗时、checksum 和分配，必要时以插桩确认速率容器分配消失。
+- 完成后执行 Release 后 Debug 全量并等待审核，不自动提交。
+
+## 阶段三实际过程（放弃）
+
+- 新增 Run 局部 DelayWorkspace，K1 按级联计划分配，连续 RK4 再分配 K2–K4；`delayRates` 改为输出到调用方缓冲区并只返回可选诊断。
+- 第一版 `QVector::fill(value,size)` 仍逐步 resize，改为尺寸不变时 `std::fill`。最终 gprof 的 resize 从约 502350 次降至 2500 次，realloc 比阶段一减少约 100 万次，checksum 不变。
+- 基线两轮与工作区三轮对比：连续 DELAY3 均值快 5.5%，离散 RK4 基本持平；Material/Information 数组均值回退 1.6%/3.3%，Information 数组逐轮差异较大。
+- 评审认为预分配与逐步创建没有算法差异，清零也未证实为热点；realloc 次数不能代表主要成本。连续场景的小幅收益不足以支撑该重构，数组场景还存在回退，因此撤销全部生产改动，不提交、不合并。后续按场景重新分析真实热点。
+
+## 分场景热点分析
+
+- 撤销工作区后，以独立 `-pg` 构建分别测量离散 RK4、连续 DELAY3 和 Material/Information 数组；profile 工具增加场景过滤参数。
+- 标量主要成本在 QHash/variant/EvaluationResult 和 RK 状态容器操作，速率分配不是唯一大项。
+- 数组 Information 的 `Document::findDimension` 约 641 万次，与 100 Run×1000 步×16 元素×4 视图精确对应；相同布局仍重复查询输入 Dimension。Material 还可见大量 detach 检查、QString 元数据复制、视图构造/析构和 delayRates 工作。
+- 源码另确认：每个元素都扫描全部初始化槽，形成 16×16 稳态检查；initial/order 视图在初始化完成后仍逐步创建。
+- 后续应先减少每元素重复准备：只检查当前初始化槽、稳态仅建立 input/time、同布局避免重复 Dimension 查询；验证后再决定是否提升布局描述或拆分 RK 状态。报告见 `docs/profile/delay-hotspots.md`。
+- gprof 存在插桩开销和部分内联符号噪声，报告只采用能与源码和规模互证的数据，不引用异常函数名。
+
+## Delay 每元素重复准备优化
+
+- 分支 `perf/delay-evaluation-setup`，只处理热点报告确认的同源冗余，不改普通数组运算或速率容器。
+
+### 责任审计与目标模型
+
+- Runner 已经拥有 ArrayLayout，但 Delay 每元素重新 shapeFor 并创建四个视图，属于调用方丢弃编译期事实。不能通过优化 `Document::findDimension` 或继续增加 direct/atDirect 特例掩盖。
+- DelayPlan 改为值持有当前公式的 dimensions/shape，编译器在创建 Delay 调用计划时一次写入。Plan 不持有 Document/Dimension 指针，避免移动副本和寿命问题。
+- Delay 热路径直接使用 Plan 布局；初始化与稳态分开，当前元素只检查当前槽，initial/order 只在初始化时创建，稳态只建立 input/time。
+- ArrayElementView 仍负责通用输入校验和不同布局映射；dimensions/shape 与目标完全一致时直接读取，不重复查询已由目标布局保证的输入 Dimension。
+
+### 不变量与迁移边界
+
+- N 仅在首次初始化截断并固定，初值/阶数表达式求值次数不增加；数组元素状态、Fixed 管道指针、离散输出、Material 时间历史和连续 RK 阶段保持原语义。
+- 标量路径不变；整体求值仍可检查整组初始化，Apply-to-All 当前元素不再做全组扫描。
+- 不为布局缓存引入跨 Run 指针或共享可变状态，不改 Document::findDimension 的名称规范化规则，不扩展普通数组统一循环。
+
+### 验收
+
+1. 现有 SDXorg 三组参考、数组不同 N/Fixed、条件未触达和 RK4 收敛通过。
+2. 增加不同维度顺序的 Delay 数组测试，验证重排输入和初始输出不被错误平铺。
+3. 比较相同 profile-delay 负载的总耗时、每元素步、checksum 和分配；插桩确认目标 Dimension 查询减少。
+4. Release 后 Debug 全量与完整 XMILE corpus，完成后等待审核，不自动提交。
+
+### 实施结果
+
+- DelayPlan 以值持有 dimensions/shape，编译器一次写入，未引入 Document/Dimension 指针或跨 Run 缓存。
+- 当前元素只检查当前初始化槽；initial/order 使用 optional 视图，仅初始化时创建；minimumTime 也只在初始化阶数时计算。
+- ArrayElementView 对相同布局直接返回，不再逐视图查询输入 Dimension；不同布局仍执行完整校验和映射。
+- 新增 `[A,B]→[B,A]` 的 Delay Euler/RK4 重排测试。测试初次期望算式写错，按实际映射修正，生产逻辑未为此改变。
+- 两轮 Material 数组耗时下降 46.6%，Information 下降 51.3%；每元素步分别约 576.0→307.5 ns、525.5→255.8 ns，checksum 不变。
+- gprof 的 `Document::findDimension` 从约 641 万次降至 810 次，确认目标冗余消除。Release 与 Debug 的 18/18 CTest 和完整 XMILE corpus 通过，阶段提交为 `689e91a`，未合并、未推送。
