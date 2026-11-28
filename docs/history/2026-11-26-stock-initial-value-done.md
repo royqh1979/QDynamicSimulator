@@ -2,7 +2,7 @@
 
 创建时间：2026-11-26 23:48:38 +0800
 
-状态：实现、测试、profile 与 Release/Debug 全量回归已完成，等待审核；通过后更名为 -done
+状态：已完成并合并；实现、测试、profile 与 Release/Debug 全量回归均通过
 
 ## 目标与问题
 
@@ -37,3 +37,7 @@ XMILE 的 Stock `<eqn>` 是仅在开始求值的初始方程，这一字段命�
 3. 迁移 QDS/XMILE、现有测试及 Rabbit 场景，保留全部数值参考验证。
 4. 验证 Stock 普通 setEquation 被拒绝、初值 undo/redo、改名引用、复制粘贴、QDS/XMILE、初始环、Euler/RK4。
 5. 执行适用 profile、Release 后 Debug 全量回归、自审；完成后文件改名为 `-done`。
+
+## 完成结果
+
+实现提交为 `7883fa3 Add simulation controls and stock initial values`，已进入 master。本计划当时已完成全部验收，但文件仍误留在等待审核状态；本次补充完成标记，无剩余实现事项。

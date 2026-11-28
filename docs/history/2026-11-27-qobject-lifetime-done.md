@@ -2,7 +2,7 @@
 
 创建时间：2026-11-27 23:01:53 +0800
 
-状态：实现、专项测试、五轮 Debug 全量和三轮 Release profile 已完成；Release 全量仍有既有 Windows 剪贴板环境失败，等待最终复验和用户审核。
+状态：已完成并合并；专项测试、五轮 Debug 全量、三轮 Release profile 及后续 Release/Debug 全量复验均通过
 
 ## 1. 背景与已确认根因
 
@@ -110,3 +110,7 @@
 - 直接删除 DiagramScene 登记端点会与 raw ID 索引约定冲突；RoutedItem 独立删除测试改用普通 QGraphicsScene，不扩大 DiagramScene 的外部删除语义。
 
 实施前仍需确认 QPointer 空值时各公共 API 的返回约定。生命周期 profile 的迭代规模在实现时根据现有 editor profile 风格确定，并记录输入、输出和运行命令。Qt 参考：[QObject::destroyed 不可阻塞](https://doc.qt.io/qt-5/qobject.html#destroyed)、[QPointer 在 QObject 析构阶段清空](https://doc.qt.io/qt-5/qpointer.html)。
+
+## 8. 完成结果
+
+实现提交为 `167a5fd Fix QObject lifetime and result series ownership`，合并提交为 `ade852b Merge QObject lifetime fixes`。初次 Release 全量的 Windows 剪贴板环境失败已保留在 `docs/profile/object-lifetime.md`；后续环境恢复后，相同工作树的 Release 和 Debug 全量均通过。本计划没有剩余实现事项，本次将文件标记为 done。

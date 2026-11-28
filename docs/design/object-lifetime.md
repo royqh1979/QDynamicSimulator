@@ -2,7 +2,7 @@
 
 ## 1. 状态与范围
 
-本文记录 QObject、QGraphicsObject 及结果数据指针的审查结论和当前约束。实现已按本文完成迁移，实施范围与验收步骤见 [UI 对象生命周期重构计划](../history/2026-11-27-qobject-lifetime.md)。
+本文记录 QObject、QGraphicsObject 及结果数据指针的审查结论和当前约束。实现已按本文完成迁移，实施范围与验收步骤见 [UI 对象生命周期重构计划](../history/2026-11-27-qobject-lifetime-done.md)。
 
 范围包括 MainWindow、DocumentController、DiagramScene、PropertyPanel、SimulationController、SimulationResultsWidget、画布图元和结果视图。核心 Document 的 `unique_ptr` 所有权、Worker 的不可变共享数据以及 Qt 父子所有权体系继续保留，不引入 `shared_ptr<QObject>`。SimulationController 是会话对象，由 MainWindow/session 直接拥有，而不是由它所引用的 DocumentController 拥有。
 
