@@ -106,6 +106,7 @@ private:
     SimulationPlan() = default;
 
     SimulationSettings m_settings;
+    quint32 m_noiseSeed = RandomStreamState::defaultNoiseSeed;
     QVector<EntityId> m_initializationOrder;
     QVector<EntityId> m_evaluationOrder;
     QVector<EntityId> m_outputOrder;

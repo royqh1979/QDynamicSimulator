@@ -26,5 +26,6 @@ M1 先交付 SFD 建模、方程编辑、Euler/RK4、折线图和文件保存，
 - [仿真引擎设计](simulation.md)：仿真设置、编译与执行顺序、Euler/RK4、运行结果、状态函数边界及正确性验证。
 - [Lookup 模型与求解器设计](lookup.md)：不可变 X–Y 定义、独立/内联 Lookup、插值/外推、编译求值与持久化。
 - [纯时间输入函数设计](time-functions.md)：STEP/PULSE/PULSE TRAIN/RAMP、测试输入冻结、数组广播及参考验证。
+- [随机函数与 Run 随机流设计](random-functions.md)：RANDOM/NORMAL/LOGNORMAL/POISSON/EXPRND、种子、独立 Stream ID 和 Euler/RK4 取样。
 - [统一名称管理与绑定 AST 设计](call-resolution.md)：Document 名称/invokable 索引、只读源 AST 及 Plan 拥有的完整执行 AST。
 - [模拟器界面设计](simulation-ui.md)：运行设置、Worker 生命周期、取消、结果 Dock、折线图和数据表。

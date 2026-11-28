@@ -186,7 +186,6 @@ void TestEvaluation::errorsAndUnsupported()
 
     expectError("ABS()");
     expectError("ABS(1, 2)");
-    expectError("RANDOM(0, 1)");
     expectError("DELAY(1, 2)");
     expectError("INIT(1)");
     expectError("SELF");

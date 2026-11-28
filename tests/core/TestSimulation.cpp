@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <numeric>
 
 using namespace qds::core;
 
@@ -48,6 +49,68 @@ Document exponentialDocument(double dt)
     return document;
 }
 
+Document randomDocument(int samples = 10000)
+{
+    Document document;
+    const auto add = [&document](const QString &name, const QString &equation) {
+        const EntityId id = document.createVariable(ElementKind::Variable);
+        document.rename(id, name);
+        document.setEquation(id, equation);
+    };
+    add("uniform", "RANDOM(0, 10)");
+    add("normal_output", "NORMAL(2, 1)");
+    add("lognormal_output", "LOGNORMAL(10, 1)");
+    add("poisson_output", "POISSON(3)");
+    add("exponential_output", "EXPRND(1)");
+    document.setSimulationSettings({0.0, samples - 1.0, 1.0, 1.0});
+    return document;
+}
+
+std::pair<double, double> meanVariance(const QVector<double> &values)
+{
+    Q_ASSERT(!values.isEmpty());
+    const double mean = std::accumulate(values.begin(), values.end(), 0.0) / values.size();
+    double variance = 0.0;
+    for (const double value : values)
+        variance += (value - mean) * (value - mean);
+    return {mean, variance / values.size()};
+}
+
+double ksStatistic(QVector<double> samples, const std::function<double(double)> &cdf, bool discrete = false)
+{
+    std::sort(samples.begin(), samples.end());
+    double statistic = 0.0;
+    for (int first = 0; first < samples.size();) {
+        int last = first + 1;
+        while (last < samples.size() && samples[last] == samples[first])
+            ++last;
+        const double current = std::clamp(cdf(samples[first]), 0.0, 1.0);
+        const double previous = first == 0 ? 0.0 : std::clamp(cdf(discrete ? samples[first - 1] : samples[first]), 0.0, 1.0);
+        const double upper = static_cast<double>(last) / samples.size();
+        const double lower = static_cast<double>(first) / samples.size();
+        statistic = std::max({statistic, std::abs(upper - current), std::abs(previous - lower)});
+        first = last;
+    }
+    return statistic;
+}
+
+double normalCdf(double value, double mean, double deviation)
+{
+    return 0.5 * (1.0 + std::erf((value - mean) / (deviation * std::sqrt(2.0))));
+}
+
+double poissonCdf(double value, double mean)
+{
+    const int limit = static_cast<int>(std::floor(value));
+    double probability = std::exp(-mean);
+    double cumulative = probability;
+    for (int index = 0; index < limit; ++index) {
+        probability *= mean / (index + 1);
+        cumulative += probability;
+    }
+    return cumulative;
+}
+
 class TestSimulation : public QObject
 {
     Q_OBJECT
@@ -73,6 +136,8 @@ private slots:
     void lookupDefinitions();
     void lookupSimulation();
     void timeFunctionBoundaries();
+    void randomFunctionsReproducibility();
+    void randomFunctionDistributionsAndErrors();
     void compilationDiagnostics();
     void cancellationAndRuntimeFailure();
 };
@@ -731,6 +796,145 @@ void TestSimulation::timeFunctionBoundaries()
     QCOMPARE(arrayRun.status(), SimulationRunStatus::Completed);
     QCOMPARE(arrayRun.arraySeries("output").at(0).values, (QVector<double> {2.0, 0.0}));
     QCOMPARE(arrayRun.arraySeries("output").at(1).values, (QVector<double> {2.0, 3.0}));
+}
+
+void TestSimulation::randomFunctionsReproducibility()
+{
+    Document document = randomDocument(100);
+    const SimulationRun first = runModel(document);
+    const SimulationRun second = runModel(document);
+    for (const QString &name : {QStringLiteral("uniform"), QStringLiteral("normal_output"), QStringLiteral("lognormal_output"),
+             QStringLiteral("poisson_output"), QStringLiteral("exponential_output")}) {
+        QCOMPARE(first.status(), SimulationRunStatus::Completed);
+        QCOMPARE(second.status(), SimulationRunStatus::Completed);
+        QCOMPARE(first.series(name), second.series(name));
+    }
+
+    const EntityId noise = document.createVariable(ElementKind::Variable);
+    QVERIFY(document.rename(noise, "NOISE SEED"));
+    QVERIFY(document.setEquation(noise, "123456"));
+    const SimulationRun changed = runModel(document);
+    QVERIFY(changed.series("uniform") != first.series("uniform"));
+
+    document.setSimulationSettings({0.0, 99.0, 1.0, 1.0, IntegrationMethod::RungeKutta4});
+    const SimulationRun rk4 = runModel(document);
+    QCOMPARE(rk4.status(), SimulationRunStatus::Completed);
+    QVERIFY(rk4.series("uniform") != first.series("uniform"));
+
+    Document independent;
+    const auto add = [&independent](const QString &name, const QString &equation) {
+        const EntityId id = independent.createVariable(ElementKind::Variable);
+        independent.rename(id, name);
+        independent.setEquation(id, equation);
+    };
+    add("first", "RANDOM(0, 1, 7)");
+    add("second", "NORMAL(0, 1, 8)");
+    independent.setSimulationSettings({0.0, 10.0, 1.0, 1.0});
+    const SimulationRun base = runModel(independent);
+    add("third", "EXPRND(1, 9)");
+    const SimulationRun extended = runModel(independent);
+    QCOMPARE(extended.series("first"), base.series("first"));
+    QCOMPARE(extended.series("second"), base.series("second"));
+
+    Document arrays;
+    arrays.defineDimension("N", 4);
+    const EntityId values = arrays.createVariable(ElementKind::Variable);
+    arrays.rename(values, "values");
+    arrays.setDimensions(values, {"N"});
+    arrays.setEquation(values, "RANDOM(0, 1)");
+    arrays.setSimulationSettings({0.0, 0.0, 1.0, 1.0});
+    const SimulationRun arrayRun = runModel(arrays);
+    QCOMPARE(arrayRun.status(), SimulationRunStatus::Completed);
+    const QVector<double> samples = arrayRun.arraySeries("values").front().values;
+    QCOMPARE(samples.size(), 4);
+    QVERIFY(samples[0] != samples[1] || samples[1] != samples[2] || samples[2] != samples[3]);
+
+    Document macros;
+    MacroDefinitionData noiseMacro;
+    noiseMacro.displayName = "Noise";
+    noiseMacro.parameters = {{"x", {}}};
+    noiseMacro.equation = "x + RANDOM(0, 1)";
+    QVERIFY(macros.defineMacro(noiseMacro));
+    const EntityId output = macros.createVariable(ElementKind::Variable);
+    macros.rename(output, "output");
+    macros.setEquation(output, "Noise(0) + Noise(0)");
+    macros.setSimulationSettings({0.0, 0.0, 1.0, 1.0});
+    const SimulationRun macroFirst = runModel(macros);
+    const SimulationRun macroSecond = runModel(macros);
+    QCOMPARE(macroFirst.series("output"), macroSecond.series("output"));
+    QVERIFY(macroFirst.series("output").front() != 0.0);
+}
+
+void TestSimulation::randomFunctionDistributionsAndErrors()
+{
+    const SimulationRun run = runModel(randomDocument());
+    QCOMPARE(run.status(), SimulationRunStatus::Completed);
+    const auto uniform = meanVariance(run.series("uniform"));
+    expectNear(uniform.first, 5.0, 0.15);
+    expectNear(uniform.second, 100.0 / 12.0, 0.5);
+    for (const double value : run.series("uniform"))
+        QVERIFY(value > 0.0 && value < 10.0);
+    const auto normal = meanVariance(run.series("normal_output"));
+    expectNear(normal.first, 2.0, 0.05);
+    expectNear(normal.second, 1.0, 0.08);
+    const auto lognormal = meanVariance(run.series("lognormal_output"));
+    expectNear(lognormal.first, 10.0, 0.15);
+    expectNear(lognormal.second, 1.0, 0.2);
+    const auto poisson = meanVariance(run.series("poisson_output"));
+    expectNear(poisson.first, 3.0, 0.08);
+    expectNear(poisson.second, 3.0, 0.25);
+    for (const double value : run.series("poisson_output"))
+        QVERIFY(value == std::floor(value));
+    const auto exponential = meanVariance(run.series("exponential_output"));
+    expectNear(exponential.first, 1.0, 0.08);
+    expectNear(exponential.second, 1.0, 0.2);
+
+    const auto checkKs = [](const QString &name, double statistic) {
+        QVERIFY2(statistic < 0.02, qPrintable(name + ":" + QString::number(statistic)));
+    };
+    checkKs("uniform", ksStatistic(run.series("uniform"), [](double value) { return value / 10.0; }));
+    checkKs("normal", ksStatistic(run.series("normal_output"), [](double value) { return normalCdf(value, 2.0, 1.0); }));
+    const double sigmaSquared = std::log1p(0.01);
+    const double mu = std::log(10.0) - sigmaSquared / 2.0;
+    checkKs("lognormal", ksStatistic(run.series("lognormal_output"), [sigmaSquared, mu](double value) {
+        return value <= 0.0 ? 0.0 : normalCdf(std::log(value), mu, std::sqrt(sigmaSquared));
+    }));
+    checkKs("poisson", ksStatistic(run.series("poisson_output"), [](double value) { return poissonCdf(value, 3.0); }, true));
+    checkKs("exponential", ksStatistic(run.series("exponential_output"), [](double value) { return 1.0 - std::exp(-value); }));
+
+    const QVector<QString> invalid {
+        "RANDOM(1, 1)", "RANDOM(2, 1)", "NORMAL(0, -1)", "LOGNORMAL(0, 1)",
+        "LOGNORMAL(-1, 0)", "POISSON(-1)", "EXPRND(0)", "RANDOM(0, 1, -1)",
+        "RANDOM(0, 1, 0.5)", "RANDOM(0, 1, 1e20)", "RANDOM(0, 1, 1 / 0)"
+    };
+    for (const QString &equation : invalid) {
+        Document document;
+        const EntityId output = document.createVariable(ElementKind::Variable);
+        document.rename(output, "output");
+        document.setEquation(output, equation);
+        document.setSimulationSettings({0.0, 0.0, 1.0, 1.0});
+        SimulationCompileResult compiled = compileSimulation(document);
+        if (compiled.plan) {
+            const SimulationRun failed = SimulationRunner(document, *compiled.plan).run();
+            QCOMPARE(failed.status(), SimulationRunStatus::Failed);
+        } else {
+            QVERIFY(!compiled.issues.isEmpty());
+        }
+    }
+
+    Document dynamicSeed;
+    const EntityId seed = dynamicSeed.createVariable(ElementKind::Variable);
+    dynamicSeed.rename(seed, "NOISE SEED");
+    dynamicSeed.setEquation(seed, "1 + 1");
+    dynamicSeed.setSimulationSettings({0.0, 0.0, 1.0, 1.0});
+    QVERIFY(hasIssue(compileSimulation(dynamicSeed), "invalid-noise-seed"));
+
+    Document rng;
+    const EntityId engine = rng.createVariable(ElementKind::Variable);
+    rng.rename(engine, "NOISE RNG");
+    rng.setEquation(engine, "1");
+    rng.setSimulationSettings({0.0, 0.0, 1.0, 1.0});
+    QVERIFY(hasIssue(compileSimulation(rng), "unsupported-noise-rng"));
 }
 
 void TestSimulation::compilationDiagnostics()

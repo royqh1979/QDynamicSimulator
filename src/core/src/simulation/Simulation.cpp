@@ -26,7 +26,8 @@ bool supportedCall(const CallNode &call)
     if (!signature)
         return true;
     if (signature->category == FunctionCategory::Mathematical || signature->category == FunctionCategory::Time
-        || signature->category == FunctionCategory::Array || signature->category == FunctionCategory::TestInput)
+        || signature->category == FunctionCategory::Array || signature->category == FunctionCategory::TestInput
+        || signature->category == FunctionCategory::Statistical)
         return true;
     return call.nameKey() == "log" || call.nameKey() == "if_then_else";
 }
@@ -569,6 +570,19 @@ SimulationCompileResult compileSimulation(const Document &document)
         if (issue.severity == IssueSeverity::Error && issue.code != "algebraic-cycle")
             result.issues.push_back(issue);
     }
+    if (const ModelElement *noiseRng = document.findByName("noise_rng"))
+        addIssue(result, noiseRng->id(), "NOISE RNG is not supported", "unsupported-noise-rng");
+    quint32 noiseSeed = RandomStreamState::defaultNoiseSeed;
+    if (const ModelElement *noise = document.findByName("noise_seed")) {
+        bool numeric = false;
+        const double value = noise->equation().toDouble(&numeric);
+        if (!isConstantFormula(noise->equation()) || !numeric || !std::isfinite(value) || value < 0.0
+            || std::floor(value) != value || value > 2147483647.0) {
+            addIssue(result, noise->id(), "NOISE SEED must be a non-negative integer literal", "invalid-noise-seed");
+        } else {
+            noiseSeed = static_cast<quint32>(value);
+        }
+    }
 
     QVector<EntityId> initializationRoots;
     QVector<EntityId> stocks;
@@ -612,6 +626,7 @@ SimulationCompileResult compileSimulation(const Document &document)
     if (!compiler.compile(result))
         return result;
     plan.m_settings = settings;
+    plan.m_noiseSeed = noiseSeed;
     plan.m_outputOrder = outputs;
     plan.m_initializationOrder = topologicalOrder(initializationRoots, document, analysis, true, result);
     const QVector<EntityId> stockInitialization = topologicalOrder(stocks, document, analysis, true, result);
@@ -793,6 +808,7 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
     };
     EvaluationContext context;
     context.executionStack.reserveValues(ExecutionStack::runValueStorageBytes / int(sizeof(Value)));
+    context.randomStreams.setDefaultSeed(m_plan.m_noiseSeed);
     context.startTime = m_plan.settings().startTime();
     context.stopTime = m_plan.settings().stopTime();
     context.inputTime = currentTime;

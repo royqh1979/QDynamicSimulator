@@ -87,3 +87,4 @@
 - 新增不可变 LookupDefinition 和独立/内联 Lookup：支持 continuous、extrapolate、discrete、域外夹取/外推、标量/数组求值、编译依赖、QDS/XMILE 往返及 SDXorg 参考结果验证；不包含专用编辑 UI。
 - 新增 STEP、PULSE、PULSE TRAIN、RAMP 纯时间函数，支持数组广播、Vensim 测试输入半步比较及 Euler/RK4 区间冻结，并通过 Vensim input_functions 全变量参考验证。
 - 统一标识符保留名称检查：Variable、Lookup、Macro、Dimension 不再能创建与内置函数同名但永不生效的定义；控制/特殊变量及中文、空格、下划线规则保持不变。
+- 新增 RANDOM、NORMAL、LOGNORMAL、POISSON、EXPRND：支持 Run 内独立随机流、固定种子复现、非零 Stream ID、标量/数组及 Euler/RK4 每次调用取样；提供 NumPy 原始 MT 对照和 SciPy 统计分布验证。
