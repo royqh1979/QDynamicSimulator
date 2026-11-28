@@ -73,6 +73,12 @@ target_compile_definitions(test-simulation-results PRIVATE
     QDS_INLINE_LOOKUP_OUTPUT_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/lookups_inline/output.tab"
     QDS_TIME_INPUT_MDL_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/input_functions/test_inputs.mdl"
     QDS_TIME_INPUT_OUTPUT_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/input_functions/output.csv"
+    QDS_DELAYS_MDL_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/delays/test_delays.mdl"
+    QDS_DELAYS_OUTPUT_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/delays/output.tab"
+    QDS_SMOOTH_MDL_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/smooth/test_smooth.mdl"
+    QDS_SMOOTH_OUTPUT_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/smooth/output.tab"
+    QDS_DELAY_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/delay_xmile/test_delay_xmile.xmile"
+    QDS_DELAY_XMILE_OUTPUT_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/delay_xmile/output.tab"
 )
 add_test(NAME io-simulation-results COMMAND test-simulation-results)
 add_dependencies(all-test-targets test-simulation-results)

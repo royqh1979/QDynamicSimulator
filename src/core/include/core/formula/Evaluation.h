@@ -88,10 +88,28 @@ private:
     QHash<quint32, std::mt19937> m_streams;
 };
 
+enum class DelayKind {
+    Fixed,
+    Material,
+    Information
+};
+
+struct DelayPlan {
+    static constexpr int maximumOrder = 64;
+
+    DelayKind kind = DelayKind::Material;
+    std::size_t count = 1;
+    std::size_t base = 0;
+    int order = 1;
+    bool initializeOrder = false;
+    bool discrete = false;
+};
+
 struct EvaluationScope {
     QVector<QString> dimensions;
     QVector<std::size_t> indices;
     QString self;
+    std::size_t elementIndex = 0;
 };
 
 struct EvaluationContext {
@@ -108,7 +126,18 @@ struct EvaluationContext {
     MacroReader readMacro;
     mutable ExecutionStack executionStack;
     mutable RandomStreamState randomStreams;
-    EvaluationScope scope;
+    const QVector<DelayPlan> *delayPlans = nullptr;
+    QVector<double> *delayLevels = nullptr;
+    QVector<double> *delayInputs = nullptr;
+    QVector<double> *delayTimes = nullptr;
+    QVector<double> *delayCurrentTimes = nullptr;
+    QVector<double> *delayOutputs = nullptr;
+    QVector<int> *delayOrders = nullptr;
+    QVector<int> *delayPointers = nullptr;
+    QVector<bool> *delayInitialized = nullptr;
+    QVector<bool> *delayTouched = nullptr;
+    QVector<bool> *delayOutputValid = nullptr;
+    mutable EvaluationScope scope;
 };
 
 struct EvaluationResult {

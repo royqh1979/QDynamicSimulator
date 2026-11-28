@@ -61,7 +61,7 @@ void TestAnalysis::functionSignatures()
     Document document;
     const EntityId auxiliary = document.createVariable(ElementKind::Variable);
     document.setEquation(auxiliary,
-        "DELAYN(Variable1, 1, 2) + NORMAL(0, 1) + SMTHN(Variable1, 1, 2) + RANK(Variable1, 1) + SIZE(Variable1) + SELF"
+        "DELAYN(Variable1, 1, 2, 3) + NORMAL(0, 1) + SMTHN(Variable1, 1, 2, 3) + RANK(Variable1, 1) + SIZE(Variable1) + SELF"
         " + LOG(Variable1) + INTEGR(Variable1, 1) + SMOOTH(Variable1, 1) + LOOKUP(Variable1)"
         " + RAMP(1, 2, 3) + STEP(1, 2) + PULSE(1, 2) + pulse_train(1, 2, 3, 4)"
         " + FORCST(Variable1, 1, 2) + TREND(Variable1, 1)"
@@ -69,7 +69,9 @@ void TestAnalysis::functionSignatures()
         " + STDDEV(Variable1) + PREVIOUS(Variable1, 0) + INIT(Variable1) + if_then_else(1, 2, 3)"
         " + ARCCOS(1) + ARCSIN(1) + ARCTAN(1) + COS(1) + EXP(1) + INT(1) + LN(1) + LOG10(1)"
         " + MIN(1, 2) + SIN(1) + SQRT(1) + TAN(1) + DELAY(Variable1, 1) + DELAY1(Variable1, 1)"
-        " + DELAY3(Variable1, 1) + SMTH1(Variable1, 1) + SMTH3(Variable1, 1) + DT + STARTTIME + STOPTIME");
+        " + DELAY1I(Variable1, 1, 0) + DELAY3(Variable1, 1) + DELAY3I(Variable1, 1, 0)"
+        " + SMOOTH3(Variable1, 1) + SMOOTHI(Variable1, 1, 0) + SMOOTH3I(Variable1, 1, 0)"
+        " + SMTH1(Variable1, 1) + SMTH3(Variable1, 1) + DT + STARTTIME + STOPTIME");
     const AnalysisReport analysis = analyzeDocument(document);
     QVERIFY(!hasIssue(analysis, "unknown-function"));
     QVERIFY(!hasIssue(analysis, "invalid-arity"));
@@ -81,7 +83,7 @@ void TestAnalysis::functionSignatures()
     const QVector<QString> invalidCalls {
         "POISSON()", "POISSON(1, 2, 3)", "RANK(Variable1)", "RANK(Variable1, 1, 2, 3)",
         "ABS()", "ABS(1, 2)", "MAX()", "MAX(1, 2, 3)", "PREVIOUS(Variable1)",
-        "PULSE(1, 2, 3)", "RAMP(1, 2)", "pulse_train(1, 2, 3)", "pulse_train(1, 2, 3, 4, 5)"
+        "DELAYN(Variable1, 1, 2)", "SMTHN(Variable1, 1, 2)", "PULSE(1, 2, 3)", "RAMP(1, 2)", "pulse_train(1, 2, 3)", "pulse_train(1, 2, 3, 4, 5)"
     };
     for (const QString &call : invalidCalls) {
         document.setEquation(auxiliary, call);

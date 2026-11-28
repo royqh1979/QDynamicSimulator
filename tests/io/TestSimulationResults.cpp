@@ -134,6 +134,9 @@ private slots:
     void lookupXscaleModel();
     void inlineLookupModel();
     void timeInputModel();
+    void delaysModel();
+    void smoothModel();
+    void delayXmileModel();
 };
 
 void TestSimulationResults::absModel()
@@ -193,6 +196,21 @@ void TestSimulationResults::inlineLookupModel()
 void TestSimulationResults::timeInputModel()
 {
     verifyMdlReferenceModel(QStringLiteral(QDS_TIME_INPUT_MDL_PATH), QStringLiteral(QDS_TIME_INPUT_OUTPUT_PATH));
+}
+
+void TestSimulationResults::delaysModel()
+{
+    verifyMdlReferenceModel(QStringLiteral(QDS_DELAYS_MDL_PATH), QStringLiteral(QDS_DELAYS_OUTPUT_PATH));
+}
+
+void TestSimulationResults::smoothModel()
+{
+    verifyMdlReferenceModel(QStringLiteral(QDS_SMOOTH_MDL_PATH), QStringLiteral(QDS_SMOOTH_OUTPUT_PATH));
+}
+
+void TestSimulationResults::delayXmileModel()
+{
+    verifyReferenceModel(QStringLiteral(QDS_DELAY_XMILE_PATH), QStringLiteral(QDS_DELAY_XMILE_OUTPUT_PATH));
 }
 
 } // namespace

@@ -228,7 +228,7 @@ EvaluationResult evaluateFormula(const FormulaNode *node, const EvaluationContex
 
 数学函数使用 C++ 标准库的 double 语义；除零和定义域错误不替换为零，允许按 IEEE 754 产生 Inf/NaN。MAX/MIN 的单参数形式对标量返回参数本身，双参数形式返回较大/较小值。
 
-INTEG/INTEGR、延迟、平滑、预测和 INIT/PREVIOUS 仍返回明确的未支持错误；它们需要积分或历史状态语义，不能因已登记函数签名而视为可求值。Lookup 已由独立阶段实现，见 [Lookup 模型与求解器设计](lookup.md)；STEP/PULSE/PULSE TRAIN/RAMP 见 [纯时间输入函数设计](time-functions.md)；RANDOM/NORMAL/LOGNORMAL/POISSON/EXPRND 见 [随机函数设计](random-functions.md)。数组函数、下标和转置已由后续数组阶段实现。仿真运行器复用 EvaluationContext 提供时间、变量存储和 Run 内随机流，不在 Evaluator 内隐藏全局状态；具体边界见 [仿真引擎设计](simulation.md)。
+INTEG/INTEGR、预测和 INIT/PREVIOUS 仍返回明确的未支持错误；它们需要其它历史状态语义，不能因已登记函数签名而视为可求值。Lookup 已由独立阶段实现，见 [Lookup 模型与求解器设计](lookup.md)；STEP/PULSE/PULSE TRAIN/RAMP 见 [纯时间输入函数设计](time-functions.md)；RANDOM/NORMAL/LOGNORMAL/POISSON/EXPRND 见 [随机函数设计](random-functions.md)；DELAY N/SMOOTH N 及一阶/三阶别名见 [N 阶延迟设计](delay-functions.md)。数组函数、下标和转置已由后续数组阶段实现。仿真运行器复用 EvaluationContext 提供时间、变量存储和 Run 内随机流，不在 Evaluator 内隐藏全局状态；具体边界见 [仿真引擎设计](simulation.md)。
 
 ## 9. 数组模型、语法与分析
 

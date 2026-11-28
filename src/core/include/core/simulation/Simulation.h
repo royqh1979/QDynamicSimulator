@@ -112,6 +112,8 @@ private:
     QVector<EntityId> m_outputOrder;
     QVector<StockFlows> m_stockFlows;
     QHash<EntityId, ArrayLayout> m_arrayLayouts;
+    QVector<DelayPlan> m_delays;
+    std::size_t m_delaySlots = 0;
     std::unordered_map<EntityId, CompiledElementFormula> m_formulas;
     std::map<MacroSignature, std::unique_ptr<CompiledMacroDefinition>> m_macros;
 };

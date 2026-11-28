@@ -88,3 +88,4 @@
 - 新增 STEP、PULSE、PULSE TRAIN、RAMP 纯时间函数，支持数组广播、Vensim 测试输入半步比较及 Euler/RK4 区间冻结，并通过 Vensim input_functions 全变量参考验证。
 - 统一标识符保留名称检查：Variable、Lookup、Macro、Dimension 不再能创建与内置函数同名但永不生效的定义；控制/特殊变量及中文、空格、下划线规则保持不变。
 - 新增 RANDOM、NORMAL、LOGNORMAL、POISSON、EXPRND：支持 Run 内独立随机流、固定种子复现、非零 Stream ID、标量/数组及 Euler/RK4 每次调用取样；提供 NumPy 原始 MT 对照和 SciPy 统计分布验证。
+- 新增 DELAY N/SMOOTH N、连续一阶/三阶别名和 XMILE Fixed DELAY：支持可变延迟时间、初始化阶数、独立数组状态及 Euler/RK4，并通过 SDXorg 参考序列、解析解收敛和独立性能 profile 验证。

@@ -138,6 +138,8 @@ private slots:
     void timeFunctionBoundaries();
     void randomFunctionsReproducibility();
     void randomFunctionDistributionsAndErrors();
+    void delayFunctionBoundaries();
+    void delayIntegrationBenchmarks();
     void compilationDiagnostics();
     void cancellationAndRuntimeFailure();
 };
@@ -937,6 +939,132 @@ void TestSimulation::randomFunctionDistributionsAndErrors()
     QVERIFY(hasIssue(compileSimulation(rng), "unsupported-noise-rng"));
 }
 
+void TestSimulation::delayFunctionBoundaries()
+{
+    Document document;
+    const EntityId input = document.createVariable(ElementKind::Variable);
+    document.rename(input, "input");
+    document.setEquation(input, "STEP(1, 1)");
+    const EntityId output = document.createVariable(ElementKind::Variable);
+    document.rename(output, "output");
+    document.setEquation(output, "delayn(input, 2, 5, 3)");
+    document.setSimulationSettings({0.0, 0.25, 0.25, 0.25});
+    SimulationCompileResult compiled = compileSimulation(document);
+    QVERIFY(compiled.plan);
+    SimulationPlan moved = std::move(*compiled.plan);
+    const SimulationRun initial = SimulationRunner(document, moved).run();
+    QCOMPARE(initial.status(), SimulationRunStatus::Completed);
+    QCOMPARE(initial.series("output"), (QVector<double> {5.0, 5.0}));
+
+    document.setEquation(output, "delayn(input, 2, input, 2.9)");
+    const SimulationRun truncated = runModel(document);
+    QCOMPARE(truncated.status(), SimulationRunStatus::Completed);
+    QCOMPARE(truncated.series("output").front(), 0.0);
+
+    document.setEquation(output, "delayn(input, 0.5, input, 3)");
+    const SimulationRun reduced = runModel(document);
+    QCOMPARE(reduced.status(), SimulationRunStatus::Completed);
+    document.setEquation(output, "delayn(input, 2, input, 0)");
+    QCOMPARE(runModel(document).status(), SimulationRunStatus::Failed);
+    document.setEquation(output, "delayn(input, 2, input, 65)");
+    QCOMPARE(runModel(document).status(), SimulationRunStatus::Failed);
+    document.setEquation(output, "delayn(input, 0, input, 2)");
+    QCOMPARE(runModel(document).status(), SimulationRunStatus::Failed);
+
+    Document arrays;
+    arrays.defineDimension("N", 3);
+    const EntityId arrayInput = arrays.createVariable(ElementKind::Variable);
+    arrays.rename(arrayInput, "input");
+    arrays.setDimensions(arrayInput, {"N"});
+    arrays.setEquation(arrayInput, "N + STEP(1, 0.25)");
+    const EntityId arrayOutput = arrays.createVariable(ElementKind::Variable);
+    arrays.rename(arrayOutput, "output");
+    arrays.setDimensions(arrayOutput, {"N"});
+    arrays.setEquation(arrayOutput, "delayn(input, 4, N, N)");
+    arrays.setSimulationSettings({0.0, 1.0, 0.25, 0.25});
+    const SimulationRun arrayRun = runModel(arrays);
+    QCOMPARE(arrayRun.status(), SimulationRunStatus::Completed);
+    QCOMPARE(arrayRun.arraySeries("output").front().values, (QVector<double> {1.0, 2.0, 3.0}));
+    QCOMPARE(arrayRun.arraySeries("output").at(1).values, (QVector<double> {1.0, 2.0, 3.0}));
+    QCOMPARE(arrayRun.arraySeries("output").at(2).values, (QVector<double> {1.0625, 2.0, 3.0}));
+    arrays.setSimulationSettings({0.0, 1.0, 0.25, 0.25, IntegrationMethod::RungeKutta4});
+    const SimulationRun rk4 = runModel(arrays);
+    QCOMPARE(rk4.arraySeries("output").front().values, (QVector<double> {1.0, 2.0, 3.0}));
+    QCOMPARE(rk4.arraySeries("output").at(2).values, (QVector<double> {1.0625, 2.0, 3.0}));
+
+    arrays.setSimulationSettings({0.0, 2.25, 0.25, 0.25});
+    arrays.setEquation(arrayOutput, "delay(input, N, N)");
+    const SimulationRun fixed = runModel(arrays);
+    QCOMPARE(fixed.status(), SimulationRunStatus::Completed);
+    QCOMPARE(fixed.arraySeries("output").at(4).values, (QVector<double> {1.0, 2.0, 3.0}));
+    QCOMPARE(fixed.arraySeries("output").at(5).values, (QVector<double> {2.0, 2.0, 3.0}));
+    QCOMPARE(fixed.arraySeries("output").at(8).values, (QVector<double> {2.0, 2.0, 3.0}));
+    QCOMPARE(fixed.arraySeries("output").at(9).values, (QVector<double> {2.0, 3.0, 3.0}));
+    arrays.setEquation(arrayOutput, "delay(input, 16.25, N)");
+    QCOMPARE(runModel(arrays).status(), SimulationRunStatus::Failed);
+
+    Document conditional;
+    const EntityId conditionalOutput = conditional.createVariable(ElementKind::Variable);
+    conditional.rename(conditionalOutput, "output");
+    conditional.setEquation(conditionalOutput, "if_then_else(0, delay(1, 1, 0), 5)");
+    conditional.setSimulationSettings({0.0, 1.0, 0.25, 0.25});
+    const SimulationRun skipped = runModel(conditional);
+    QCOMPARE(skipped.status(), SimulationRunStatus::Completed);
+    QCOMPARE(skipped.series("output"), (QVector<double> {5.0, 5.0, 5.0, 5.0, 5.0}));
+
+    Document macro;
+    MacroDefinitionData definition;
+    definition.displayName = "Stateful";
+    definition.parameters = {{"x", {}}};
+    definition.equation = "DELAY1(x, 2)";
+    macro.defineMacro(definition);
+    const EntityId macroOutput = macro.createVariable(ElementKind::Variable);
+    macro.setEquation(macroOutput, "Stateful(1)");
+    macro.setSimulationSettings({0.0, 0.0, 1.0, 1.0});
+    QVERIFY(hasIssue(compileSimulation(macro), "unsupported-stateful-macro"));
+
+    Document nested;
+    const EntityId nestedOutput = nested.createVariable(ElementKind::Variable);
+    nested.setEquation(nestedOutput, "1 + delayn(1, 2, 1, 2)");
+    nested.setSimulationSettings({0.0, 0.0, 1.0, 1.0});
+    QVERIFY(hasIssue(compileSimulation(nested), "invalid-delayn-placement"));
+}
+
+void TestSimulation::delayIntegrationBenchmarks()
+{
+    const struct {
+        QString function;
+        double euler;
+        double exact;
+    } cases[] = {
+        {"delay1", 0.125, 1.0 - std::exp(-0.125)},
+        {"delay3", 0.0, 1.0 - std::exp(-0.375) * (1.0 + 0.375 + 0.375 * 0.375 / 2.0)}
+    };
+    for (const auto &entry : cases) {
+        Document document;
+        const EntityId output = document.createVariable(ElementKind::Variable);
+        document.rename(output, "output");
+        document.setEquation(output, entry.function + "(1, 2, 0)");
+        document.setSimulationSettings({0.0, 0.25, 0.25, 0.25});
+        const SimulationRun euler = runModel(document);
+        QCOMPARE(euler.status(), SimulationRunStatus::Completed);
+        expectNear(euler.series("output").back(), entry.euler, 1e-12);
+
+        double previousError = 0.0;
+        for (int refinement = 0; refinement < 4; ++refinement) {
+            const double dt = 0.25 / std::pow(2.0, refinement);
+            document.setSimulationSettings({0.0, 0.25, dt, dt, IntegrationMethod::RungeKutta4});
+            const SimulationRun rk4 = runModel(document);
+            QCOMPARE(rk4.status(), SimulationRunStatus::Completed);
+            const double error = std::abs(rk4.series("output").back() - entry.exact);
+            if (previousError > 0.0)
+                QVERIFY2(previousError / error > 12.0, qPrintable(entry.function + " did not converge at fourth order"));
+            previousError = error;
+        }
+        QVERIFY(previousError < 1e-7);
+    }
+}
+
 void TestSimulation::compilationDiagnostics()
 {
     Document missing;
@@ -947,6 +1075,12 @@ void TestSimulation::compilationDiagnostics()
     const EntityId integral = unsupported.createVariable(ElementKind::Stock);
     unsupported.setInitialEquation(integral, "INTEG(1, 0)");
     QVERIFY(hasIssue(compileSimulation(unsupported), "unsupported-simulation-function"));
+    for (const QString &equation : {QStringLiteral("forcst(1, 1, 1)"), QStringLiteral("trend(1, 1)")}) {
+        Document stateful;
+        const EntityId output = stateful.createVariable(ElementKind::Variable);
+        stateful.setEquation(output, equation);
+        QVERIFY(hasIssue(compileSimulation(stateful), "unsupported-simulation-function"));
+    }
 
     Document data;
     const EntityId dataElement = data.createVariable(ElementKind::Variable);

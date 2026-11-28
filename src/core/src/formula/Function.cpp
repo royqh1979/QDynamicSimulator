@@ -19,10 +19,12 @@ const FunctionSignature *findFunctionSignature(const QString &nameKey)
         {"exprnd", {1, 2, Category::Statistical}}, {"lognormal", {2, 3, Category::Statistical}},
         {"normal", {2, 3, Category::Statistical}}, {"poisson", {1, 2, Category::Statistical}},
         {"random", {2, 3, Category::Statistical}}, {"delay", {2, 3, Category::Delay}},
-        {"delay1", {2, 3, Category::Delay}}, {"delay3", {2, 3, Category::Delay}},
-        {"delayn", {3, 4, Category::Delay}}, {"forcst", {3, 4, Category::Delay}},
+        {"delay1", {2, 3, Category::Delay}}, {"delay1i", {3, 3, Category::Delay}},
+        {"delay3", {2, 3, Category::Delay}}, {"delay3i", {3, 3, Category::Delay}},
+        {"delayn", {4, 4, Category::Delay}}, {"forcst", {3, 4, Category::Delay}},
         {"smth1", {2, 3, Category::Delay}}, {"smth3", {2, 3, Category::Delay}},
-        {"smthn", {3, 4, Category::Delay}}, {"trend", {2, 3, Category::Delay}},
+        {"smthn", {4, 4, Category::Delay}},
+        {"smoothi", {3, 3, Category::Delay}}, {"trend", {2, 3, Category::Delay}},
         {"pulse", {2, 2, Category::TestInput}}, {"pulse_train", {4, 4, Category::TestInput}},
         {"ramp", {3, 3, Category::TestInput}}, {"step", {2, 2, Category::TestInput}}, {"dt", {0, 0, Category::Time}},
         {"starttime", {0, 0, Category::Time}}, {"stoptime", {0, 0, Category::Time}},
@@ -33,7 +35,8 @@ const FunctionSignature *findFunctionSignature(const QString &nameKey)
         {"sum", {1, 1, Category::Array}}, {"if_then_else", {3, 3, Category::Miscellaneous}},
         {"log", {1, 1, Category::Compatibility}}, {"integ", {2, 3, Category::Compatibility}},
         {"integr", {2, 3, Category::Compatibility}},
-        {"smooth", {2, 3, Category::Compatibility}}, {"lookup", {1, 2, Category::Compatibility}}
+        {"smooth", {2, 3, Category::Delay}}, {"smooth3", {2, 3, Category::Delay}},
+        {"smooth3i", {3, 3, Category::Delay}}, {"lookup", {1, 2, Category::Compatibility}}
     };
     const auto found = signatures.find(nameKey);
     return found == signatures.end() ? nullptr : &found.value();
