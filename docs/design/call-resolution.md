@@ -62,7 +62,7 @@ Plan 以 `std::map<MacroSignature, unique_ptr<CompiledMacroDefinition>>` 等稳�
 显式 Bound 节点位于 `core/formula/Binding.h`：
 
 - `BoundReferenceNode`：绑定全局变量 EntityId、Dimension 当前元素、限定 DimensionElement、TIME/DT/STARTTIME/STOPTIME/PI/INF 等语义。
-- `LocalReferenceNode`：表示宏局部参数，不能绑定到同名全局实体。
+- `LocalReferenceNode`：按宏内形参位置保存 slot，运行时按 `currentFrame.base+slot` 读取，不能绑定到同名全局实体或再做名称查表。
 - `BoundCallNode`：区分 Builtin、Macro、Lookup，保存已绑定参数子树。
 - Builtin 保存函数签名；Builtin 本身没有公式 AST。
 - BoundMacroCall 指向 Plan 拥有的 CompiledMacroDefinition；宏体和默认参数均在 Plan 中完成绑定。

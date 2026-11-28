@@ -183,3 +183,20 @@ Lookup 两轮分别减少约 55.8% 和 55.4%，checksum 均为 10000。时间函
 - gprof 的 BFD Dwarf 警告和插桩开销只影响辅助证据，绝对耗时以普通 Release 为准。
 
 新增回归覆盖源 Formula/宏 AST 根指针、节点数和文本不变，Plan 移动后的递归宏，Lookup/Macro 双向名称冲突及索引移动/clear。Debug 全量 CTest 18/18、Release/Core/IO 和两种构建的完整 XMILE corpus 均通过。Release 的 `pngExportAndClipboard` 持续因系统剪贴板被其它程序占用而失败（`OpenClipboard 0x800401d0`）；用户已明确接受该系统问题，不作为本轮提交阻塞。
+
+## 统一执行栈：时间函数与 Macro 参数/局部变量
+
+本轮以 EvaluationContext 持有的 ExecutionStack 统一保存时间函数参数和宏参数/局部变量。Plan LocalReference 使用 `frame.base+slot`，Run 预留 4 MiB Value 存储，普通上下文按需增长。完整过程见 [重构计划](../history/2026-11-28-time-function-scalar-storage-done.md)。
+
+固定普通 Release 基线与三轮结果：
+
+| 场景 | 基线 | 第 1 轮 | 第 2 轮 | 第 3 轮 |
+| --- | ---: | ---: | ---: | ---: |
+| 时间函数 | 1095.08 ms | 675.27 ms | 721.867 ms | 702.793 ms |
+| Simulation Macro | 330.572 ms | 112.068 ms | 124.002 ms | 120.04 ms |
+
+时间函数分别减少约 38.3%/34.1%/35.8%，Macro 分别减少约 66.1%/62.5%/63.7%。所有 checksum 和样本数一致。FormulaProfile 的通用 Macro 从约 0.4653 ms 降至 0.2541 ms，递归 Macro 从约 1.6165 ms 降至 0.87 ms。
+
+插桩复查中，Value 存储 realloc 只剩每 Run 一次，不再出现原 timeFunction 的反复参数容器增长；Frame resize/restore 的 self-time 很低。返回值继续由 EvaluationResult 按值返回，函数算术和返回方式均未显示为新热点。绝对耗时以普通 Release 为准。
+
+Release、Debug 全量 CTest 均为 18/18，包含完整 XMILE corpus、宏递归/遮蔽、数组、Euler/RK4 和 Worker 生命周期测试。

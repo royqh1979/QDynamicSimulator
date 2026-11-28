@@ -48,6 +48,7 @@ RAMP(slope, start, end):
 - 输出逐元素计算，不把首元素当成整个数组；
 - 函数保持无状态，不需要历史槽；
 - 编译器接受且仅接受 STEP(2)、PULSE(2)、PULSE TRAIN(4)、RAMP(3) 的对应参数个数；
+- timeFunction 与宏调用共用 Evaluator 持有的 ExecutionStack，以连续 Value slot 和 base index 保存参数/局部变量，不为每次调用建立堆上 QVector 参数容器或 QHash 宏帧；数组布局本身仍使用既有 ArrayValue/QVector 表示；
 - 既有依赖分析、拓扑顺序和公式诊断不变。
 
 ## 5. 验证与 profile

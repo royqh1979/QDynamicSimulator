@@ -8,12 +8,35 @@
 #include <QHash>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <numeric>
 #include <utility>
 
 namespace qds::core {
+
+ExecutionStack::ExecutionStack()
+{
+    m_frames.reserve(maximumFrameDepth);
+}
+
+void ExecutionStack::restore(const Mark &mark)
+{
+    m_frames.resize(mark.frames);
+    m_values.resize(mark.values);
+}
+
+void ExecutionStack::pushFrame(std::size_t base, const MacroDefinition *source)
+{
+    m_frames.push_back({base, source, nullptr});
+}
+
+void ExecutionStack::pushFrame(std::size_t base, const CompiledMacroDefinition *compiled)
+{
+    m_frames.push_back({base, nullptr, compiled});
+}
+
 namespace {
 
 EvaluationResult success(Value value)
@@ -85,20 +108,22 @@ bool subscriptIndex(double value, std::size_t size, std::size_t &index)
     return true;
 }
 
-class MacroFrameGuard
+class ExecutionStackGuard
 {
 public:
-    explicit MacroFrameGuard(QVector<QHash<QString, Value>> &frames)
-        : m_frames(frames)
+    explicit ExecutionStackGuard(ExecutionStack &stack)
+        : m_stack(stack)
+        , m_mark(stack.mark())
     {
     }
-    ~MacroFrameGuard() { m_frames.pop_back(); }
+    ~ExecutionStackGuard() { m_stack.restore(m_mark); }
 
-    MacroFrameGuard(const MacroFrameGuard &) = delete;
-    MacroFrameGuard &operator=(const MacroFrameGuard &) = delete;
+    ExecutionStackGuard(const ExecutionStackGuard &) = delete;
+    ExecutionStackGuard &operator=(const ExecutionStackGuard &) = delete;
 
 private:
-    QVector<QHash<QString, Value>> &m_frames;
+    ExecutionStack &m_stack;
+    ExecutionStack::Mark m_mark;
 };
 
 class Evaluator
@@ -180,9 +205,29 @@ private:
         return checkedValue(m_context.readVariable(nameKey), nameKey, node);
     }
 
+    std::optional<std::size_t> localIndex(const QString &nameKey) const
+    {
+        ExecutionStack &stack = m_context.executionStack;
+        if (stack.frameCount() == 0)
+            return std::nullopt;
+        const ExecutionStack::Frame &frame = stack.currentFrame();
+        if (frame.source) {
+            for (std::size_t index = 0; index < frame.source->parameters().size(); ++index) {
+                if (frame.source->parameters()[index].nameKey() == nameKey)
+                    return index;
+            }
+        } else if (frame.compiled) {
+            for (std::size_t index = 0; index < frame.compiled->parameters().size(); ++index) {
+                if (frame.compiled->parameters()[index].nameKey() == nameKey)
+                    return index;
+            }
+        }
+        return std::nullopt;
+    }
+
     bool hasLocal(const QString &nameKey) const
     {
-        return !m_macroFrames.isEmpty() && m_macroFrames.back().contains(nameKey);
+        return localIndex(nameKey).has_value();
     }
 
     EvaluationResult boundReference(const BoundReferenceNode &node)
@@ -219,15 +264,19 @@ private:
 
     EvaluationResult localReference(const LocalReferenceNode &node)
     {
-        if (!hasLocal(node.nameKey()))
+        ExecutionStack &stack = m_context.executionStack;
+        if (stack.frameCount() == 0)
             return failure(&node, "Unresolved macro parameter: " + node.nameKey());
-        return success(m_macroFrames.back().value(node.nameKey()));
+        const ExecutionStack::Frame &frame = stack.currentFrame();
+        return success(stack.value(frame.base + node.slot()));
     }
 
     EvaluationResult reference(const ReferenceNode &node)
     {
-        if (hasLocal(node.nameKey()))
-            return success(m_macroFrames.back().value(node.nameKey()));
+        if (const auto index = localIndex(node.nameKey())) {
+            const ExecutionStack::Frame &frame = m_context.executionStack.currentFrame();
+            return success(m_context.executionStack.value(frame.base + *index));
+        }
         if (const FunctionSignature *signature = findFunctionSignature(node.nameKey());
             signature && signature->minArguments == 0 && signature->maxArguments == 0) {
             if (node.nameKey() == "self")
@@ -740,29 +789,24 @@ private:
     template <typename Call, typename Definition>
     EvaluationResult invokeMacro(const Call &node, const Definition &definition)
     {
-        if (m_macroFrames.size() >= 64)
+        ExecutionStack &stack = m_context.executionStack;
+        if (stack.frameCount() >= ExecutionStack::maximumFrameDepth)
             return failure(&node, "Macro recursion depth limit exceeded");
-
-        QVector<Value> arguments;
-        arguments.reserve(node.argumentCount());
+        const ExecutionStackGuard guard(stack);
+        const std::size_t base = stack.mark().values;
         for (int position = 0; position < node.argumentCount(); ++position) {
             EvaluationResult value = evaluate(node.argument(position));
             if (!value.value)
                 return value;
-            arguments.push_back(std::move(*value.value));
+            stack.pushValue(std::move(*value.value));
         }
 
-        m_macroFrames.push_back({});
-        MacroFrameGuard guard(m_macroFrames);
-        for (int index = 0; index < definition.parameters().size(); ++index) {
-            Value value = index < arguments.size() ? std::move(arguments[index]) : Value();
-            if (index >= arguments.size()) {
-                EvaluationResult evaluated = evaluate(definition.parameters()[index].defaultFormula().root());
-                if (!evaluated.value)
-                    return evaluated;
-                value = std::move(*evaluated.value);
-            }
-            m_macroFrames.back().insert(definition.parameters()[index].nameKey(), std::move(value));
+        stack.pushFrame(base, &definition);
+        for (int index = int(node.argumentCount()); index < definition.parameters().size(); ++index) {
+            EvaluationResult evaluated = evaluate(definition.parameters()[index].defaultFormula().root());
+            if (!evaluated.value)
+                return evaluated;
+            stack.pushValue(std::move(*evaluated.value));
         }
         return evaluate(definition.formula().root());
     }
@@ -790,7 +834,9 @@ private:
     template <typename Call, typename Operation>
     EvaluationResult timeFunction(const Call &node, Operation operation)
     {
-        QVector<Value> inputs;
+        ExecutionStack &stack = m_context.executionStack;
+        const ExecutionStackGuard guard(stack);
+        const std::size_t base = stack.mark().values;
         QVector<QString> dimensions;
         for (int position = 0; position < node.argumentCount(); ++position) {
             EvaluationResult input = evaluate(node.argument(position));
@@ -800,26 +846,25 @@ private:
                 if (const ArrayValue *array = arrayOf(*input.value))
                     dimensions = array->dimensions;
             }
-            inputs.push_back(std::move(*input.value));
+            stack.pushValue(std::move(*input.value));
         }
+        std::array<double, ExecutionStack::maximumTimeFunctionArguments> values {};
         if (dimensions.isEmpty()) {
-            QVector<double> values;
-            for (const Value &input : inputs)
-                values.push_back(std::get<double>(input));
+            for (int position = 0; position < node.argumentCount(); ++position)
+                values[position] = std::get<double>(stack.value(base + position));
             return success(operation(values));
         }
-        for (Value &input : inputs) {
-            EvaluationResult broadcasted = broadcast(input, dimensions, node);
+        for (int position = 0; position < node.argumentCount(); ++position) {
+            EvaluationResult broadcasted = broadcast(stack.value(base + position), dimensions, node);
             if (!broadcasted.value)
                 return broadcasted;
-            input = std::move(*broadcasted.value);
+            stack.value(base + position) = std::move(*broadcasted.value);
         }
-        const ArrayValue &first = *arrayOf(inputs.front());
+        const ArrayValue &first = *arrayOf(stack.value(base));
         ArrayValue output {first.dimensions, first.shape, QVector<double>(first.values.size())};
-        QVector<double> values(inputs.size());
         for (int flat = 0; flat < output.values.size(); ++flat) {
-            for (int position = 0; position < inputs.size(); ++position)
-                values[position] = arrayOf(inputs[position])->values[flat];
+            for (int position = 0; position < node.argumentCount(); ++position)
+                values[position] = arrayOf(stack.value(base + position))->values[flat];
             output.values[flat] = operation(values);
         }
         return success(std::move(output));
@@ -876,19 +921,19 @@ private:
             return select(*condition.value, node.argument(1), node.argument(2), node);
         }
         if (node.nameKey() == "step") {
-            return timeFunction(node, [this](const QVector<double> &values) {
+            return timeFunction(node, [this](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values) {
                 return m_context.inputTime + m_context.inputDt / 2.0 > values[1] ? values[0] : 0.0;
             });
         }
         if (node.nameKey() == "pulse") {
-            return timeFunction(node, [this](const QVector<double> &values) {
+            return timeFunction(node, [this](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values) {
                 const double width = values[1] == 0.0 ? m_context.inputDt : values[1];
                 const double time = m_context.inputTime + m_context.inputDt / 2.0;
                 return time > values[0] && time < values[0] + width ? 1.0 : 0.0;
             });
         }
         if (node.nameKey() == "pulse_train") {
-            return timeFunction(node, [this](const QVector<double> &values) {
+            return timeFunction(node, [this](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values) {
                 const double time = m_context.inputTime + m_context.inputDt / 2.0;
                 const double width = values[1] <= m_context.inputDt ? m_context.inputDt : values[1];
                 if (time <= values[0] || time > values[3])
@@ -902,7 +947,7 @@ private:
             });
         }
         if (node.nameKey() == "ramp") {
-            return timeFunction(node, [this](const QVector<double> &values) {
+            return timeFunction(node, [this](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values) {
                 if (m_context.inputTime <= values[1])
                     return 0.0;
                 if (m_context.inputTime < values[2])
@@ -953,7 +998,6 @@ private:
         });
     }
 
-    QVector<QHash<QString, Value>> m_macroFrames;
     const EvaluationContext &m_context;
 };
 
