@@ -68,6 +68,25 @@ private:
     std::size_t m_count;
 };
 
+enum class ReferenceBindingKind {
+    Variable,
+    Dimension,
+    DimensionElement,
+    Self,
+    Time,
+    Dt,
+    StartTime,
+    StopTime,
+    Pi,
+    Infinity
+};
+
+struct ReferenceBinding {
+    ReferenceBindingKind kind = ReferenceBindingKind::Variable;
+    EntityId variable = 0;
+    std::size_t element = 0;
+};
+
 struct StockFlows {
     EntityId stock = 0;
     QVector<EntityId> inflows;
@@ -91,6 +110,7 @@ private:
     QVector<EntityId> m_outputOrder;
     QVector<StockFlows> m_stockFlows;
     QHash<EntityId, ArrayLayout> m_arrayLayouts;
+    QHash<QString, ReferenceBinding> m_referenceBindings;
 };
 
 struct SimulationCompileResult {

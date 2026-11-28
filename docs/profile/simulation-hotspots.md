@@ -90,3 +90,23 @@
 插桩复查中，QVector<QString> 复制由约 10722 万次降至 7614 万次，QVector<size_t> 复制由约 10721 万次降至 7513 万次，符合移除逐元素 scope/坐标复制的预期。插桩后的绝对耗时波动和开销较大，只使用调用次数作辅助证据。Apply-to-All 的 Simulation.cpp coordinates 调用已消除；netRates 的 coordinates/flatIndex 路径留给第三阶段。
 
 本阶段 Release 和 Debug 全量 CTest 均为 18/18 通过，包括 Apply-to-All、多维/显式元素、维度重排、广播、守恒、失败和取消。
+
+## 第二阶段：普通公式引用预绑定
+
+Plan 以自有 ReferenceBinding 值保存 Variable、Dimension、DimensionElement、SELF、TIME/DT/STARTTIME/STOPTIME、PI/INF 的解析类型。普通引用只查询一次绑定并直接按 EntityId 读取状态；内置绑定覆盖同名模型名称，宏局部帧保持优先。解析 std::function 只捕获一个栈上 ResolvedReferenceContext 指针，避免多引用捕获造成额外堆分配。
+
+最终实现冷却后的两轮普通 Release 结果：
+
+| 场景 | 原始基线 ms | 冷却轮次 1 ms | 冷却轮次 2 ms |
+| --- | ---: | ---: | ---: |
+| simulation_array_euler | 15085.3 | 11140.6 | 11875.1 |
+| simulation_euler | 448.134 | 426.435 | 325.778 |
+| simulation_rk4 | 1725.38 | 1587.78 | 1551.44 |
+
+两轮数组相对原始基线分别减少约 26.2% 和 21.3%，并低于第一阶段正常结果；Euler/RK4 也优于原始基线。所有轮次 checksum 与样本数一致。
+
+开发过程中，多引用捕获版本两轮数组为 14776.5/14692.2 ms；缩小捕获后为 14435.5 ms。统一绑定后在持续热态下还出现过 60891.9/60982.8 ms 的异常轮次，暂停负载后降至 18025.4 ms，再在相同冷却间隔后取得表中两轮。原始结果不删除，最终结论只使用冷却条件明确且可重复的轮次，不用热态数据做绝对性能比较。
+
+gprof 调用次数确认：`Document::findByName()` 从约 2104 万次降至 3003 次，`findFunctionSignature()` 从约 3707 万次降至 1004 次；名称规范化和 Dimension 查询也显著减少。netRates 的坐标/flatIndex 仍是第三阶段目标。
+
+专项测试新增同名 TIME 优先级、Dimension 当前元素和 Dimension.Element；宏参数/局部变量、SELF、数组和未知引用由既有测试继续覆盖。本阶段 Release、Debug 全量 CTest 均为 18/18 通过。

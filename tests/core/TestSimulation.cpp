@@ -68,6 +68,7 @@ private slots:
     void rungeKutta4StageFailure();
     void unifiedRunMetadata();
     void seriesValueSemantics();
+    void referenceBindingSemantics();
     void compilationDiagnostics();
     void cancellationAndRuntimeFailure();
 };
@@ -500,6 +501,43 @@ void TestSimulation::seriesValueSemantics()
     }
     QCOMPARE(arrays.size(), 1);
     QCOMPARE(arrays.front().values, (QVector<double> {9.0, 1.0}));
+}
+
+void TestSimulation::referenceBindingSemantics()
+{
+    Document special;
+    const EntityId stock = special.createVariable(ElementKind::Stock);
+    const EntityId cloud = special.createCloud();
+    const EntityId flow = special.createFlow(cloud, stock);
+    const EntityId namedTime = special.createVariable(ElementKind::Variable);
+    special.rename(namedTime, "time");
+    special.setEquation(namedTime, "100");
+    const EntityId observed = special.createVariable(ElementKind::Variable);
+    special.rename(observed, "observed");
+    special.setEquation(observed, "time");
+    special.setInitialEquation(stock, "0");
+    special.setEquation(flow, "1");
+    special.setSimulationSettings({0.0, 1.0, 1.0, 1.0});
+    const SimulationRun specialRun = runModel(special);
+    QCOMPARE(specialRun.status(), SimulationRunStatus::Completed);
+    QCOMPARE(specialRun.series("observed"), (QVector<double> {0.0, 1.0}));
+
+    Document dimensions;
+    dimensions.defineDimension("Kind", {"First", "Second"});
+    const EntityId selected = dimensions.createVariable(ElementKind::Variable);
+    dimensions.rename(selected, "selected");
+    dimensions.setEquation(selected, "Kind.Second");
+    const EntityId current = dimensions.createVariable(ElementKind::Variable);
+    dimensions.rename(current, "current");
+    dimensions.setDimensions(current, {"Kind"});
+    dimensions.setEquation(current, "Kind");
+    dimensions.setSimulationSettings({0.0, 0.0, 1.0, 1.0});
+    const SimulationRun dimensionRun = runModel(dimensions);
+    QCOMPARE(dimensionRun.status(), SimulationRunStatus::Completed);
+    QCOMPARE(dimensionRun.series("selected"), (QVector<double> {2.0}));
+    const QVector<ArrayValue> currentValues = dimensionRun.arraySeries("current");
+    QCOMPARE(currentValues.size(), 1);
+    QCOMPARE(currentValues.front().values, (QVector<double> {1.0, 2.0}));
 }
 
 void TestSimulation::compilationDiagnostics()

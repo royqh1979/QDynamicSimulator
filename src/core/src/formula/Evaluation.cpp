@@ -154,18 +154,22 @@ private:
         return failure(&node, "Constant is not supported: " + nameKey);
     }
 
+    EvaluationResult checkedValue(std::optional<Value> value, const QString &nameKey, const FormulaNode &node)
+    {
+        if (!value)
+            return failure(&node, "Variable has no value: " + nameKey);
+        if (const ArrayValue *array = arrayOf(*value); array && !validArray(*array))
+            return failure(&node, "Invalid array value for: " + nameKey);
+        return success(std::move(*value));
+    }
+
     EvaluationResult readVariable(const QString &nameKey, const FormulaNode &node)
     {
         if (nameKey.isEmpty())
             return failure(&node, "Unresolved variable");
         if (!m_context.readVariable)
             return failure(&node, "No variable reader for: " + nameKey);
-        std::optional<Value> value = m_context.readVariable(nameKey);
-        if (!value)
-            return failure(&node, "Variable has no value: " + nameKey);
-        if (const ArrayValue *array = arrayOf(*value); array && !validArray(*array))
-            return failure(&node, "Invalid array value for: " + nameKey);
-        return success(std::move(*value));
+        return checkedValue(m_context.readVariable(nameKey), nameKey, node);
     }
 
     bool hasLocal(const QString &nameKey) const
@@ -177,6 +181,10 @@ private:
     {
         if (hasLocal(node.nameKey()))
             return success(m_macroFrames.back().value(node.nameKey()));
+        if (m_context.readResolvedReference) {
+            if (std::optional<Value> value = m_context.readResolvedReference(node.nameKey()))
+                return checkedValue(std::move(value), node.nameKey(), node);
+        }
         if (const FunctionSignature *signature = findFunctionSignature(node.nameKey());
             signature && signature->minArguments == 0 && signature->maxArguments == 0) {
             if (node.nameKey() == "self")

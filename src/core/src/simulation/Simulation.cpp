@@ -433,6 +433,28 @@ SimulationCompileResult compileSimulation(const Document &document)
         plan.m_arrayLayouts.insert(element.id(),
             ArrayLayout(element.dimensions(), std::move(shape), steps, count));
     }
+    for (const ModelElement &element : document.model().elements()) {
+        plan.m_referenceBindings.insert(element.nameKey(),
+            {ReferenceBindingKind::Variable, element.id(), 0});
+    }
+    for (const Dimension &dimension : document.dimensions()) {
+        plan.m_referenceBindings.insert(dimension.nameKey,
+            {ReferenceBindingKind::Dimension, 0, 0});
+        for (std::size_t index = 0; index < dimension.elements.size(); ++index) {
+            const DimensionElement &element = dimension.elements[index];
+            if (!element.nameKey.isEmpty()) {
+                plan.m_referenceBindings.insert(dimension.nameKey + "." + element.nameKey,
+                    {ReferenceBindingKind::DimensionElement, 0, index + 1});
+            }
+        }
+    }
+    plan.m_referenceBindings.insert(QStringLiteral("self"), {ReferenceBindingKind::Self, 0, 0});
+    plan.m_referenceBindings.insert(QStringLiteral("time"), {ReferenceBindingKind::Time, 0, 0});
+    plan.m_referenceBindings.insert(QStringLiteral("dt"), {ReferenceBindingKind::Dt, 0, 0});
+    plan.m_referenceBindings.insert(QStringLiteral("starttime"), {ReferenceBindingKind::StartTime, 0, 0});
+    plan.m_referenceBindings.insert(QStringLiteral("stoptime"), {ReferenceBindingKind::StopTime, 0, 0});
+    plan.m_referenceBindings.insert(QStringLiteral("pi"), {ReferenceBindingKind::Pi, 0, 0});
+    plan.m_referenceBindings.insert(QStringLiteral("inf"), {ReferenceBindingKind::Infinity, 0, 0});
     if (result.issues.empty())
         result.plan = std::move(plan);
     return result;
@@ -555,6 +577,53 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
             if (!element || !target.contains(element->id()))
                 return std::nullopt;
             return target.value(element->id());
+        };
+        struct ResolvedReferenceContext {
+            const SimulationPlan &plan;
+            QHash<EntityId, Value> &target;
+            EvaluationContext &evaluation;
+        };
+        ResolvedReferenceContext resolved {m_plan, target, context};
+        context.readResolvedReference = [&resolved](const QString &name) -> std::optional<Value> {
+            const auto binding = resolved.plan.m_referenceBindings.constFind(name);
+            if (binding == resolved.plan.m_referenceBindings.constEnd())
+                return std::nullopt;
+            if (binding->kind == ReferenceBindingKind::Time)
+                return resolved.evaluation.time;
+            if (binding->kind == ReferenceBindingKind::Dt)
+                return resolved.evaluation.dt;
+            if (binding->kind == ReferenceBindingKind::StartTime)
+                return resolved.evaluation.startTime;
+            if (binding->kind == ReferenceBindingKind::StopTime)
+                return resolved.evaluation.stopTime;
+            if (binding->kind == ReferenceBindingKind::Pi)
+                return 3.14159265358979323846;
+            if (binding->kind == ReferenceBindingKind::Infinity)
+                return std::numeric_limits<double>::infinity();
+            EntityId variable = binding->variable;
+            if (binding->kind == ReferenceBindingKind::Self) {
+                const auto self = resolved.plan.m_referenceBindings.constFind(resolved.evaluation.scope.self);
+                if (self == resolved.plan.m_referenceBindings.constEnd()
+                    || self->kind != ReferenceBindingKind::Variable)
+                    return std::nullopt;
+                variable = self->variable;
+            } else if (binding->kind != ReferenceBindingKind::Variable) {
+                variable = 0;
+            }
+            if (variable != 0) {
+                const auto value = resolved.target.constFind(variable);
+                return value == resolved.target.constEnd() ? std::nullopt : std::optional<Value>(value.value());
+            }
+            if (binding->kind == ReferenceBindingKind::DimensionElement)
+                return static_cast<double>(binding->element);
+            if (binding->kind == ReferenceBindingKind::Dimension) {
+                for (std::size_t index = 0; index < resolved.evaluation.scope.dimensions.size(); ++index) {
+                    if (resolved.evaluation.scope.dimensions[index] == name
+                        && index < resolved.evaluation.scope.indices.size())
+                        return static_cast<double>(resolved.evaluation.scope.indices[index] + 1);
+                }
+            }
+            return std::nullopt;
         };
         for (EntityId id : order) {
             const auto *element = dynamic_cast<const ModelElement *>(m_document.find(id));
