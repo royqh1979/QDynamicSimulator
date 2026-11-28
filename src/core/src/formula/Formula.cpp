@@ -1,5 +1,6 @@
 #include <core/formula/Formula.h>
 
+#include <core/formula/Binding.h>
 #include <core/Identifier.h>
 
 #include <algorithm>
@@ -566,6 +567,9 @@ std::size_t formulaNodeCount(const FormulaNode *node)
     } else if (const auto *binary = dynamic_cast<const BinaryNode *>(node)) {
         count += formulaNodeCount(binary->left()) + formulaNodeCount(binary->right());
     } else if (const auto *call = dynamic_cast<const CallNode *>(node)) {
+        for (std::size_t index = 0; index < call->argumentCount(); ++index)
+            count += formulaNodeCount(call->argument(index));
+    } else if (const auto *call = dynamic_cast<const BoundCallNode *>(node)) {
         for (std::size_t index = 0; index < call->argumentCount(); ++index)
             count += formulaNodeCount(call->argument(index));
     } else if (const auto *conditional = dynamic_cast<const ConditionalNode *>(node)) {

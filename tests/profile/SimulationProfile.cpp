@@ -221,6 +221,14 @@ int main(int argc, char **argv)
     lookupDocument.rename(lookupOutput, "output");
     lookupDocument.setEquation(lookupOutput, "\"Rate Table\"(TIME)");
     lookupDocument.setSimulationSettings({0.0, steps * 0.01, 0.01, 0.01});
+    timer.restart();
+    int lookupCompileCount = 0;
+    for (int index = 0; index < count; ++index) {
+        if (!compileSimulation(lookupDocument).plan)
+            return 27;
+        ++lookupCompileCount;
+    }
+    const qint64 lookupCompileNs = timer.nsecsElapsed();
     const SimulationCompileResult lookupCompiled = compileSimulation(lookupDocument);
     if (!lookupCompiled.plan)
         return 21;
@@ -244,10 +252,10 @@ int main(int argc, char **argv)
         timeInputDocument.rename(id, name);
         timeInputDocument.setEquation(id, equation);
     };
-    addTimeInput("step", "STEP(2, 2)");
-    addTimeInput("pulse", "PULSE(2, 2)");
-    addTimeInput("train", "pulse_train(1, 1, 2, 10)");
-    addTimeInput("ramp", "RAMP(2, 1, 3)");
+    addTimeInput("step_output", "STEP(2, 2)");
+    addTimeInput("pulse_output", "PULSE(2, 2)");
+    addTimeInput("train_output", "pulse_train(1, 1, 2, 10)");
+    addTimeInput("ramp_output", "RAMP(2, 1, 3)");
     timeInputDocument.setSimulationSettings({0.0, steps * 0.01, 0.01, 0.01});
     const SimulationCompileResult timeInputCompiled = compileSimulation(timeInputDocument);
     if (!timeInputCompiled.plan)
@@ -259,14 +267,49 @@ int main(int argc, char **argv)
         const SimulationRun run = SimulationRunner(timeInputDocument, *timeInputCompiled.plan).run();
         if (run.status() != SimulationRunStatus::Completed || run.times().size() != steps + 1)
             return 25;
-        for (const QString &name : {QStringLiteral("step"), QStringLiteral("pulse"),
-                 QStringLiteral("train"), QStringLiteral("ramp")})
+        for (const QString &name : {QStringLiteral("step_output"), QStringLiteral("pulse_output"),
+                 QStringLiteral("train_output"), QStringLiteral("ramp_output")})
             timeInputChecksum += run.series(name).back();
         ++timeInputRunCount;
     }
     const qint64 timeInputNs = timer.nsecsElapsed();
     if (std::abs(timeInputChecksum / timeInputRunCount - 6.0) > 1e-9)
         return 26;
+
+    Document macroDocument;
+    MacroDefinitionData scale;
+    scale.displayName = "Scale";
+    scale.parameters = {{"x", {}}, {"factor", "2"}};
+    scale.equation = "x * factor";
+    macroDocument.defineMacro(scale);
+    const EntityId macroOutput = macroDocument.createVariable(ElementKind::Variable);
+    macroDocument.rename(macroOutput, "output");
+    macroDocument.setEquation(macroOutput, "Scale(TIME)");
+    macroDocument.setSimulationSettings({0.0, steps * 0.01, 0.01, 0.01});
+    timer.restart();
+    int macroCompileCount = 0;
+    for (int index = 0; index < count; ++index) {
+        if (!compileSimulation(macroDocument).plan)
+            return 28;
+        ++macroCompileCount;
+    }
+    const qint64 macroCompileNs = timer.nsecsElapsed();
+    const SimulationCompileResult macroCompiled = compileSimulation(macroDocument);
+    if (!macroCompiled.plan)
+        return 29;
+    timer.restart();
+    int macroRunCount = 0;
+    double macroChecksum = 0.0;
+    for (int index = 0; index < count; ++index) {
+        const SimulationRun run = SimulationRunner(macroDocument, *macroCompiled.plan).run();
+        if (run.status() != SimulationRunStatus::Completed || run.times().size() != steps + 1)
+            return 30;
+        macroChecksum += run.series("output").back();
+        ++macroRunCount;
+    }
+    const qint64 macroRunNs = timer.nsecsElapsed();
+    if (std::abs(macroChecksum / macroRunCount - steps * 0.02) > 1e-9)
+        return 31;
 
     QTextStream output(stdout);
     output << "operation,count,total_ms,per_operation_us\n";
@@ -304,6 +347,8 @@ int main(int argc, char **argv)
            << arrayNs / 1000.0 / (arrayRunCount * steps * arraySize) << "\n";
     output << "simulation_array_saved_values," << arraySavedValues << ",\n";
     output << "simulation_array_checksum," << arrayChecksum << ",\n";
+    output << "simulation_lookup_compile," << lookupCompileCount << ',' << lookupCompileNs / 1.0e6 << ','
+           << lookupCompileNs / 1000.0 / lookupCompileCount << "\n";
     output << "simulation_lookup_solver," << lookupRunCount << ',' << solverNs / 1.0e6 << ','
            << solverNs / 1000.0 / lookupRunCount << "\n";
     output << "simulation_lookup_evaluation," << lookupRunCount * steps << ',' << solverNs / 1.0e6 << ','
@@ -314,5 +359,12 @@ int main(int argc, char **argv)
     output << "simulation_time_input_evaluations," << timeInputRunCount * steps << ','
            << timeInputNs / 1.0e6 << ',' << timeInputNs / 1000.0 / (timeInputRunCount * steps) << "\n";
     output << "simulation_time_input_checksum," << timeInputChecksum << ",\n";
+    output << "simulation_macro_compile," << macroCompileCount << ',' << macroCompileNs / 1.0e6 << ','
+           << macroCompileNs / 1000.0 / macroCompileCount << "\n";
+    output << "simulation_macro_solver," << macroRunCount << ',' << macroRunNs / 1.0e6 << ','
+           << macroRunNs / 1000.0 / macroRunCount << "\n";
+    output << "simulation_macro_evaluations," << macroRunCount * steps << ',' << macroRunNs / 1.0e6 << ','
+           << macroRunNs / 1000.0 / (macroRunCount * steps) << "\n";
+    output << "simulation_macro_checksum," << macroChecksum << ",\n";
     return 0;
 }

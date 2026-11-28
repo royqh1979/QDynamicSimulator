@@ -31,7 +31,7 @@ LookupDefinition
 - Discrete：域内取不大于输入的最近 x 对应 y，域外取最近端点；
 - 输入 NaN/Inf 沿用现有仿真非有限值失败规则，不转换成 0。
 
-LookupDefinition 可作为值存入 ElementData、ModelElement 和 Plan，不使用指向 Document 内部定义的裸指针。
+LookupDefinition 以值存入 ElementData 和 ModelElement；BoundLookupCall 可保存配套不可变运行副本中的 const LookupDefinition 指针，寿命由 Request 共同持有的 Document 和 Plan 保证。
 
 ## 3. 独立与内联 Lookup
 
@@ -48,8 +48,8 @@ LookupDefinition 可作为值存入 ElementData、ModelElement 和 Plan，不使
 ## 4. 编译与求值
 
 - Analysis 将独立 Lookup 调用记录为调用方到该 Lookup 的依赖；无参数个数错误、未知名称和类型误用继续使用既有诊断通道。
-- SimulationPlan 的 ReferenceBinding 增加 Lookup 类型，并以值保存其 LookupDefinition。普通调用直接读取 Plan，不在每次求值重新规范化名称或查找 Document。
-- EvaluationContext 增加按名称和 double 输入查询 Lookup 的 reader；未知函数仍先经过原有宏/错误语义，Lookup 调用支持标量和数组逐元素输入。
+- 独立 Lookup 调用在编译时转换为 BoundLookupCall，直接绑定运行副本中的 LookupDefinition；运行时不重复规范化名称、查询 Macro 或查找 Document。
+- 通用无 Plan 求值仍使用 LookupReader；Plan 和通用路径都支持标量和数组逐元素输入，且参数只求值一次。
 - 内联 Variable/Flow 的求值顺序为 equation → LookupDefinition；数组对输出 values 逐元素应用。
 - 独立 Lookup 不进入输出变量列表；调用它的 Variable/Flow 正常输出。
 - Euler/RK4 每个实际求值点使用相同 Lookup 定义；Lookup 本身无状态，不需要历史槽或随机状态。

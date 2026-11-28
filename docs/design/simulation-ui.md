@@ -126,7 +126,8 @@ SimulationRunRequest（不可变、共享所有权）
 - 副本复用 QDS `document.xml` 的内存 XML 读写通道：DocumentFile 直接将 Document 序列化为 UTF-8 XML，再在内存中解析为新 Document；不写文件、不经过 ZIP 压缩/解压，也不依赖 Scene。新增语义字段只需维护同一持久化通道。
 - XML 加载允许重新分配 EntityId，因此 RunVariableInfo 完全基于运行副本建立，只保存 runElementId、当时的 displayName/nameKey 和单位；旧 Run 不保存原模型对象或双重 ID 映射。若界面需要定位当前模型，只能在相同修订下按 nameKey 做辅助导航，这不属于 Run 的身份语义。
 - 副本保留 EntityId、公式、Dimensions、Macros、FlowEndpoints 和 SimulationSettings；不需要 QGraphicsItem、Workspace 或窗口对象。该副本只是 Worker 的执行输入，不属于对外保存的 Run 数据集。
-- Plan 只与这个副本配套，不能用于后续已修改的 Document。
+- 每次运行都以只读方式编译副本；Plan 拥有全部执行 AST，Document 副本及原始 AST 不变。BoundMacroCall 指向 Plan 内编译宏，Lookup 绑定可指向副本中的 const LookupDefinition。Plan 不保存 revision。
+- Request 共同持有副本和 Plan，共享所有权覆盖 Worker 的整个执行期间及 Plan 内部绑定图；Plan 只与这个副本配套，不能用于后续已修改的 Document。
 - RunVariableInfo 固定运行时的显示名称和单位；之后用户改名或删除元素，不改变历史结果中的名称，也不产生悬空 Document 指针。
 - 副本建立或编译失败时不启动线程，不产生半成品 Run。
 

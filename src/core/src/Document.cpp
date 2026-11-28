@@ -136,9 +136,9 @@ Document::Document()
 
 Document::Document(Document &&other) noexcept
     : m_elements(std::move(other.m_elements))
-    , m_nameIndex(std::move(other.m_nameIndex))
+    , m_namedIndex(std::move(other.m_namedIndex))
     , m_dimensions(std::move(other.m_dimensions))
-    , m_dimensionIndex(std::move(other.m_dimensionIndex))
+    , m_invokableIndex(std::move(other.m_invokableIndex))
     , m_macros(std::move(other.m_macros))
     , m_nextNameSuffix(std::move(other.m_nextNameSuffix))
     , m_nextId(other.m_nextId)
@@ -156,9 +156,9 @@ Document &Document::operator=(Document &&other) noexcept
     if (this == &other)
         return *this;
     m_elements = std::move(other.m_elements);
-    m_nameIndex = std::move(other.m_nameIndex);
+    m_namedIndex = std::move(other.m_namedIndex);
     m_dimensions = std::move(other.m_dimensions);
-    m_dimensionIndex = std::move(other.m_dimensionIndex);
+    m_invokableIndex = std::move(other.m_invokableIndex);
     m_macros = std::move(other.m_macros);
     m_nextNameSuffix = std::move(other.m_nextNameSuffix);
     m_nextId = other.m_nextId;
@@ -183,16 +183,21 @@ const DocumentElement *Document::find(EntityId id) const
 
 const ModelElement *Document::findByName(const QString &name) const
 {
-    const auto it = m_nameIndex.find(normalizeIdentifier(name));
-    if (it == m_nameIndex.end())
-        return nullptr;
-    return dynamic_cast<const ModelElement *>(find(it.value()));
+    const QString key = normalizeIdentifier(name);
+    const auto named = m_namedIndex.constFind(key);
+    if (named != m_namedIndex.constEnd() && named->kind == NamedKind::ModelElement)
+        return dynamic_cast<const ModelElement *>(find(named->element));
+    const auto invokable = m_invokableIndex.constFind(key);
+    if (invokable != m_invokableIndex.constEnd() && invokable->kind == InvokableKind::Lookup)
+        return dynamic_cast<const ModelElement *>(find(invokable->element));
+    return nullptr;
 }
 
 const Dimension *Document::findDimension(const QString &name) const
 {
-    const auto found = m_dimensionIndex.find(normalizeIdentifier(name));
-    return found == m_dimensionIndex.end() ? nullptr : &m_dimensions[found.value()];
+    const auto found = m_namedIndex.constFind(normalizeIdentifier(name));
+    return found == m_namedIndex.constEnd() || found->kind != NamedKind::Dimension
+        ? nullptr : &m_dimensions[found->dimension];
 }
 
 bool Document::defineDimension(const QString &displayName, std::size_t size)
@@ -225,8 +230,7 @@ bool Document::defineDimension(const QString &displayName, const QVector<QString
 bool Document::defineDimensionData(Dimension dimension)
 {
     if (dimension.nameKey.isEmpty() || isReservedIdentifier(dimension.nameKey)
-        || dimension.elements.isEmpty() || m_nameIndex.count(dimension.nameKey)
-        || m_dimensionIndex.count(dimension.nameKey) || hasMacroName(dimension.nameKey))
+        || dimension.elements.isEmpty() || hasName(dimension.nameKey))
         return false;
     const bool numbered = dimension.elements.front().nameKey.isEmpty();
     QSet<QString> elementNames;
@@ -238,7 +242,7 @@ bool Document::defineDimensionData(Dimension dimension)
         if (!numbered)
             elementNames.insert(element.nameKey);
     }
-    m_dimensionIndex[dimension.nameKey] = m_dimensions.size();
+    m_namedIndex[dimension.nameKey] = {NamedKind::Dimension, 0, int(m_dimensions.size())};
     m_dimensions.push_back(std::move(dimension));
     return true;
 }
@@ -247,8 +251,10 @@ bool Document::prepareMacro(MacroDefinitionData &macro) const
 {
     macro.displayName = trimDisplayName(macro.displayName);
     const QString nameKey = normalizeIdentifier(macro.displayName);
+    const auto invokable = m_invokableIndex.constFind(nameKey);
     if (nameKey.isEmpty() || isReservedIdentifier(nameKey) || macro.equation.isEmpty()
-        || m_nameIndex.count(nameKey) || m_dimensionIndex.count(nameKey))
+        || m_namedIndex.contains(nameKey)
+        || (invokable != m_invokableIndex.constEnd() && invokable->kind != InvokableKind::Macro))
         return false;
     QSet<QString> parameters;
     bool hasDefault = false;
@@ -281,9 +287,13 @@ std::unique_ptr<MacroDefinition> Document::makeMacro(const MacroDefinitionData &
 
 bool Document::hasMacroName(const QString &nameKey) const
 {
-    const QString key = normalizeIdentifier(nameKey);
-    const auto found = m_macros.lower_bound({key, 0, 1});
-    return found != m_macros.end() && found->first.nameKey == key;
+    const auto found = m_invokableIndex.constFind(normalizeIdentifier(nameKey));
+    return found != m_invokableIndex.constEnd() && found->kind == InvokableKind::Macro;
+}
+
+bool Document::hasName(const QString &nameKey) const
+{
+    return m_namedIndex.contains(nameKey) || m_invokableIndex.contains(nameKey);
 }
 
 bool Document::defineMacro(MacroDefinitionData macro)
@@ -301,8 +311,11 @@ bool Document::defineMacro(MacroDefinitionData macro)
             return false;
         ++existing;
     }
-    m_macros.emplace(MacroSignature {nameKey, int(macro.parameters.size()), 1},
+    auto inserted = m_macros.emplace(MacroSignature {nameKey, int(macro.parameters.size()), 1},
         makeMacro(macro));
+    if (!inserted.second)
+        return false;
+    m_invokableIndex.insert(nameKey, {InvokableKind::Macro, 0});
     return true;
 }
 
@@ -340,11 +353,12 @@ EntityId Document::insert(std::unique_ptr<T> element, Vec2 position)
     if (id == 0 || m_elements.count(id))
         return 0;
     if (auto *model = dynamic_cast<ModelElement *>(element.get())) {
-        if (model->nameKey().isEmpty() || isReservedIdentifier(model->nameKey())
-            || m_nameIndex.count(model->nameKey()) || m_dimensionIndex.count(model->nameKey())
-            || hasMacroName(model->nameKey()))
+        if (model->nameKey().isEmpty() || isReservedIdentifier(model->nameKey()) || hasName(model->nameKey()))
             return 0;
-        m_nameIndex[model->nameKey()] = id;
+        if (kind == ElementKind::Lookup)
+            m_invokableIndex.insert(model->nameKey(), {InvokableKind::Lookup, id});
+        else
+            m_namedIndex.insert(model->nameKey(), {NamedKind::ModelElement, id, -1});
     }
     m_elements.emplace(id, std::move(element));
     m_diagram.m_positions[id] = position;
@@ -452,8 +466,12 @@ QVector<EntityId> Document::remove(EntityId id)
 {
     const QVector<EntityId> removed = cascade(id);
     for (EntityId removedId : removed) {
-        if (auto *model = dynamic_cast<ModelElement *>(findMutable(removedId)))
-            m_nameIndex.remove(model->nameKey());
+        if (auto *model = dynamic_cast<ModelElement *>(findMutable(removedId))) {
+            if (model->kind() == ElementKind::Lookup)
+                m_invokableIndex.remove(model->nameKey());
+            else
+                m_namedIndex.remove(model->nameKey());
+        }
         m_elements.erase(removedId);
         m_diagram.m_positions.erase(removedId);
         m_diagram.m_routes.erase(removedId);
@@ -501,8 +519,7 @@ bool Document::restore(const ElementData &data)
     if (find(id))
         return false;
     const QString normalized = normalizeIdentifier(data.displayName);
-    if (data.kind <= ElementKind::Lookup && (normalized.isEmpty() || m_nameIndex.count(normalized)
-            || m_dimensionIndex.count(normalized) || hasMacroName(normalized)
+    if (data.kind <= ElementKind::Lookup && (normalized.isEmpty() || hasName(normalized)
             || !validArrayData(data.dimensions, data.elementEquations,
                 data.kind == ElementKind::Stock ? data.initialEquation : data.equation)))
         return false;
@@ -624,9 +641,13 @@ bool Document::validRename(EntityId id, const QString &displayName) const
     const QString normalized = normalizeIdentifier(trimDisplayName(displayName));
     if (normalized.isEmpty() || isReservedIdentifier(normalized))
         return false;
-    const auto existing = m_nameIndex.find(normalized);
-    return (existing == m_nameIndex.end() || existing.value() == id) && !m_dimensionIndex.count(normalized)
-        && !hasMacroName(normalized);
+    const auto named = m_namedIndex.constFind(normalized);
+    if (named != m_namedIndex.constEnd()
+        && (named->kind != NamedKind::ModelElement || named->element != id))
+        return false;
+    const auto invokable = m_invokableIndex.constFind(normalized);
+    return invokable == m_invokableIndex.constEnd()
+        || (invokable->kind == InvokableKind::Lookup && invokable->element == id);
 }
 
 bool Document::rename(EntityId id, const QString &displayName)
@@ -640,9 +661,15 @@ bool Document::rename(EntityId id, const QString &displayName)
         return true;
     const QString oldName = model->displayName();
     updateReferences(id, oldName, trimmed);
-    m_nameIndex.remove(model->nameKey());
+    if (model->kind() == ElementKind::Lookup)
+        m_invokableIndex.remove(model->nameKey());
+    else
+        m_namedIndex.remove(model->nameKey());
     model->setName(trimmed, normalized);
-    m_nameIndex[normalized] = id;
+    if (model->kind() == ElementKind::Lookup)
+        m_invokableIndex.insert(normalized, {InvokableKind::Lookup, id});
+    else
+        m_namedIndex.insert(normalized, {NamedKind::ModelElement, id, -1});
     return true;
 }
 
@@ -806,9 +833,9 @@ bool Document::setSimulationSettings(const SimulationSettings &settings)
 void Document::clear()
 {
     m_elements.clear();
-    m_nameIndex.clear();
+    m_namedIndex.clear();
     m_dimensions.clear();
-    m_dimensionIndex.clear();
+    m_invokableIndex.clear();
     m_macros.clear();
     m_nextNameSuffix.clear();
     m_diagram.m_positions.clear();
@@ -912,8 +939,7 @@ QString Document::uniqueName(ElementKind kind)
         suffix = 1;
     for (;;) {
         const QString candidate = base + QString::number(suffix++);
-        if (!m_nameIndex.count(normalizeIdentifier(candidate)) && !m_dimensionIndex.count(normalizeIdentifier(candidate))
-            && !hasMacroName(normalizeIdentifier(candidate)))
+        if (!hasName(normalizeIdentifier(candidate)) && !isReservedIdentifier(candidate))
             return candidate;
     }
 }

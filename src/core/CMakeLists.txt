@@ -8,6 +8,7 @@ add_library(qds-core STATIC
     include/core/Element.h
     include/core/ElementRange.h
     include/core/formula/Analysis.h
+    include/core/formula/Binding.h
     include/core/formula/Evaluation.h
     include/core/formula/Formula.h
     include/core/formula/Function.h

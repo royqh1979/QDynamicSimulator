@@ -29,7 +29,10 @@ enum class FormulaNodeKind {
     Wildcard,
     Range,
     DimensionPosition,
-    ArrayLiteral
+    ArrayLiteral,
+    BoundReference,
+    LocalReference,
+    BoundCall
 };
 
 class FormulaNode

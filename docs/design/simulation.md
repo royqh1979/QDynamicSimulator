@@ -103,8 +103,10 @@ SimulationCompileResult
 ├─ optional<SimulationPlan>        仅编译成功时存在
 └─ diagnostics
 
-SimulationPlan                    一次编译的不可变执行描述
+SimulationPlan                    与一个不可变 Document 副本配套的不可变执行描述
 ├─ settings
+├─ compiledFormulas：模型/Stock 初值/逐元素绑定 AST
+├─ compiledMacros：宏体和默认参数绑定 AST
 ├─ initializationOrder：EntityId
 ├─ evaluationOrder：EntityId
 └─ stockBindings：Stock ↔ 流入/流出 EntityId
@@ -126,7 +128,7 @@ SimulationRun                     一次运行的完整不可变记录
 
 约束：
 
-- SimulationPlan 不持有 AST、FormulaNode、ModelElement 或 MacroDefinition 指针；只保存 EntityId 顺序和关系。公式仍在 Document 中唯一持有。
+- SimulationPlan 拥有全部 CompiledFormula/CompiledMacroDefinition 和绑定 AST；Document 唯一持有源文本和原始 AST，编译不修改 Document。Plan 仅可移动，内部编译对象使用稳定堆身份。详见 [统一名称管理与绑定 AST 设计](call-resolution.md)。
 - RunId、runName、modelRevision、RunVariableInfo 和 causes 与数值结果属于同一个 SimulationRun，保证 EntityId 与运行副本元数据自洽；不再使用 NamedRun 平行保存这些字段。
 - `withMetadata()` 返回补齐身份的新对象，原结果不变，禁止发布后改写元数据。RunId 是运行记录身份，不是 EntityId，也不是跨 Run 的模型元素 ID。
 - 对外结果查询统一使用 nameKey：`series(nameKey)`、`arraySeries(nameKey)` 和 `causes(nameKey)`。EntityId 版本及 `RunVariableInfo::id()` 私有化，仅由 SimulationRun 完成运行副本内部映射；SimulationRunner 作为 friend 标记执行边界，不向应用层 Controller 开放 friend。
@@ -140,11 +142,11 @@ SimulationRun                     一次运行的完整不可变记录
 
 固定布局与无分配遍历、普通公式引用预绑定、Stock/Flow 布局对齐及单次运行 Context 复用均已实现。对象结构与基线见 [仿真执行计划性能重构方案](../history/2026-11-28-simulation-execution-plan-done.md)：
 
-- SimulationPlan 从单纯顺序/关系扩展为包含 ArrayLayout、普通公式引用绑定和 Stock/Flow 对齐的完整执行描述；全部新增元数据由 Plan 自持有并在编译发布后不可变，仍不得持有 Document、Formula、AST、ModelElement 或 MacroDefinition 裸指针。
+- SimulationPlan 包含 CompiledFormula、CompiledMacroDefinition、ArrayLayout 和 Stock/Flow 对齐的完整执行描述；全部执行数据由 Plan 自持有并在编译发布后不可变。BoundMacroCall 只指向 Plan 内编译宏，Lookup 绑定可指向配套不可变 Document 副本。
 - ArrayLayout 固定 dimensions、shape、strides 和元素数；StockRatePlan 固定 Flow 方向及相同布局/重排映射。它们是编译结果，不是运行期可变缓存。
-- ReferenceBinding 以值区分 Variable、Dimension、DimensionElement、SELF、TIME/DT/STARTTIME/STOPTIME、PI/INF。普通引用一次查询 Plan 绑定后直接读取当前状态；内置绑定在编译时覆盖同名模型名称，宏局部帧仍优先。状态表只进行一次 EntityId 查找，未知或未计算名称继续使用原有诊断路径。
+- 全局变量、Dimension、DimensionElement、SELF、TIME/DT/STARTTIME/STOPTIME、PI/INF 和调用在编译时转换为显式 Bound 节点，取代 ReferenceBinding。运行期不再按 nameKey 查询全局引用；宏局部帧仍优先，变量状态按 EntityId 读取。
 - 每个 FlowRatePlan 固定 Flow、加减方向、直接平铺标志、兼容性和可选重排映射。相同布局不再逐元素调用 coordinates/flatIndex；重排映射由 ArrayLayout 在编译期生成。不兼容布局保留运行时 `incompatible-stock-flow` 和失败前缀，不改写成编译失败。
-- EvaluationContext、当前下标和阶段 Value 作为单次 run() 的局部可变状态复用，不写回 Plan、不跨 Run/Worker、不进入历史结果。readers 和宏 reader 每次运行建立一次；每次 evaluate 只更新 time、实际 DT 和当前 target 指针，每个变量仍清空并重设 scope，避免继承上一变量/元素的 stale 状态。
+- EvaluationContext、当前下标和阶段 Value 作为单次 run() 的局部可变状态复用，不写回 Plan、不跨 Run/Worker、不进入历史结果。每次 evaluate 只更新 time、实际 DT 和当前 target 指针，每个变量仍清空并重设 scope；绑定 AST 不再需要运行期宏 reader 或名称引用 reader。
 - ArrayValue、SimulationRunRequest、SimulationRun 和 Document/Formula 的既有所有权不变；每次模型运行仍重新编译，不使用需要手工失效的全局缓存。
 
 ## 6. 编译与执行顺序
@@ -158,7 +160,7 @@ SimulationRun                     一次运行的完整不可变记录
 5. 分别进行拓扑排序；真正的代数环报错，经过 Stock 状态的反馈回路不是代数环。
 6. 生成 Stock 到流入/流出 Flow 的绑定和稳定输出顺序。
 
-现有 AnalysisReport 可提供名称诊断和通用依赖，但不能替代初始化/运行期两种语义不同的执行图。Compiler 只遍历 Document 中现有 AST 建立 EntityId 关系，不复制公式或把解析结果写回 AST。
+现有 AnalysisReport 可提供名称诊断和通用依赖，但不能替代初始化/运行期两种语义不同的执行图。Compiler 只读遍历 Document 原始 AST，建立 EntityId 关系并在 Plan 中生成独立 CompiledFormula/绑定 AST；不修改源 AST，也不把绑定结果写回 Document。
 
 ### 6.2 与 Vensim 求值顺序对齐
 

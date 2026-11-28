@@ -359,7 +359,7 @@ Document 以值对象保存 MacroDefinition；宏和参数都有 displayName/nam
 
 ### 11.4 宏修改与失效边界
 
-宏定义是宏体的唯一事实来源，调用方没有宏体副本。修改宏体或默认表达式时，Document 只替换该定义的 Formula；调用方 AST 不变，不做级联失效检查或重新展开。后续全局分析重新生成受影响的 AnalysisReport，所有求值调用通过 MacroReader 使用当前宏体。
+宏定义是宏体源语义的唯一事实来源，调用方原始 AST 不变。修改宏体或默认表达式时，Document 只替换该定义的 Formula，不做级联失效检查或重新展开。后续全局分析重新生成受影响的 AnalysisReport。通用无 Plan 求值通过 MacroReader 使用当前宏体；仿真编译在 Plan 中创建 CompiledMacroDefinition 及绑定宏体/默认参数 AST，BoundMacroCall 只指向 Plan 内编译定义。该执行表示不修改 Document，也不按调用次数展开；下一次运行创建新副本和新 Plan。
 
 如果修改的是宏名、参数个数或默认参数布局，则需要重新解析相关 CallNode 的目标签名并更新参数个数诊断，但仍不修改调用方 AST 的表达式结构。变量重命名等普通编辑按统一符号解析规则处理，不为宏另建名称迁移通道。
 

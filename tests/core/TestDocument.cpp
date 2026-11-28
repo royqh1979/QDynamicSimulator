@@ -22,6 +22,7 @@ private slots:
     void routeAndPositionState();
     void fontStyleState();
     void clearDocument();
+    void nameIndexAcrossInvokables();
     void entityAndConnectorTypes();
     void reconnectRoutes();
     void metadata();
@@ -278,6 +279,51 @@ void TestDocument::clearDocument()
     QVERIFY(document.diagram().positions().empty());
     QVERIFY(document.diagram().routes().empty());
     QCOMPARE(document.createVariable(ElementKind::Stock), EntityId(1));
+}
+
+void TestDocument::nameIndexAcrossInvokables()
+{
+    Document source;
+    const EntityId stock = source.createVariable(ElementKind::Stock);
+    QVERIFY(source.rename(stock, "Stock"));
+    const EntityId lookup = source.createLookup();
+    QVERIFY(source.rename(lookup, "Rate Table"));
+    QVERIFY(source.defineDimension("Kind", 2));
+    MacroDefinitionData macro;
+    macro.displayName = "Scale";
+    macro.equation = "1";
+    QVERIFY(source.defineMacro(macro));
+
+    Document moved = std::move(source);
+    QVERIFY(moved.findByName("stock"));
+    QVERIFY(moved.findByName("rate_table"));
+    QVERIFY(moved.findDimension("kind"));
+    QVERIFY(moved.findMacro("scale", 0));
+    QVERIFY(!moved.rename(lookup, "Scale"));
+    MacroDefinitionData conflict = macro;
+    conflict.displayName = "Rate Table";
+    QVERIFY(!moved.defineMacro(conflict));
+    QVERIFY(!moved.defineDimension("Scale", 2));
+    const EntityId variable = moved.createVariable(ElementKind::Variable);
+    QVERIFY(!moved.rename(variable, "Stock"));
+    QVERIFY(!moved.rename(variable, "Rate Table"));
+    QVERIFY(!moved.rename(variable, "Kind"));
+    QVERIFY(!moved.rename(variable, "Scale"));
+
+    Document assigned;
+    assigned = std::move(moved);
+    QVERIFY(assigned.findByName("STOCK"));
+    QVERIFY(assigned.findByName("RATE TABLE"));
+    QVERIFY(assigned.findDimension("KIND"));
+    QVERIFY(assigned.findMacro("SCALE", 0));
+    assigned.remove(lookup);
+    QVERIFY(!assigned.findByName("Rate Table"));
+    macro.displayName = "Rate Table";
+    QVERIFY(assigned.defineMacro(macro));
+    assigned.clear();
+    QVERIFY(!assigned.findByName("Stock"));
+    QVERIFY(!assigned.findDimension("Kind"));
+    QVERIFY(assigned.macros().isEmpty());
 }
 
 void TestDocument::entityAndConnectorTypes()
