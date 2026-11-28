@@ -224,7 +224,8 @@ bool Document::defineDimension(const QString &displayName, const QVector<QString
 
 bool Document::defineDimensionData(Dimension dimension)
 {
-    if (dimension.nameKey.isEmpty() || dimension.elements.isEmpty() || m_nameIndex.count(dimension.nameKey)
+    if (dimension.nameKey.isEmpty() || isReservedIdentifier(dimension.nameKey)
+        || dimension.elements.isEmpty() || m_nameIndex.count(dimension.nameKey)
         || m_dimensionIndex.count(dimension.nameKey) || hasMacroName(dimension.nameKey))
         return false;
     const bool numbered = dimension.elements.front().nameKey.isEmpty();
@@ -246,8 +247,8 @@ bool Document::prepareMacro(MacroDefinitionData &macro) const
 {
     macro.displayName = trimDisplayName(macro.displayName);
     const QString nameKey = normalizeIdentifier(macro.displayName);
-    if (nameKey.isEmpty() || macro.equation.isEmpty() || m_nameIndex.count(nameKey)
-        || m_dimensionIndex.count(nameKey))
+    if (nameKey.isEmpty() || isReservedIdentifier(nameKey) || macro.equation.isEmpty()
+        || m_nameIndex.count(nameKey) || m_dimensionIndex.count(nameKey))
         return false;
     QSet<QString> parameters;
     bool hasDefault = false;
@@ -339,7 +340,8 @@ EntityId Document::insert(std::unique_ptr<T> element, Vec2 position)
     if (id == 0 || m_elements.count(id))
         return 0;
     if (auto *model = dynamic_cast<ModelElement *>(element.get())) {
-        if (model->nameKey().isEmpty() || m_nameIndex.count(model->nameKey()) || m_dimensionIndex.count(model->nameKey())
+        if (model->nameKey().isEmpty() || isReservedIdentifier(model->nameKey())
+            || m_nameIndex.count(model->nameKey()) || m_dimensionIndex.count(model->nameKey())
             || hasMacroName(model->nameKey()))
             return 0;
         m_nameIndex[model->nameKey()] = id;
@@ -620,7 +622,7 @@ bool Document::validRename(EntityId id, const QString &displayName) const
     if (!dynamic_cast<const ModelElement *>(find(id)))
         return false;
     const QString normalized = normalizeIdentifier(trimDisplayName(displayName));
-    if (normalized.isEmpty())
+    if (normalized.isEmpty() || isReservedIdentifier(normalized))
         return false;
     const auto existing = m_nameIndex.find(normalized);
     return (existing == m_nameIndex.end() || existing.value() == id) && !m_dimensionIndex.count(normalized)

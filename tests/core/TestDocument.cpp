@@ -1,4 +1,5 @@
 #include <core/Document.h>
+#include <core/Identifier.h>
 #include <core/Validation.h>
 
 #include <QVector>
@@ -13,6 +14,7 @@ class TestDocument : public QObject
 private slots:
     void createAndLookup();
     void namingNormalization();
+    void reservedIdentifiers();
     void generatedNamesUseNameKeyIndex();
     void rejectInvalidOperations();
     void removeCascades();
@@ -87,6 +89,42 @@ void TestDocument::namingNormalization()
     QVERIFY(document.rename(stock, "Population"));
     QCOMPARE(static_cast<const ModelElement *>(document.find(auxiliary))->equation(),
              QString("\u6D41\u5165_\u901F\u7387 * 2"));
+}
+
+void TestDocument::reservedIdentifiers()
+{
+    QVERIFY(isReservedIdentifier("SiN"));
+    QVERIFY(isReservedIdentifier("TIME"));
+    QVERIFY(isReservedIdentifier("lookup"));
+    QVERIFY(!isReservedIdentifier("TIME STEP"));
+    QVERIFY(!isReservedIdentifier("NOISE SEED"));
+    QVERIFY(!isReservedIdentifier("custom name"));
+
+    Document document;
+    const EntityId stock = document.createVariable(ElementKind::Stock);
+    QVERIFY(!document.rename(stock, "SIN"));
+    QCOMPARE(document.model().findByName("Stock1")->displayName(), QString("Stock1"));
+    QVERIFY(document.rename(stock, "TIME STEP"));
+    QVERIFY(document.rename(stock, "NOISE SEED"));
+
+    const EntityId lookup = document.createLookup();
+    QVERIFY(!document.rename(lookup, "LOOKUP"));
+    QVERIFY(document.rename(lookup, "Rate Table"));
+
+    MacroDefinitionData macro;
+    macro.displayName = "SIN";
+    macro.equation = "1";
+    QVERIFY(!document.defineMacro(macro));
+    macro.displayName = "custom macro";
+    QVERIFY(document.defineMacro(macro));
+    QVERIFY(!document.defineDimension("EXP", 2));
+    QVERIFY(document.defineDimension("Control Group", 2));
+
+    ElementData reserved = *document.capture(stock);
+    reserved.displayName = "EXP";
+    Document restored;
+    QVERIFY(!restored.restore(reserved));
+    QVERIFY(restored.elements().empty());
 }
 
 void TestDocument::generatedNamesUseNameKeyIndex()

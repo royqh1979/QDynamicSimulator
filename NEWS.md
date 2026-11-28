@@ -86,3 +86,4 @@
 - SimulationRun 标量/数组序列改为 QVector 值返回，结果表显式持有时间和数值容器，不再依赖 Run 内部指针寿命。
 - 新增不可变 LookupDefinition 和独立/内联 Lookup：支持 continuous、extrapolate、discrete、域外夹取/外推、标量/数组求值、编译依赖、QDS/XMILE 往返及 SDXorg 参考结果验证；不包含专用编辑 UI。
 - 新增 STEP、PULSE、PULSE TRAIN、RAMP 纯时间函数，支持数组广播、Vensim 测试输入半步比较及 Euler/RK4 区间冻结，并通过 Vensim input_functions 全变量参考验证。
+- 统一标识符保留名称检查：Variable、Lookup、Macro、Dimension 不再能创建与内置函数同名但永不生效的定义；控制/特殊变量及中文、空格、下划线规则保持不变。
