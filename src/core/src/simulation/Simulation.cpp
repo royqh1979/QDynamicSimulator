@@ -26,7 +26,7 @@ bool supportedCall(const CallNode &call)
     if (!signature)
         return true;
     if (signature->category == FunctionCategory::Mathematical || signature->category == FunctionCategory::Time
-        || signature->category == FunctionCategory::Array)
+        || signature->category == FunctionCategory::Array || signature->category == FunctionCategory::TestInput)
         return true;
     return call.nameKey() == "log" || call.nameKey() == "if_then_else";
 }
@@ -631,6 +631,8 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
     EvaluationContext context;
     context.startTime = m_plan.settings().startTime();
     context.stopTime = m_plan.settings().stopTime();
+    context.inputTime = currentTime;
+    context.inputDt = m_plan.settings().dt();
     struct ResolvedReferenceContext {
         const SimulationPlan &plan;
         const Document &document;
@@ -787,6 +789,8 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
             currentTime = m_plan.settings().stopTime();
         const double remaining = m_plan.settings().stopTime() - currentTime;
         const double dt = remaining > 0.0 ? std::min(m_plan.settings().dt(), remaining) : m_plan.settings().dt();
+        context.inputTime = currentTime;
+        context.inputDt = dt;
         if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime, dt, values))
             return failEvaluation(*issue);
 

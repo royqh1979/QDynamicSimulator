@@ -238,6 +238,36 @@ int main(int argc, char **argv)
     if (std::abs(solverChecksum / lookupRunCount - steps * 0.01) > 1e-9)
         return 23;
 
+    Document timeInputDocument;
+    const auto addTimeInput = [&timeInputDocument](const QString &name, const QString &equation) {
+        const EntityId id = timeInputDocument.createVariable(ElementKind::Variable);
+        timeInputDocument.rename(id, name);
+        timeInputDocument.setEquation(id, equation);
+    };
+    addTimeInput("step", "STEP(2, 2)");
+    addTimeInput("pulse", "PULSE(2, 2)");
+    addTimeInput("train", "pulse_train(1, 1, 2, 10)");
+    addTimeInput("ramp", "RAMP(2, 1, 3)");
+    timeInputDocument.setSimulationSettings({0.0, steps * 0.01, 0.01, 0.01});
+    const SimulationCompileResult timeInputCompiled = compileSimulation(timeInputDocument);
+    if (!timeInputCompiled.plan)
+        return 24;
+    timer.restart();
+    int timeInputRunCount = 0;
+    double timeInputChecksum = 0.0;
+    for (int index = 0; index < count; ++index) {
+        const SimulationRun run = SimulationRunner(timeInputDocument, *timeInputCompiled.plan).run();
+        if (run.status() != SimulationRunStatus::Completed || run.times().size() != steps + 1)
+            return 25;
+        for (const QString &name : {QStringLiteral("step"), QStringLiteral("pulse"),
+                 QStringLiteral("train"), QStringLiteral("ramp")})
+            timeInputChecksum += run.series(name).back();
+        ++timeInputRunCount;
+    }
+    const qint64 timeInputNs = timer.nsecsElapsed();
+    if (std::abs(timeInputChecksum / timeInputRunCount - 6.0) > 1e-9)
+        return 26;
+
     QTextStream output(stdout);
     output << "operation,count,total_ms,per_operation_us\n";
     output << "settings_validate," << validationCount << ',' << validationNs / 1.0e6 << ','
@@ -279,5 +309,10 @@ int main(int argc, char **argv)
     output << "simulation_lookup_evaluation," << lookupRunCount * steps << ',' << solverNs / 1.0e6 << ','
            << solverNs / 1000.0 / (lookupRunCount * steps) << "\n";
     output << "simulation_lookup_solver_checksum," << solverChecksum << ",\n";
+    output << "simulation_time_input_functions," << timeInputRunCount << ',' << timeInputNs / 1.0e6 << ','
+           << timeInputNs / 1000.0 / timeInputRunCount << "\n";
+    output << "simulation_time_input_evaluations," << timeInputRunCount * steps << ','
+           << timeInputNs / 1.0e6 << ',' << timeInputNs / 1000.0 / (timeInputRunCount * steps) << "\n";
+    output << "simulation_time_input_checksum," << timeInputChecksum << ",\n";
     return 0;
 }

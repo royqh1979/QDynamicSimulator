@@ -742,6 +742,44 @@ private:
         return success(std::move(output));
     }
 
+    template <typename Operation>
+    EvaluationResult timeFunction(const CallNode &node, Operation operation)
+    {
+        QVector<Value> inputs;
+        QVector<QString> dimensions;
+        for (int position = 0; position < node.argumentCount(); ++position) {
+            EvaluationResult input = evaluate(node.argument(position));
+            if (!input.value)
+                return input;
+            if (dimensions.isEmpty()) {
+                if (const ArrayValue *array = arrayOf(*input.value))
+                    dimensions = array->dimensions;
+            }
+            inputs.push_back(std::move(*input.value));
+        }
+        if (dimensions.isEmpty()) {
+            QVector<double> values;
+            for (const Value &input : inputs)
+                values.push_back(std::get<double>(input));
+            return success(operation(values));
+        }
+        for (Value &input : inputs) {
+            EvaluationResult broadcasted = broadcast(input, dimensions, node);
+            if (!broadcasted.value)
+                return broadcasted;
+            input = std::move(*broadcasted.value);
+        }
+        const ArrayValue &first = *arrayOf(inputs.front());
+        ArrayValue output {first.dimensions, first.shape, QVector<double>(first.values.size())};
+        QVector<double> values(inputs.size());
+        for (int flat = 0; flat < output.values.size(); ++flat) {
+            for (int position = 0; position < inputs.size(); ++position)
+                values[position] = arrayOf(inputs[position])->values[flat];
+            output.values[flat] = operation(values);
+        }
+        return success(std::move(output));
+    }
+
     EvaluationResult call(const CallNode &node)
     {
         const FunctionSignature *signature = findFunctionSignature(node.nameKey());
@@ -764,6 +802,41 @@ private:
             if (!condition.value)
                 return condition;
             return select(*condition.value, node.argument(1), node.argument(2), node);
+        }
+        if (node.nameKey() == "step") {
+            return timeFunction(node, [this](const QVector<double> &values) {
+                return m_context.inputTime + m_context.inputDt / 2.0 > values[1] ? values[0] : 0.0;
+            });
+        }
+        if (node.nameKey() == "pulse") {
+            return timeFunction(node, [this](const QVector<double> &values) {
+                const double width = values[1] == 0.0 ? m_context.inputDt : values[1];
+                const double time = m_context.inputTime + m_context.inputDt / 2.0;
+                return time > values[0] && time < values[0] + width ? 1.0 : 0.0;
+            });
+        }
+        if (node.nameKey() == "pulse_train") {
+            return timeFunction(node, [this](const QVector<double> &values) {
+                const double time = m_context.inputTime + m_context.inputDt / 2.0;
+                const double width = values[1] <= m_context.inputDt ? m_context.inputDt : values[1];
+                if (time <= values[0] || time > values[3])
+                    return 0.0;
+                if (values[2] <= 0.0)
+                    return time < values[0] + width ? 1.0 : 0.0;
+                if (width >= values[2])
+                    return 1.0;
+                const double phase = std::fmod(time - values[0], values[2]);
+                return phase >= 0.0 && phase < width ? 1.0 : 0.0;
+            });
+        }
+        if (node.nameKey() == "ramp") {
+            return timeFunction(node, [this](const QVector<double> &values) {
+                if (m_context.inputTime <= values[1])
+                    return 0.0;
+                if (m_context.inputTime < values[2])
+                    return values[0] * (m_context.inputTime - values[1]);
+                return values[0] * (values[2] - values[1]);
+            });
         }
         const bool arrayReduction = node.nameKey() == "sum" || node.nameKey() == "mean" || node.nameKey() == "stddev"
             || node.nameKey() == "size";

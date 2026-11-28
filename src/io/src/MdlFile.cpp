@@ -390,9 +390,15 @@ QString normalizeExpression(const QString &expression, const QVector<Symbol> &sy
         }
         if (identifierStart(c) && (index == 0 || !identifierPart(expression.at(index - 1)))) {
             static const Symbol ifThenElse {QStringLiteral("IF THEN ELSE"), QStringLiteral("if_then_else")};
+            static const Symbol pulseTrain {QStringLiteral("PULSE TRAIN"), QStringLiteral("pulse_train")};
             int end = index;
             if (matchSymbolAt(expression, index, ifThenElse.displayName, end)) {
                 result += ifThenElse.nameKey;
+                index = end;
+                continue;
+            }
+            if (matchSymbolAt(expression, index, pulseTrain.displayName, end)) {
+                result += pulseTrain.nameKey;
                 index = end;
                 continue;
             }

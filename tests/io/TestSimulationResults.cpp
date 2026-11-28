@@ -1,6 +1,7 @@
 #include <core/Identifier.h>
 #include <core/simulation/Simulation.h>
 #include <io/XmileFile.h>
+#include <io/MdlFile.h>
 
 #include <QFile>
 #include <QRegularExpression>
@@ -101,6 +102,24 @@ void verifyReferenceModel(const QString &modelPath, const QString &referencePath
     compareReference(document, run, reference);
 }
 
+void verifyMdlReferenceModel(const QString &modelPath, const QString &referencePath)
+{
+    Document document;
+    QString error;
+    QVERIFY2(qds::io::MdlFile::importFile(modelPath, document, &error), qPrintable(error));
+    const ReferenceData reference = readReference(referencePath);
+    QVERIFY(!reference.times.isEmpty());
+    const SimulationCompileResult compiled = compileSimulation(document);
+    if (!compiled.plan) {
+        for (const ModelIssue &issue : compiled.issues)
+            qWarning() << issue.code << issue.message;
+        QVERIFY(compiled.plan.has_value());
+        return;
+    }
+    const SimulationRun run = SimulationRunner(document, *compiled.plan).run();
+    compareReference(document, run, reference);
+}
+
 class TestSimulationResults : public QObject
 {
     Q_OBJECT
@@ -114,6 +133,7 @@ private slots:
     void lookupModel();
     void lookupXscaleModel();
     void inlineLookupModel();
+    void timeInputModel();
 };
 
 void TestSimulationResults::absModel()
@@ -168,6 +188,11 @@ void TestSimulationResults::lookupXscaleModel()
 void TestSimulationResults::inlineLookupModel()
 {
     verifyReferenceModel(QStringLiteral(QDS_INLINE_LOOKUP_XMILE_PATH), QStringLiteral(QDS_INLINE_LOOKUP_OUTPUT_PATH));
+}
+
+void TestSimulationResults::timeInputModel()
+{
+    verifyMdlReferenceModel(QStringLiteral(QDS_TIME_INPUT_MDL_PATH), QStringLiteral(QDS_TIME_INPUT_OUTPUT_PATH));
 }
 
 } // namespace

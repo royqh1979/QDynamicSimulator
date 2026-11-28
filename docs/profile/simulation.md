@@ -124,6 +124,17 @@ RK4 校验和约为 2.20265e+07。Euler 与 RK4 分列，不用不同方法的�
 
 校验和为 10000。三种模式的端点、域内/域外行为、独立/内联、数组、QDS/XMILE 往返和非法定义均由专项测试覆盖；SDXorg lookups、lookups_xscale 与 lookups_inline 使用其 output.tab 做逐时刻参考比对，xpts/ypts 的 sep 变体及 XMILE corpus 全量通过。Lookup 图形编辑器和 Vensim MDL 文本 Lookup 不在本阶段。
 
+## 纯时间输入函数
+
+固定 Document 同时包含 STEP、PULSE、PULSE TRAIN 和 RAMP，1000 次运行共 100 万时间步；每步求值四个函数并校验样本数和最终值。结果：
+
+| 操作 | 数量 | 总耗时 ms | 每时间步 μs |
+| --- | ---: | ---: | ---: |
+| simulation_time_input_functions | 1000 | 1055.05 | 1055.05 |
+| simulation_time_input_evaluations | 1000000 | 1055.05 | 1.05505 |
+
+最终值校验和为 6000。定向测试覆盖跳变点、零宽/短脉冲、repeat<=0、数组广播及 Euler/RK4 相同序列；Vensim input_functions 使用 output.csv 做全变量逐时刻比对。MDL 的 PULSE TRAIN 多字名称由导入器转换为内部 `pulse_train`。
+
 ## 执行优化后的基线对比
 
 完成固定数组布局、引用预绑定、Stock/Flow 布局对齐和 Context 复用后，使用与 [仿真计算热点审查](simulation-hotspots.md) 相同的原始基线，在相同冷却条件下复测最终实现两轮。下表同时列出总耗时和归一化耗时，不以单次异常或不同负载替代基线。

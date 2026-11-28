@@ -63,7 +63,8 @@ void TestAnalysis::functionSignatures()
     document.setEquation(auxiliary,
         "DELAYN(Variable1, 1, 2) + NORMAL(0, 1) + SMTHN(Variable1, 1, 2) + RANK(Variable1, 1) + SIZE(Variable1) + SELF"
         " + LOG(Variable1) + INTEGR(Variable1, 1) + SMOOTH(Variable1, 1) + LOOKUP(Variable1)"
-        " + RAMP(1, 2) + STEP(1, 2) + PULSE(1, 2) + FORCST(Variable1, 1, 2) + TREND(Variable1, 1)"
+        " + RAMP(1, 2, 3) + STEP(1, 2) + PULSE(1, 2) + pulse_train(1, 2, 3, 4)"
+        " + FORCST(Variable1, 1, 2) + TREND(Variable1, 1)"
         " + RANDOM(0, 1) + POISSON(1) + EXPRND(1) + LOGNORMAL(1, 2) + SUM(Variable1) + MEAN(Variable1)"
         " + STDDEV(Variable1) + PREVIOUS(Variable1, 0) + INIT(Variable1) + if_then_else(1, 2, 3)"
         " + ARCCOS(1) + ARCSIN(1) + ARCTAN(1) + COS(1) + EXP(1) + INT(1) + LN(1) + LOG10(1)"
@@ -79,7 +80,8 @@ void TestAnalysis::functionSignatures()
     QVERIFY(!hasIssue(analyzeDocument(document), "invalid-arity"));
     const QVector<QString> invalidCalls {
         "POISSON()", "POISSON(1, 2, 3)", "RANK(Variable1)", "RANK(Variable1, 1, 2, 3)",
-        "ABS()", "ABS(1, 2)", "MAX()", "MAX(1, 2, 3)", "PREVIOUS(Variable1)"
+        "ABS()", "ABS(1, 2)", "MAX()", "MAX(1, 2, 3)", "PREVIOUS(Variable1)",
+        "PULSE(1, 2, 3)", "RAMP(1, 2)", "pulse_train(1, 2, 3)", "pulse_train(1, 2, 3, 4, 5)"
     };
     for (const QString &call : invalidCalls) {
         document.setEquation(auxiliary, call);

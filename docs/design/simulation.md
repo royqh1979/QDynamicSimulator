@@ -27,7 +27,7 @@
 | 表达式宏 | 已可求值，含默认参数和受控递归 | 首批可用于无状态纯公式 |
 | INTEG/INTEGR | 只有签名，未实现 | 首批拒绝显式调用；Stock 使用自身初值与端点语义 |
 | DELAY/SMOOTH/INIT/PREVIOUS/FORCST/TREND | 只有签名，未实现 | 需要独立历史/状态设计 |
-| STEP/PULSE/RAMP | 只有签名，未实现 | 先形成跳变时刻规范，再作为纯时间函数实现 |
+| STEP/PULSE/PULSE TRAIN/RAMP | 纯时间函数已实现 | 使用冻结测试输入时间/DT，支持数组广播和 Euler/RK4；见 [纯时间输入函数设计](time-functions.md) |
 | 随机函数 | 只有签名，未实现 | 需要 Run 局部随机状态及 RK4 调用语义 |
 | LOOKUP | 独立/内联 LookupDefinition 已实现 | 支持 continuous/extrapolate/discrete、标量/数组和 QDS/XMILE；其它 Lookup 函数另行实现 |
 
@@ -254,7 +254,7 @@ Runner 的 ExecutionStatus 区分 NotStarted、Running、Completed、Cancelled �
 - 宏递归会动态产生调用实例，不能在未定义状态分配规则前支持带状态宏。
 - 随机数生成器归单次 Run 所有，固定种子必须可复现；Euler/RK4 每个阶段是否重新采样必须与参考语义对齐。
 - STEP/PULSE 的跳变点归属和 DELAY 初始化必须先形成书面规范及边界测试。Lookup 的域内/域外规范与测试见 [Lookup 模型与求解器设计](lookup.md)。
-- Vensim RK 积分在一个区间内冻结外生输入和 STEP/PULSE/RAMP 测试输入；纯延迟 FIXED/MATERIAL/INFORMATION 在该 RK 计算内不变化，MESSAGE 总返回零。TIME 本身仍按 RK 阶段推进，不能把“冻结测试输入”误实现为冻结时间。上述函数首批均不支持。
+- Vensim RK 积分在一个区间内冻结外生输入和 STEP/PULSE/RAMP 测试输入；纯延迟 FIXED/MATERIAL/INFORMATION 在该 RK 计算内不变化，MESSAGE 总返回零。TIME 本身仍按 RK 阶段推进，不能把“冻结测试输入”误实现为冻结时间。STEP/PULSE/PULSE TRAIN/RAMP 已实现该边界；外生 Data、延迟和 MESSAGE 仍不支持。
 - 自动步长 RK 的输入冻结和状态提交边界也必须在对应专项中验证，不能沿用每个内部子步重新读取测试输入的实现。
 - 上述功能分别设计、实现、测试和 profile，不作为首批标量引擎的隐含承诺。
 
