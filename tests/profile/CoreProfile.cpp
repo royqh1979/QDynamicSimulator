@@ -1,4 +1,5 @@
 #include <core/Document.h>
+#include <core/Identifier.h>
 #include <core/Validation.h>
 
 #include <QCoreApplication>
@@ -50,6 +51,17 @@ int main(int argc, char **argv)
     const qint64 nameLookupNs = timer.nsecsElapsed();
 
     timer.restart();
+    quint64 reservedCount = 0;
+    for (int repeat = 0; repeat < 10; ++repeat) {
+        for (int index = 0; index < count; ++index) {
+            const QString name = index % 2 == 0 ? QStringLiteral("SIN")
+                : QStringLiteral("Stock") + QString::number(index + 1);
+            reservedCount += isReservedIdentifier(name) ? 1 : 0;
+        }
+    }
+    const qint64 reservedLookupNs = timer.nsecsElapsed();
+
+    timer.restart();
     for (int index = 0; index < count; ++index)
         document.setPosition(ids[static_cast<std::size_t>(index)], {index * 11.0, index * 6.0});
     const qint64 moveNs = timer.nsecsElapsed();
@@ -68,8 +80,10 @@ int main(int argc, char **argv)
                         << "connect," << count - 1 << "," << connectNs / 1e6 << "," << connectNs / 1000.0 / (count - 1) << "\n"
                         << "lookup," << count * 10 << "," << lookupNs / 1e6 << "," << lookupNs / 1000.0 / (count * 10) << "\n"
                         << "name_lookup," << count * 10 << "," << nameLookupNs / 1e6 << "," << nameLookupNs / 1000.0 / (count * 10) << "\n"
+                        << "reserved_identifier_lookup," << count * 10 << "," << reservedLookupNs / 1e6 << ","
+                        << reservedLookupNs / 1000.0 / (count * 10) << "\n"
                         << "move," << count << "," << moveNs / 1e6 << "," << moveNs / 1000.0 / count << "\n"
                         << "validate," << count << "," << validationNs / 1e6 << "," << validationNs / 1000.0 / count << "\n"
                         << "remove," << count << "," << removeNs / 1e6 << "," << removeNs / 1000.0 / count << "\n";
-    return checksum == 0 || !document.elements().empty() ? 1 : 0;
+    return checksum == 0 || reservedCount != static_cast<quint64>(count * 5) || !document.elements().empty() ? 1 : 0;
 }

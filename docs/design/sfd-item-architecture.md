@@ -205,7 +205,7 @@ QHash<QString, EntityId> m_nameIndex; // nameKey -> ModelElement
 规则：
 
 - 创建、改名、粘贴和 XMILE 加载都使用同一个 `IdentifierNormalizer` 与 nameKey 索引。
-- `nameKey` 为空或与同模型内其他 ModelElement 冲突时拒绝创建/改名；改名对象自身不视为冲突。
+- `nameKey` 为空、属于内置保留名称或与同模型内其他 ModelElement 冲突时拒绝创建/改名；改名对象自身不视为冲突。保留名称由 `Identifier::isReservedIdentifier()` 统一使用内置函数注册表判断，Variable、Lookup、Macro、Dimension 的创建/恢复/重命名共用该规则；`TIME STEP`、`SAVEPER`、`NOISE SEED` 等可定义控制/特殊变量不因内置检查被误禁，DimensionElement 继续使用限定名称。
 - 只改变大小写或等价显示形式且 nameKey 不变时允许，并保持 ID 不变。
 - XMILE 加载遇到冲突应报错并保留原 Document，不得静默改名，否则方程引用会改变含义。
 - 后续引入子模型时，唯一性作用域扩展为 XMILE 定义的模型/whole-model 命名空间，不把当前单模型规则硬编码成全局假设。

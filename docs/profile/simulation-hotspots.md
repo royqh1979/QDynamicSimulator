@@ -140,3 +140,14 @@ gprof 复查不再出现旧的运行时 flatIndex，Simulation 的逐元素 coor
 | simulation_rk4 | 1513.26 / 1548.68 | 1450.11 | 1451.38 |
 
 数组基本持平，Euler/RK4 进一步降低，符合 Context 复用主要影响标量和多阶段求值的预期。所有 checksum 和样本数一致。gprof 中 makeMacroReader 从约 600 万次降至 3001 次。本阶段 Release、Debug 全量 CTest 均为 18/18 通过；没有继续加入 finite 扫描或状态容器优化。
+
+## 新增 Lookup 与纯时间函数的热点复查
+
+新增功能完成后，再次以独立 `-O3 -g -pg` 构建运行包含 Lookup 和四函数场景的完整 profile，避免只记录耗时。
+
+- `LookupDefinition::evaluate()` 执行约 100 万次但没有可见 self-time 样本，区间二分/插值本身不是当前热点。
+- 无宏模型的独立 Lookup 调用仍执行约 100 万次 `readMacro()`：Evaluator 在未知函数路径先查询宏，再查询 Lookup。这里存在可消除的重复调用解析。后续应审查统一的调用类型解析或存在性判断，保证宏、Lookup、未知函数和参数只求值一次；本次不直接加补丁。
+- 四函数的通用 `timeFunction()` 在标量输入下也建立 QVector<Value> inputs 和 QVector<double> values。其通用数组广播路径合理，但纯标量调用存在可避免的通用容器建立。后续若标量时间输入成为热点，可评估固定参数的小向量/直接标量路径，并通过同场景 profile 决定。
+- 插桩结果仍由既有数组负载和 profiler 自身主导，不能用其绝对耗时替代普通 Release。新增函数的算术本身没有显示出需要立即重构的高占比热点。
+
+上述发现只形成后续候选，不改变本轮生产代码；profile 的目的因此同时包括耗时基线和冗余审查。

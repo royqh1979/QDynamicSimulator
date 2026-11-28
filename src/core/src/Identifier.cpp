@@ -1,4 +1,5 @@
 #include <core/Identifier.h>
+#include <core/formula/Function.h>
 
 #include <QString>
 
@@ -43,6 +44,11 @@ QString normalizeIdentifier(const QString &name)
             normalized.push_back(c);
     }
     return normalized;
+}
+
+bool isReservedIdentifier(const QString &nameKey)
+{
+    return findFunctionSignature(normalizeIdentifier(nameKey)) != nullptr;
 }
 
 } // namespace qds::core

@@ -122,7 +122,7 @@ RK4 校验和约为 2.20265e+07。Euler 与 RK4 分列，不用不同方法的�
 | simulation_lookup_solver | 1000 | 172.677 | 172.677 |
 | simulation_lookup_evaluation | 1000000 | 172.677 | 0.172677 |
 
-校验和为 10000。三种模式的端点、域内/域外行为、独立/内联、数组、QDS/XMILE 往返和非法定义均由专项测试覆盖；SDXorg lookups、lookups_xscale 与 lookups_inline 使用其 output.tab 做逐时刻参考比对，xpts/ypts 的 sep 变体及 XMILE corpus 全量通过。Lookup 图形编辑器和 Vensim MDL 文本 Lookup 不在本阶段。
+校验和为 10000。三种模式的端点、域内/域外行为、独立/内联、数组、QDS/XMILE 往返和非法定义均由专项测试覆盖；SDXorg lookups、lookups_xscale 与 lookups_inline 使用其 output.tab 做逐时刻参考比对，xpts/ypts 的 sep 变体及 XMILE corpus 全量通过。Lookup 图形编辑器和 Vensim MDL 文本 Lookup 不在本阶段。热点复查另发现无宏模型每次 Lookup 调用仍执行一次 readMacro，已记录为后续统一调用解析候选，见 [仿真计算热点审查](simulation-hotspots.md)。
 
 ## 纯时间输入函数
 
@@ -133,7 +133,7 @@ RK4 校验和约为 2.20265e+07。Euler 与 RK4 分列，不用不同方法的�
 | simulation_time_input_functions | 1000 | 1055.05 | 1055.05 |
 | simulation_time_input_evaluations | 1000000 | 1055.05 | 1.05505 |
 
-最终值校验和为 6000。定向测试覆盖跳变点、零宽/短脉冲、repeat<=0、数组广播及 Euler/RK4 相同序列；Vensim input_functions 使用 output.csv 做全变量逐时刻比对。MDL 的 PULSE TRAIN 多字名称由导入器转换为内部 `pulse_train`。
+最终值校验和为 6000。定向测试覆盖跳变点、零宽/短脉冲、repeat<=0、数组广播及 Euler/RK4 相同序列；Vensim input_functions 使用 output.csv 做全变量逐时刻比对。MDL 的 PULSE TRAIN 多字名称由导入器转换为内部 `pulse_train`。热点复查发现通用 timeFunction 在纯标量调用也建立 QVector 参数容器，已记录为后续候选，见 [仿真计算热点审查](simulation-hotspots.md)。
 
 ## 执行优化后的基线对比
 
