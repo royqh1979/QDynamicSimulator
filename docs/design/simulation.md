@@ -59,9 +59,10 @@ stock'(t) = sum(inflow values) - sum(outflow values)
 ### 3.3 数组执行
 
 - 数组 ModelElement 使用与标量相同的初始化/运行期拓扑顺序。Apply-to-All 和逐元素方程均按当前下标求值：Apply-to-All 遍历维度笛卡尔积并设置 `EvaluationScope.dimensions/indices/self`，显式 `ArrayElementFormula` 使用其保存的下标。公式返回整体 ArrayValue 时也按当前下标提取，不把整组值误赋给单个元素。
+- SimulationPlan 自持有每个数组变量的 ArrayLayout，编译期固定 dimensions、shape、strides 和元素数。Apply-to-All 直接在 Scope.indices 中以里程表方式递增，不为每个元素重新计算 strides 或分配坐标 QVector；显式元素使用预计算 strides 定位。Plan 不因此持有 Formula/AST/Document 指针。
 - 数组 Stock 的每个元素是独立状态，具有独立初值、净流量和 Euler/RK4 阶段值。数组 Flow 可以返回标量或与 Stock 兼容的 ArrayValue；标量按 Stock 全部元素广播，数组按维度名重排后逐元素累加。缺少维度、维度数不同或形状不兼容时以 `incompatible-stock-flow` 失败，不按位置猜测。
 - `Value=std::variant<double,ArrayValue>` 同时用于变量状态和净流量。标量保持原有逐元素一次求值路径；数组值检查形状、元素数及所有元素的有限性。数组维度或元素数溢出、非有限值和求值顺序错误均不得替换为零。
-- `SimulationRun::series(nameKey)` 继续只返回标量序列，未知 nameKey 或数组变量返回 nullptr；`arraySeries(nameKey)` 返回按采样时间排列的 ArrayValue。现有 Graph/Table/Causes Strip 因没有标量序列而跳过数组，数组结果 UI 另行设计，不把数组首元素伪装成标量曲线。
+- `SimulationRun::series(nameKey)` 继续只返回标量序列，`arraySeries(nameKey)` 返回按采样时间排列的 ArrayValue；两者均返回 QVector 值，未知 nameKey、类型不符或零样本统一表现为空容器，变量存在性由 RunVariableInfo 元数据表达。现有 Graph/Table/Causes Strip 因没有标量序列而跳过数组，数组结果 UI 另行设计，不把数组首元素伪装成标量曲线。
 - 首批数组执行覆盖 Apply-to-All、显式元素方程、数组 Stock/Flow/Variable、标量广播、维度重排、Euler/RK4、守恒和失败前缀。Vensim `:EXCEPT:` 混合分片、数组宏状态、Lookup/Data 和数组图表不属于本阶段。
 
 ## 4. 仿真设置与持久化
@@ -134,6 +135,15 @@ SimulationRun                     一次运行的完整不可变记录
 - Document 修改后 Plan 必须重新编译；UI 不得让旧 Plan 静默作用于新模型。
 - 首批运行采用同步调用，Document、Plan 和 Runner 的生命周期由同一调用栈保证。异步执行需要单独设计模型只读快照或生命周期共享，不能只把 raw reference 移入线程。
 - Run 完成后不可变，可由 UI 以共享 const 对象读取；运行历史不属于 QDS 模型文件，后续多 Run 持久化另行设计。
+
+### 5.1 执行性能重构的目标不变量
+
+第一阶段固定布局与无分配遍历已实现；其余引用绑定、Flow 对齐和上下文复用属于待实施方案。对象结构与基线见 [仿真执行计划性能重构方案](../history/2026-11-28-simulation-execution-plan.md)：
+
+- SimulationPlan 从单纯顺序/关系扩展为包含 ArrayLayout、普通公式引用绑定和 Stock/Flow 对齐的完整执行描述；全部新增元数据由 Plan 自持有并在编译发布后不可变，仍不得持有 Document、Formula、AST、ModelElement 或 MacroDefinition 裸指针。
+- ArrayLayout 固定 dimensions、shape、strides 和元素数；StockRatePlan 固定 Flow 方向及相同布局/重排映射。它们是编译结果，不是运行期可变缓存。
+- EvaluationContext、当前下标和阶段 Value 若复用，只能作为单次 run() 的局部可变状态，不写回 Plan、不跨 Run/Worker、不进入历史结果。
+- ArrayValue、SimulationRunRequest、SimulationRun 和 Document/Formula 的既有所有权不变；每次模型运行仍重新编译，不使用需要手工失效的全局缓存。
 
 ## 6. 编译与执行顺序
 

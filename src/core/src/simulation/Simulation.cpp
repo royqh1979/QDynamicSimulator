@@ -175,6 +175,16 @@ QVector<std::size_t> coordinates(std::size_t flat, const QVector<std::size_t> &s
     return result;
 }
 
+void advanceIndices(QVector<std::size_t> &indices, const QVector<std::size_t> &shape)
+{
+    for (std::size_t position = indices.size(); position-- > 0;) {
+        ++indices[position];
+        if (indices[position] < shape[position])
+            return;
+        indices[position] = 0;
+    }
+}
+
 std::optional<std::size_t> flatIndex(const ArrayValue &array, const QVector<QString> &dimensions,
     const QVector<std::size_t> &indices)
 {
@@ -310,6 +320,28 @@ NetRateResult netRates(const QVector<StockFlows> &bindings, const QHash<EntityId
 
 } // namespace
 
+ArrayLayout::ArrayLayout(QVector<QString> dimensions, QVector<std::size_t> shape,
+    QVector<std::size_t> strides, std::size_t count)
+    : m_dimensions(std::move(dimensions))
+    , m_shape(std::move(shape))
+    , m_strides(std::move(strides))
+    , m_count(count)
+{
+}
+
+std::optional<std::size_t> ArrayLayout::flatIndex(const QVector<std::size_t> &indices) const
+{
+    if (indices.size() != m_shape.size())
+        return std::nullopt;
+    std::size_t flat = 0;
+    for (std::size_t position = 0; position < indices.size(); ++position) {
+        if (indices[position] >= m_shape[position])
+            return std::nullopt;
+        flat += indices[position] * m_strides[position];
+    }
+    return flat;
+}
+
 SimulationCompileResult compileSimulation(const Document &document)
 {
     SimulationCompileResult result;
@@ -379,6 +411,27 @@ SimulationCompileResult compileSimulation(const Document &document)
         std::sort(binding.inflows.begin(), binding.inflows.end());
         std::sort(binding.outflows.begin(), binding.outflows.end());
         plan.m_stockFlows.push_back(std::move(binding));
+    }
+    for (const ModelElement &element : document.model().elements()) {
+        if (element.dimensions().isEmpty())
+            continue;
+        QVector<std::size_t> shape;
+        for (const QString &name : element.dimensions()) {
+            const Dimension *dimension = document.findDimension(name);
+            if (!dimension) {
+                addIssue(result, element.id(), "Unknown array dimension: " + name, "invalid-simulation-array-shape");
+                continue;
+            }
+            shape.push_back(dimension->elements.size());
+        }
+        const std::size_t count = elementCount(shape);
+        if (count == 0) {
+            addIssue(result, element.id(), "Array shape is invalid or too large", "invalid-simulation-array-shape");
+            continue;
+        }
+        const QVector<std::size_t> steps = strides(shape);
+        plan.m_arrayLayouts.insert(element.id(),
+            ArrayLayout(element.dimensions(), std::move(shape), steps, count));
     }
     if (result.issues.empty())
         result.plan = std::move(plan);
@@ -519,31 +572,26 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
                     return ModelIssue {id, IssueSeverity::Error, "Simulation formula did not produce a scalar", "non-scalar-simulation-value", {}};
                 target[id] = *scalar;
             } else {
-                QVector<std::size_t> shape;
-                for (const QString &name : element->dimensions()) {
-                    const Dimension *dimension = m_document.findDimension(name);
-                    if (!dimension)
-                        return ModelIssue {id, IssueSeverity::Error, "Unknown array dimension", "invalid-simulation-array-shape", {}};
-                    shape.push_back(dimension->elements.size());
-                }
-                const std::size_t count = elementCount(shape);
-                if (count == 0)
+                const auto layout = m_plan.m_arrayLayouts.constFind(id);
+                if (layout == m_plan.m_arrayLayouts.constEnd())
                     return ModelIssue {id, IssueSeverity::Error, "Array shape is invalid or too large", "invalid-simulation-array-shape", {}};
-                ArrayValue output {element->dimensions(), shape, QVector<double>(count)};
+                const std::size_t count = layout->count();
+                ArrayValue output {layout->dimensions(), layout->shape(), QVector<double>(count)};
                 if (element->elementEquations().empty()) {
+                    context.scope = {layout->dimensions(), QVector<std::size_t>(layout->shape().size(), 0),
+                        element->nameKey()};
                     for (std::size_t flat = 0; flat < count; ++flat) {
-                        const QVector<std::size_t> indices = coordinates(flat, shape);
-                        context.scope = {element->dimensions(), indices, element->nameKey()};
                         const EvaluationResult evaluated = evaluateFormula(formula.root(), context);
                         ModelIssue issue;
-                        const auto value = evaluatedScalar(evaluated, element->dimensions(), indices, id, issue);
+                        const auto value = evaluatedScalar(evaluated, element->dimensions(), context.scope.indices, id, issue);
                         if (!value)
                             return issue;
                         output.values[flat] = *value;
+                        advanceIndices(context.scope.indices, layout->shape());
                     }
                 } else {
                     for (const ArrayElementFormula &entry : element->elementEquations()) {
-                        const auto flat = flatIndex(output, element->dimensions(), entry.indices());
+                        const auto flat = layout->flatIndex(entry.indices());
                         if (!flat)
                             return ModelIssue {id, IssueSeverity::Error, "Array element index is invalid", "invalid-array-element-index", {}};
                         context.scope = {element->dimensions(), entry.indices(), element->nameKey()};
