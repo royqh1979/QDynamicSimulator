@@ -73,7 +73,8 @@ private:
 enum class BoundCallKind {
     Builtin,
     Macro,
-    Lookup
+    Lookup,
+    Delay
 };
 
 class BoundCallNode final : public FormulaNode
@@ -98,7 +99,15 @@ public:
     {
     }
 
+    BoundCallNode(QString nameKey, std::size_t delay,
+        std::vector<std::unique_ptr<FormulaNode>> arguments, SourceSpan span)
+        : BoundCallNode(BoundCallKind::Delay, std::move(nameKey), {}, nullptr, nullptr, std::move(arguments), span)
+    {
+        m_delay = delay;
+    }
+
     BoundCallKind callKind() const { return m_callKind; }
+    std::size_t delay() const { return m_delay; }
     const QString &nameKey() const { return m_nameKey; }
     const FunctionSignature &signature() const { return m_signature; }
     const CompiledMacroDefinition *macro() const { return m_macro; }
@@ -125,6 +134,7 @@ private:
     FunctionSignature m_signature;
     const CompiledMacroDefinition *m_macro;
     const LookupDefinition *m_lookup;
+    std::size_t m_delay = 0;
     std::vector<std::unique_ptr<FormulaNode>> m_arguments;
 };
 

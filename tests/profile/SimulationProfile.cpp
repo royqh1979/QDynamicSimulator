@@ -194,7 +194,7 @@ int main(int argc, char **argv)
         if (run.status() != SimulationRunStatus::Completed || run.times().size() != steps + 1
             || series.isEmpty() || series.size() != steps + 1)
             return 18;
-        for (const double value : series.back().values)
+        for (const double value : series.back().values())
             arrayChecksum += value;
         arraySavedValues += run.times().size() * arraySize;
         ++arrayRunCount;
@@ -206,8 +206,8 @@ int main(int argc, char **argv)
     if (std::abs(arrayChecksum / arrayRunCount - arrayExpected) > 1e-8 * arrayExpected) {
         const SimulationRun diagnostic = SimulationRunner(arrayDocument, *arrayCompiled.plan).run();
         QTextStream(stderr) << "Array checksum mismatch: actual=" << arrayChecksum / arrayRunCount
-                            << " expected=" << arrayExpected << " first=" << diagnostic.arraySeries("stock").back().values.front()
-                            << " last=" << diagnostic.arraySeries("stock").back().values.back() << "\n";
+                            << " expected=" << arrayExpected << " first=" << diagnostic.arraySeries("stock").back().values().front()
+                            << " last=" << diagnostic.arraySeries("stock").back().values().back() << "\n";
         return 19;
     }
 

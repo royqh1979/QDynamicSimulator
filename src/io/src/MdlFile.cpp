@@ -391,6 +391,8 @@ QString normalizeExpression(const QString &expression, const QVector<Symbol> &sy
         if (identifierStart(c) && (index == 0 || !identifierPart(expression.at(index - 1)))) {
             static const Symbol ifThenElse {QStringLiteral("IF THEN ELSE"), QStringLiteral("if_then_else")};
             static const Symbol pulseTrain {QStringLiteral("PULSE TRAIN"), QStringLiteral("pulse_train")};
+            static const Symbol delayN {QStringLiteral("DELAY N"), QStringLiteral("delayn")};
+            static const Symbol smoothN {QStringLiteral("SMOOTH N"), QStringLiteral("smthn")};
             int end = index;
             if (matchSymbolAt(expression, index, ifThenElse.displayName, end)) {
                 result += ifThenElse.nameKey;
@@ -399,6 +401,16 @@ QString normalizeExpression(const QString &expression, const QVector<Symbol> &sy
             }
             if (matchSymbolAt(expression, index, pulseTrain.displayName, end)) {
                 result += pulseTrain.nameKey;
+                index = end;
+                continue;
+            }
+            if (matchSymbolAt(expression, index, delayN.displayName, end)) {
+                result += delayN.nameKey;
+                index = end;
+                continue;
+            }
+            if (matchSymbolAt(expression, index, smoothN.displayName, end)) {
+                result += smoothN.nameKey;
                 index = end;
                 continue;
             }

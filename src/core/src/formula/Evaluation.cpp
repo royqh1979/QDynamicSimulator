@@ -53,6 +53,23 @@ std::mt19937 &RandomStreamState::stream(quint32 id)
     return found.value();
 }
 
+ArrayValue::ArrayValue(QVector<QString> dimensions, QVector<std::size_t> shape, QVector<double> values)
+    : m_data(std::make_shared<ArrayData>(ArrayData {std::move(dimensions), std::move(shape), std::move(values)}))
+{
+}
+
+QVector<double> &ArrayValue::values()
+{
+    if (!m_data.unique())
+        m_data = std::make_shared<ArrayData>(*m_data);
+    return m_data->values;
+}
+
+bool ArrayValue::operator==(const ArrayValue &other) const
+{
+    return dimensions() == other.dimensions() && shape() == other.shape() && values() == other.values();
+}
+
 namespace {
 
 EvaluationResult success(Value value)
@@ -93,8 +110,8 @@ std::size_t elementCount(const QVector<std::size_t> &shape)
 
 bool validArray(const ArrayValue &array)
 {
-    return !array.dimensions.isEmpty() && array.dimensions.size() == array.shape.size()
-        && elementCount(array.shape) == array.values.size();
+    return !array.dimensions().isEmpty() && array.dimensions().size() == array.shape().size()
+        && elementCount(array.shape()) == array.values().size();
 }
 
 QVector<std::size_t> strides(const QVector<std::size_t> &shape)
@@ -150,6 +167,112 @@ public:
     {
     }
 
+private:
+    class ArrayElementView
+    {
+    public:
+        ArrayElementView(const EvaluationContext &context, const Value &value,
+            QVector<QString> dimensions, QVector<std::size_t> shape)
+            : m_value(value)
+            , m_dimensions(std::move(dimensions))
+            , m_shape(std::move(shape))
+        {
+            if (std::get_if<double>(&m_value))
+                return;
+            m_array = arrayOf(m_value);
+            if (!m_array || !validArray(*m_array) || m_array->dimensions().size() != m_dimensions.size()) {
+                m_valid = false;
+                return;
+            }
+            for (std::size_t index = 0; index < m_array->shape().size(); ++index) {
+                const Dimension *dimension = context.readDimension
+                    ? context.readDimension(m_array->dimensions()[index]) : nullptr;
+                if (!dimension || m_array->shape()[index] != dimension->elements.size()) {
+                    m_valid = false;
+                    return;
+                }
+            }
+            m_direct = m_array->dimensions() == m_dimensions && m_array->shape() == m_shape;
+            if (m_direct)
+                return;
+            m_positions.reserve(m_dimensions.size());
+            for (const QString &name : m_dimensions) {
+                const auto found = std::find(m_array->dimensions().begin(), m_array->dimensions().end(), name);
+                if (found == m_array->dimensions().end()) {
+                    m_valid = false;
+                    return;
+                }
+                m_positions.push_back(static_cast<std::size_t>(found - m_array->dimensions().begin()));
+            }
+            m_steps = strides(m_array->shape());
+        }
+
+        bool valid() const { return m_valid; }
+
+        std::optional<double> at(std::size_t flat) const
+        {
+            if (const auto *scalar = std::get_if<double>(&m_value))
+                return *scalar;
+            if (!m_valid || flat >= elementCount(m_shape))
+                return std::nullopt;
+            if (m_direct)
+                return m_array->values()[flat];
+            return atCoordinates(coordinates(flat, m_shape));
+        }
+
+        std::optional<double> atCoordinates(const QVector<std::size_t> &coordinates) const
+        {
+            if (const auto *scalar = std::get_if<double>(&m_value))
+                return *scalar;
+            if (!m_valid || coordinates.size() != m_shape.size())
+                return std::nullopt;
+            std::size_t flat = 0;
+            if (m_direct) {
+                for (std::size_t index = 0; index < coordinates.size(); ++index)
+                    flat = flat * m_shape[index] + coordinates[index];
+            } else {
+                for (std::size_t index = 0; index < coordinates.size(); ++index)
+                    flat += coordinates[index] * m_steps[m_positions[index]];
+            }
+            if (flat >= m_array->values().size())
+                return std::nullopt;
+            return m_array->values()[flat];
+        }
+
+        std::optional<double> minimum() const
+        {
+            if (const auto *scalar = std::get_if<double>(&m_value))
+                return *scalar;
+            if (!m_valid || m_array->values().isEmpty())
+                return std::nullopt;
+            return *std::min_element(m_array->values().begin(), m_array->values().end());
+        }
+
+    private:
+        const Value &m_value;
+        const ArrayValue *m_array = nullptr;
+        QVector<QString> m_dimensions;
+        QVector<std::size_t> m_shape;
+        QVector<std::size_t> m_positions;
+        QVector<std::size_t> m_steps;
+        bool m_valid = true;
+        bool m_direct = false;
+    };
+
+    std::optional<QVector<std::size_t>> shapeFor(const QVector<QString> &dimensions) const
+    {
+        QVector<std::size_t> shape;
+        shape.reserve(dimensions.size());
+        for (const QString &name : dimensions) {
+            const Dimension *dimension = m_context.readDimension ? m_context.readDimension(name) : nullptr;
+            if (!dimension)
+                return std::nullopt;
+            shape.push_back(dimension->elements.size());
+        }
+        return shape;
+    }
+
+public:
     EvaluationResult evaluate(const FormulaNode *node)
     {
         if (!node)
@@ -338,35 +461,34 @@ private:
             return success(ArrayValue {dimensions, shape, QVector<double>(count, *scalar)});
 
         const ArrayValue &input = *arrayOf(value);
-        if (!validArray(input) || input.dimensions.size() != dimensions.size())
+        if (!validArray(input) || input.dimensions().size() != dimensions.size())
             return failure(&node, "Array dimensions are incompatible");
         QVector<std::size_t> inputPositions;
         inputPositions.reserve(dimensions.size());
         for (const QString &name : dimensions) {
-            const auto found = std::find(input.dimensions.begin(), input.dimensions.end(), name);
-            if (found == input.dimensions.end())
+            const auto found = std::find(input.dimensions().begin(), input.dimensions().end(), name);
+            if (found == input.dimensions().end())
                 return failure(&node, "Array dimensions are incompatible");
-            inputPositions.push_back(static_cast<std::size_t>(found - input.dimensions.begin()));
+            inputPositions.push_back(static_cast<std::size_t>(found - input.dimensions().begin()));
         }
-        for (std::size_t index = 0; index < input.shape.size(); ++index) {
-            const Dimension *dimension = m_context.readDimension ? m_context.readDimension(input.dimensions[index]) : nullptr;
-            if (!dimension || input.shape[index] != dimension->elements.size())
+        for (std::size_t index = 0; index < input.shape().size(); ++index) {
+            const Dimension *dimension = m_context.readDimension ? m_context.readDimension(input.dimensions()[index]) : nullptr;
+            if (!dimension || input.shape()[index] != dimension->elements.size())
                 return failure(&node, "Array shape does not match its dimensions");
         }
-        if (input.dimensions == dimensions && input.shape == shape)
+        if (input.dimensions() == dimensions && input.shape() == shape)
             return success(input);
 
-        ArrayValue output {dimensions, shape, {}};
-        output.values.resize(count);
-        const QVector<std::size_t> inputSteps = strides(input.shape);
+        QVector<double> outputValues(count);
+        const QVector<std::size_t> inputSteps = strides(input.shape());
         for (std::size_t flat = 0; flat < count; ++flat) {
             const QVector<std::size_t> outputCoordinates = coordinates(flat, shape);
             std::size_t inputFlat = 0;
             for (std::size_t index = 0; index < dimensions.size(); ++index)
                 inputFlat += outputCoordinates[index] * inputSteps[inputPositions[index]];
-            output.values[flat] = input.values[inputFlat];
+            outputValues[flat] = input.values()[inputFlat];
         }
-        return success(std::move(output));
+        return success(ArrayValue {dimensions, shape, std::move(outputValues)});
     }
 
     template <typename Operation>
@@ -380,9 +502,25 @@ private:
             ? m_context.scope.dimensions : QVector<QString> {};
         if (dimensions.isEmpty()) {
             if (arrayOf(left))
-                dimensions = arrayOf(left)->dimensions;
+                dimensions = arrayOf(left)->dimensions();
             else if (arrayOf(right))
-                dimensions = arrayOf(right)->dimensions;
+                dimensions = arrayOf(right)->dimensions();
+        }
+        const auto *leftScalar = std::get_if<double>(&left);
+        const auto *rightScalar = std::get_if<double>(&right);
+        if ((leftScalar && arrayOf(right)) || (rightScalar && arrayOf(left))) {
+            const Value &arrayValue = leftScalar ? right : left;
+            EvaluationResult arrayResult = broadcast(arrayValue, dimensions, node);
+            if (!arrayResult.value)
+                return arrayResult;
+            const ArrayValue &array = *arrayOf(*arrayResult.value);
+            QVector<double> outputValues;
+            outputValues.reserve(array.values().size());
+            for (const double value : array.values()) {
+                outputValues.push_back(leftScalar ? operation(*leftScalar, value)
+                    : operation(value, *rightScalar));
+            }
+            return success(ArrayValue {array.dimensions(), array.shape(), std::move(outputValues)});
         }
         EvaluationResult lhs = broadcast(left, dimensions, node);
         if (!lhs.value)
@@ -392,11 +530,11 @@ private:
             return rhs;
         const ArrayValue &leftArray = *arrayOf(*lhs.value);
         const ArrayValue &rightArray = *arrayOf(*rhs.value);
-        ArrayValue output {leftArray.dimensions, leftArray.shape, {}};
-        output.values.reserve(leftArray.values.size());
-        for (std::size_t index = 0; index < leftArray.values.size(); ++index)
-            output.values.push_back(operation(leftArray.values[index], rightArray.values[index]));
-        return success(std::move(output));
+        QVector<double> outputValues;
+        outputValues.reserve(leftArray.values().size());
+        for (std::size_t index = 0; index < leftArray.values().size(); ++index)
+            outputValues.push_back(operation(leftArray.values()[index], rightArray.values()[index]));
+        return success(ArrayValue {leftArray.dimensions(), leftArray.shape(), std::move(outputValues)});
     }
 
     template <typename Operation>
@@ -405,11 +543,12 @@ private:
         if (const auto *scalar = std::get_if<double>(&input))
             return success(operation(*scalar));
         EvaluationResult value = broadcast(input, m_context.scope.dimensions.isEmpty() || !m_context.scope.indices.isEmpty()
-                ? arrayOf(input)->dimensions : m_context.scope.dimensions, node);
+                ? arrayOf(input)->dimensions() : m_context.scope.dimensions, node);
         if (!value.value)
             return value;
-        ArrayValue output = *arrayOf(*value.value);
-        for (double &item : output.values)
+        const ArrayValue &inputArray = *arrayOf(*value.value);
+        ArrayValue output {inputArray.dimensions(), inputArray.shape(), inputArray.values()};
+        for (double &item : output.values())
             item = operation(item);
         return success(std::move(output));
     }
@@ -492,7 +631,7 @@ private:
         const FormulaNode &node)
     {
         QVector<QString> dimensions = m_context.scope.dimensions.isEmpty() || !m_context.scope.indices.isEmpty()
-            ? arrayOf(condition)->dimensions : m_context.scope.dimensions;
+            ? arrayOf(condition)->dimensions() : m_context.scope.dimensions;
         EvaluationResult test = broadcast(condition, dimensions, node);
         if (!test.value)
             return test;
@@ -505,10 +644,10 @@ private:
         const ArrayValue &conditions = *arrayOf(*test.value);
         const ArrayValue &thenArray = *arrayOf(*yes.value);
         const ArrayValue &elseArray = *arrayOf(*no.value);
-        ArrayValue output {conditions.dimensions, conditions.shape, {}};
-        output.values.reserve(conditions.values.size());
-        for (std::size_t index = 0; index < conditions.values.size(); ++index)
-            output.values.push_back(truth(conditions.values[index]) ? thenArray.values[index] : elseArray.values[index]);
+        ArrayValue output {conditions.dimensions(), conditions.shape(), {}};
+        output.values().reserve(conditions.values().size());
+        for (std::size_t index = 0; index < conditions.values().size(); ++index)
+            output.values().push_back(truth(conditions.values()[index]) ? thenArray.values()[index] : elseArray.values()[index]);
         return success(std::move(output));
     }
 
@@ -528,18 +667,20 @@ private:
         if (std::get_if<double>(&*operand.value))
             return operand;
         const ArrayValue &input = *arrayOf(*operand.value);
-        ArrayValue output {input.dimensions, input.shape, input.values};
-        std::reverse(output.dimensions.begin(), output.dimensions.end());
-        std::reverse(output.shape.begin(), output.shape.end());
-        const QVector<std::size_t> outputSteps = strides(output.shape);
-        for (std::size_t flat = 0; flat < input.values.size(); ++flat) {
-            const QVector<std::size_t> inputCoordinates = coordinates(flat, input.shape);
+        QVector<QString> dimensions = input.dimensions();
+        QVector<std::size_t> shape = input.shape();
+        QVector<double> values = input.values();
+        std::reverse(dimensions.begin(), dimensions.end());
+        std::reverse(shape.begin(), shape.end());
+        const QVector<std::size_t> outputSteps = strides(shape);
+        for (std::size_t flat = 0; flat < input.values().size(); ++flat) {
+            const QVector<std::size_t> inputCoordinates = coordinates(flat, input.shape());
             std::size_t outputFlat = 0;
             for (std::size_t index = 0; index < inputCoordinates.size(); ++index)
-                outputFlat += inputCoordinates[index] * outputSteps[output.shape.size() - 1 - index];
-            output.values[outputFlat] = input.values[flat];
+                outputFlat += inputCoordinates[index] * outputSteps[shape.size() - 1 - index];
+            values[outputFlat] = input.values()[flat];
         }
-        return success(std::move(output));
+        return success(ArrayValue {dimensions, shape, std::move(values)});
     }
 
     EvaluationResult subscript(const SubscriptNode &node)
@@ -550,7 +691,7 @@ private:
         const ArrayValue *input = arrayOf(*target.value);
         if (!input)
             return failure(&node, "Subscript target is not an array");
-        if (node.indexCount() > input->dimensions.size())
+        if (node.indexCount() > input->dimensions().size())
             return failure(&node, "Too many array subscripts");
 
         struct Selection {
@@ -558,13 +699,13 @@ private:
             std::size_t end = 0;
             bool preserve = false;
         };
-        QVector<Selection> selections(input->dimensions.size());
+        QVector<Selection> selections(input->dimensions().size());
         for (std::size_t position = 0; position < selections.size(); ++position) {
-            selections[position].end = input->shape[position] - 1;
+            selections[position].end = input->shape()[position] - 1;
             selections[position].preserve = true;
         }
         for (std::size_t position = 0; position < node.indexCount(); ++position) {
-            Selection selection {0, input->shape[position] - 1, false};
+            Selection selection {0, input->shape()[position] - 1, false};
             const FormulaNode *indexNode = node.index(position);
             if (dynamic_cast<const WildcardNode *>(indexNode)) {
                 selection.preserve = true;
@@ -577,8 +718,8 @@ private:
                     return last;
                 const auto *begin = std::get_if<double>(&*first.value);
                 const auto *end = std::get_if<double>(&*last.value);
-                if (!begin || !end || !subscriptIndex(*begin, input->shape[position], selection.begin)
-                    || !subscriptIndex(*end, input->shape[position], selection.end)
+                if (!begin || !end || !subscriptIndex(*begin, input->shape()[position], selection.begin)
+                    || !subscriptIndex(*end, input->shape()[position], selection.end)
                     || selection.begin > selection.end)
                     return success(0.0);
                 selection.preserve = true;
@@ -598,15 +739,15 @@ private:
                         if (!value.value)
                             return value;
                         const auto *number = std::get_if<double>(&*value.value);
-                        if (!number || !subscriptIndex(*number, input->shape[position], selection.begin))
+                        if (!number || !subscriptIndex(*number, input->shape()[position], selection.begin))
                             return success(0.0);
                         selection.end = selection.begin;
                         resolved = true;
                     } else {
                         const Dimension *dimension = m_context.readDimension
-                            ? m_context.readDimension(input->dimensions[position]) : nullptr;
+                            ? m_context.readDimension(input->dimensions()[position]) : nullptr;
                         if (!dimension)
-                            return failure(indexNode, "Unknown array dimension: " + input->dimensions[position]);
+                            return failure(indexNode, "Unknown array dimension: " + input->dimensions()[position]);
                         if (referenceNode->nameKey() == dimension->nameKey) {
                             dimensionName = dimension->nameKey;
                             resolved = true;
@@ -618,7 +759,7 @@ private:
                             if (!value.value)
                                 return value;
                             const double number = *std::get_if<double>(&*value.value);
-                            if (!subscriptIndex(number, input->shape[position], selection.begin))
+                            if (!subscriptIndex(number, input->shape()[position], selection.begin))
                                 return success(0.0);
                             selection.end = selection.begin;
                             resolved = true;
@@ -635,7 +776,7 @@ private:
                         const std::size_t scopeIndex = static_cast<std::size_t>(scope - m_context.scope.dimensions.begin());
                         if (scopeIndex < m_context.scope.indices.size()) {
                             selection.begin = selection.end = m_context.scope.indices[scopeIndex];
-                            if (selection.begin >= input->shape[position])
+                            if (selection.begin >= input->shape()[position])
                                 return success(0.0);
                         } else {
                             preserve = true;
@@ -649,7 +790,7 @@ private:
                     if (!value.value)
                         return value;
                     const auto *number = std::get_if<double>(&*value.value);
-                    if (!number || !subscriptIndex(*number, input->shape[position], selection.begin))
+                    if (!number || !subscriptIndex(*number, input->shape()[position], selection.begin))
                         return success(0.0);
                     selection.end = selection.begin;
                 }
@@ -657,7 +798,7 @@ private:
             selections[position] = selection;
         }
 
-        const QVector<std::size_t> inputSteps = strides(input->shape);
+        const QVector<std::size_t> inputSteps = strides(input->shape());
         const bool sliced = std::any_of(selections.begin(), selections.end(), [](const Selection &selection) {
             return selection.preserve;
         });
@@ -665,17 +806,19 @@ private:
             std::size_t flat = 0;
             for (std::size_t position = 0; position < selections.size(); ++position)
                 flat += selections[position].begin * inputSteps[position];
-            return success(input->values[flat]);
+            return success(input->values()[flat]);
         }
-        ArrayValue output;
+        QVector<QString> dimensions;
+        QVector<std::size_t> shape;
+        QVector<double> values;
         for (std::size_t position = 0; position < selections.size(); ++position) {
             if (!selections[position].preserve)
                 continue;
-            output.dimensions.push_back(input->dimensions[position]);
-            output.shape.push_back(selections[position].end - selections[position].begin + 1);
+            dimensions.push_back(input->dimensions()[position]);
+            shape.push_back(selections[position].end - selections[position].begin + 1);
         }
-        for (std::size_t flat = 0; flat < input->values.size(); ++flat) {
-            const QVector<std::size_t> inputCoordinates = coordinates(flat, input->shape);
+        for (std::size_t flat = 0; flat < input->values().size(); ++flat) {
+            const QVector<std::size_t> inputCoordinates = coordinates(flat, input->shape());
             bool included = true;
             for (std::size_t position = 0; position < selections.size(); ++position) {
                 const std::size_t coordinate = inputCoordinates[position];
@@ -685,11 +828,11 @@ private:
                 }
             }
             if (included)
-                output.values.push_back(input->values[flat]);
+                values.push_back(input->values()[flat]);
         }
-        if (elementCount(output.shape) != output.values.size())
+        if (elementCount(shape) != values.size())
             return failure(&node, "Invalid array slice");
-        return success(std::move(output));
+        return success(ArrayValue {dimensions, shape, std::move(values)});
     }
 
     EvaluationResult arrayLiteral(const ArrayLiteralNode &node)
@@ -746,22 +889,22 @@ private:
             return success(scalar);
         }
         if (node.nameKey() == "size")
-            return success(static_cast<double>(array->values.size()));
+            return success(static_cast<double>(array->values().size()));
         if (node.nameKey() == "sum")
-            return success(std::accumulate(array->values.begin(), array->values.end(), 0.0));
+            return success(std::accumulate(array->values().begin(), array->values().end(), 0.0));
         if (node.nameKey() == "mean")
-            return success(std::accumulate(array->values.begin(), array->values.end(), 0.0) / array->values.size());
+            return success(std::accumulate(array->values().begin(), array->values().end(), 0.0) / array->values().size());
         if (node.nameKey() == "stddev") {
-            const double mean = std::accumulate(array->values.begin(), array->values.end(), 0.0) / array->values.size();
+            const double mean = std::accumulate(array->values().begin(), array->values().end(), 0.0) / array->values().size();
             double sum = 0.0;
-            for (double value : array->values)
+            for (double value : array->values())
                 sum += (value - mean) * (value - mean);
-            return success(std::sqrt(sum / array->values.size()));
+            return success(std::sqrt(sum / array->values().size()));
         }
         if (node.nameKey() == "max")
-            return success(*std::max_element(array->values.begin(), array->values.end()));
+            return success(*std::max_element(array->values().begin(), array->values().end()));
         if (node.nameKey() == "min")
-            return success(*std::min_element(array->values.begin(), array->values.end()));
+            return success(*std::min_element(array->values().begin(), array->values().end()));
         return failure(&node, "Unknown array reduction: " + node.nameKey());
     }
 
@@ -769,13 +912,13 @@ private:
     {
         const auto *rankValue = std::get_if<double>(&arguments[1]);
         const ArrayValue *primary = arrayOf(arguments[0]);
-        const std::size_t count = primary ? primary->values.size() : 1;
+        const std::size_t count = primary ? primary->values().size() : 1;
         std::size_t rankIndex = 0;
         if (!rankValue || !subscriptIndex(*rankValue, count, rankIndex))
             return success(0.0);
         const auto number = [&arguments](std::size_t index) {
             if (const ArrayValue *array = arrayOf(arguments[0]))
-                return array->values[index];
+                return array->values()[index];
             return *std::get_if<double>(&arguments[0]);
         };
         QVector<std::size_t> order(count);
@@ -783,20 +926,20 @@ private:
         EvaluationResult alignedSecondary;
         const ArrayValue *secondary = nullptr;
         if (arguments.size() == 3 && primary) {
-            alignedSecondary = broadcast(arguments[2], primary->dimensions, node);
+            alignedSecondary = broadcast(arguments[2], primary->dimensions(), node);
             if (!alignedSecondary.value)
                 return alignedSecondary;
             secondary = arrayOf(*alignedSecondary.value);
         } else if (arguments.size() == 3) {
             secondary = arrayOf(arguments[2]);
         }
-        if (arguments.size() == 3 && !std::get_if<double>(&arguments[2]) && (!secondary || secondary->values.size() != count))
+        if (arguments.size() == 3 && !std::get_if<double>(&arguments[2]) && (!secondary || secondary->values().size() != count))
             return failure(&node, "RANK arrays must have the same number of elements");
         std::sort(order.begin(), order.end(), [&](std::size_t left, std::size_t right) {
             if (number(left) != number(right))
                 return number(left) < number(right);
-            if (secondary && secondary->values[left] != secondary->values[right])
-                return secondary->values[left] < secondary->values[right];
+            if (secondary && secondary->values()[left] != secondary->values()[right])
+                return secondary->values()[left] < secondary->values()[right];
             return left < right;
         });
         return success(static_cast<double>(order[rankIndex] + 1));
@@ -837,8 +980,9 @@ private:
             const auto value = evaluateOne(*scalar);
             return value ? success(*value) : failure(&node, "Unknown function: " + node.nameKey());
         }
-        ArrayValue output = *arrayOf(*input.value);
-        for (double &value : output.values) {
+        const ArrayValue &inputArray = *arrayOf(*input.value);
+        ArrayValue output {inputArray.dimensions(), inputArray.shape(), inputArray.values()};
+        for (double &value : output.values()) {
             const auto evaluated = evaluateOne(value);
             if (!evaluated)
                 return failure(&node, "Unknown function: " + node.nameKey());
@@ -870,7 +1014,7 @@ private:
                 return input;
             if (dimensions.isEmpty()) {
                 if (const ArrayValue *array = arrayOf(*input.value))
-                    dimensions = array->dimensions;
+                    dimensions = array->dimensions();
             }
             stack.pushValue(std::move(*input.value));
         }
@@ -880,23 +1024,32 @@ private:
                 values[position] = std::get<double>(stack.value(base + position));
             return mappedResult(node, operation(values));
         }
+        const auto shape = shapeFor(dimensions);
+        if (!shape)
+            return failure(&node, "Unknown function array dimension");
+        QVector<ArrayElementView> arguments;
+        arguments.reserve(node.argumentCount());
         for (int position = 0; position < node.argumentCount(); ++position) {
-            EvaluationResult broadcasted = broadcast(stack.value(base + position), dimensions, node);
-            if (!broadcasted.value)
-                return broadcasted;
-            stack.value(base + position) = std::move(*broadcasted.value);
+            ArrayElementView view(m_context, stack.value(base + position), dimensions, *shape);
+            if (!view.valid())
+                return failure(&node, "Array dimensions are incompatible");
+            arguments.push_back(std::move(view));
         }
-        const ArrayValue &first = *arrayOf(stack.value(base));
-        ArrayValue output {first.dimensions, first.shape, QVector<double>(first.values.size())};
-        for (int flat = 0; flat < output.values.size(); ++flat) {
-            for (int position = 0; position < node.argumentCount(); ++position)
-                values[position] = arrayOf(stack.value(base + position))->values[flat];
+        QVector<double> outputValues(elementCount(*shape));
+        for (std::size_t flat = 0; flat < outputValues.size(); ++flat) {
+            const QVector<std::size_t> outputCoordinates = coordinates(flat, *shape);
+            for (int position = 0; position < node.argumentCount(); ++position) {
+                const auto item = arguments[position].atCoordinates(outputCoordinates);
+                if (!item)
+                    return failure(&node, "Invalid function array element");
+                values[position] = *item;
+            }
             EvaluationResult mapped = mappedResult(node, operation(values));
             if (!mapped.value)
                 return mapped;
-            output.values[flat] = std::get<double>(*mapped.value);
+            outputValues[flat] = std::get<double>(*mapped.value);
         }
-        return success(std::move(output));
+        return success(ArrayValue {dimensions, *shape, std::move(outputValues)});
     }
 
     std::optional<quint32> streamId(double value) const
@@ -933,6 +1086,171 @@ private:
         return failure(&node, "Unknown function: " + node.nameKey());
     }
 
+    EvaluationResult delay(const BoundCallNode &node)
+    {
+        if (!m_context.delayPlans || !m_context.delayLevels || !m_context.delayInputs || !m_context.delayTimes
+            || !m_context.delayCurrentTimes || !m_context.delayOutputs || !m_context.delayOrders
+            || !m_context.delayInitialized || !m_context.delayTouched || !m_context.delayOutputValid
+            || !m_context.delayPointers || node.delay() >= m_context.delayPlans->size())
+            return failure(&node, "Invalid delay state binding");
+        const DelayPlan &plan = m_context.delayPlans->at(node.delay());
+        if (m_context.scope.elementIndex >= plan.count)
+            return failure(&node, "Invalid delay array element");
+
+        EvaluationResult input = evaluate(node.argument(0));
+        if (!input.value)
+            return input;
+        EvaluationResult time = evaluate(node.argument(1));
+        if (!time.value)
+            return time;
+        bool initialize = false;
+        for (std::size_t index = 0; index < plan.count; ++index) {
+            const int order = std::max(1, m_context.delayOrders->at(plan.base + index));
+            const std::size_t slot = plan.base + (order - 1) * plan.count + index;
+            initialize = initialize || !m_context.delayInitialized->at(slot);
+        }
+        EvaluationResult initial;
+        if (node.argumentCount() >= 3 && initialize) {
+            initial = evaluate(node.argument(2));
+            if (!initial.value)
+                return initial;
+        }
+        EvaluationResult requestedOrder;
+        if (plan.initializeOrder && initialize) {
+            requestedOrder = evaluate(node.argument(3));
+            if (!requestedOrder.value)
+                return requestedOrder;
+        }
+
+        const auto evaluateOne = [this, &node, &plan](const Value &inputValue, const Value &timeValue,
+            const Value &initialValue, const Value &orderValue, double minimumTime) -> std::optional<double> {
+            const std::size_t orderSlot = plan.base + m_context.scope.elementIndex;
+            const auto *inputScalar = std::get_if<double>(&inputValue);
+            const auto *timeScalar = std::get_if<double>(&timeValue);
+            const auto *initialScalar = std::get_if<double>(&initialValue);
+            if (!inputScalar || !timeScalar || !initialScalar || !std::isfinite(*inputScalar)
+                || !std::isfinite(*timeScalar) || !std::isfinite(*initialScalar) || *timeScalar <= 0.0)
+                return std::nullopt;
+            if (plan.initializeOrder && m_context.delayOrders->at(orderSlot) == 0) {
+                const auto *orderScalar = std::get_if<double>(&orderValue);
+                if (!orderScalar || !std::isfinite(*orderScalar) || *orderScalar < 1.0
+                    || *orderScalar > DelayPlan::maximumOrder)
+                    return std::nullopt;
+                int order = static_cast<int>(*orderScalar);
+                while (order > 0 && order * m_context.dt > minimumTime)
+                    --order;
+                if (order == 0)
+                    return std::nullopt;
+                (*m_context.delayOrders)[orderSlot] = order;
+            }
+            if (plan.kind == DelayKind::Fixed && m_context.delayOrders->at(orderSlot) == 0) {
+                const int order = std::max(1, static_cast<int>(std::round(*timeScalar / m_context.dt + 1e-6)));
+                if (order > DelayPlan::maximumOrder)
+                    return std::nullopt;
+                (*m_context.delayOrders)[orderSlot] = order;
+                (*m_context.delayPointers)[orderSlot] = 0;
+            }
+            const int order = m_context.delayOrders->at(orderSlot);
+            const std::size_t slot = plan.base + (order - 1) * plan.count + m_context.scope.elementIndex;
+            if (!m_context.delayInitialized->at(slot)) {
+                const double initial = node.argumentCount() >= 3 ? *initialScalar : *inputScalar;
+                for (int stage = 0; stage < order; ++stage) {
+                    const std::size_t state = plan.base + stage * plan.count + m_context.scope.elementIndex;
+                    (*m_context.delayLevels)[state] = plan.kind == DelayKind::Material
+                        ? initial * *timeScalar : initial;
+                    if (plan.kind == DelayKind::Fixed)
+                        (*m_context.delayLevels)[state] = initial;
+                    (*m_context.delayTimes)[state] = *timeScalar;
+                }
+                (*m_context.delayInitialized)[slot] = true;
+                if (plan.kind == DelayKind::Fixed) {
+                    (*m_context.delayOutputs)[slot] = (*m_context.delayLevels)[plan.base + m_context.scope.elementIndex];
+                    (*m_context.delayOutputValid)[slot] = true;
+                }
+            }
+            (*m_context.delayInputs)[slot] = *inputScalar;
+            (*m_context.delayCurrentTimes)[slot] = *timeScalar;
+            (*m_context.delayTouched)[slot] = true;
+            if (plan.discrete && m_context.delayOutputValid->at(slot))
+                return m_context.delayOutputs->at(slot);
+            const double level = m_context.delayLevels->at(slot);
+            double output = level;
+            if (plan.kind == DelayKind::Fixed) {
+                const int pointer = m_context.delayPointers->at(orderSlot);
+                output = m_context.delayLevels->at(plan.base + pointer * plan.count + m_context.scope.elementIndex);
+            } else if (plan.kind == DelayKind::Material) {
+                output = plan.discrete ? level / m_context.delayTimes->at(plan.base + m_context.scope.elementIndex)
+                    : level / *timeScalar;
+            }
+            if (plan.discrete) {
+                (*m_context.delayOutputs)[slot] = output;
+                (*m_context.delayOutputValid)[slot] = true;
+            }
+            return output;
+        };
+
+        const ArrayValue *inputArray = arrayOf(*input.value);
+        const ArrayValue *timeArray = arrayOf(*time.value);
+        const ArrayValue *initialArray = initial.value ? arrayOf(*initial.value) : nullptr;
+        const ArrayValue *orderArray = requestedOrder.value ? arrayOf(*requestedOrder.value) : nullptr;
+        if (!inputArray && !timeArray && !initialArray && !orderArray) {
+            const Value initialValue = initial.value ? *initial.value : *input.value;
+            const Value orderValue = requestedOrder.value ? *requestedOrder.value : *input.value;
+            const auto result = evaluateOne(*input.value, *time.value, initialValue, orderValue,
+                *std::get_if<double>(&*time.value));
+            return result ? success(*result) : failure(&node, "Invalid delay parameters");
+        }
+
+        const QVector<QString> dimensions = !m_context.scope.dimensions.isEmpty() ? m_context.scope.dimensions
+            : inputArray ? inputArray->dimensions()
+            : timeArray ? timeArray->dimensions() : initialArray ? initialArray->dimensions() : orderArray->dimensions();
+        const auto shape = shapeFor(dimensions);
+        if (!shape)
+            return failure(&node, "Unknown delay array dimension");
+        const Value &initialValue = initial.value ? *initial.value : *input.value;
+        const Value &orderValue = requestedOrder.value ? *requestedOrder.value : *input.value;
+        ArrayElementView inputView(m_context, *input.value, dimensions, *shape);
+        ArrayElementView timeView(m_context, *time.value, dimensions, *shape);
+        ArrayElementView initialView(m_context, initialValue, dimensions, *shape);
+        ArrayElementView orderView(m_context, orderValue, dimensions, *shape);
+        if (!inputView.valid() || !timeView.valid() || !initialView.valid() || !orderView.valid())
+            return failure(&node, "Invalid delay array element");
+        const auto minimumTime = timeView.minimum();
+        if (!minimumTime)
+            return failure(&node, "Invalid delay parameters");
+
+        const bool currentElement = !m_context.scope.indices.isEmpty();
+        const std::size_t firstFlat = currentElement ? m_context.scope.elementIndex : 0;
+        const std::size_t count = currentElement ? 1 : elementCount(*shape);
+        const std::size_t previousElement = m_context.scope.elementIndex;
+        QVector<double> outputValues(currentElement ? 0 : count);
+        for (std::size_t offset = 0; offset < count; ++offset) {
+            const std::size_t flat = firstFlat + offset;
+            m_context.scope.elementIndex = flat;
+            const auto inputItem = inputView.at(flat);
+            const auto timeItem = timeView.at(flat);
+            const auto initialItem = initialView.at(flat);
+            const auto orderItem = orderView.at(flat);
+            if (!inputItem || !timeItem || !initialItem || !orderItem) {
+                m_context.scope.elementIndex = previousElement;
+                return failure(&node, "Invalid delay array element");
+            }
+            const auto result = evaluateOne(Value(*inputItem), Value(*timeItem), Value(*initialItem), Value(*orderItem),
+                *minimumTime);
+            if (!result) {
+                m_context.scope.elementIndex = previousElement;
+                return failure(&node, "Invalid delay parameters");
+            }
+            if (currentElement) {
+                m_context.scope.elementIndex = previousElement;
+                return success(*result);
+            }
+            outputValues[offset] = *result;
+        }
+        m_context.scope.elementIndex = previousElement;
+        return success(ArrayValue {dimensions, *shape, std::move(outputValues)});
+    }
+
     EvaluationResult boundCall(const BoundCallNode &node)
     {
         switch (node.callKind()) {
@@ -946,6 +1264,8 @@ private:
             return lookup(node, [&node](double value) -> std::optional<double> {
                 return node.lookup()->evaluate(value);
             });
+        case BoundCallKind::Delay:
+            return delay(node);
         }
         return failure(&node, "Unknown bound call");
     }

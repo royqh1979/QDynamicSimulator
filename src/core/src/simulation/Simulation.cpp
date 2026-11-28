@@ -20,6 +20,53 @@ void addIssue(SimulationCompileResult &result, EntityId id, const QString &messa
     result.issues.push_back({id, IssueSeverity::Error, message, code, span});
 }
 
+bool supportedDelayName(const QString &nameKey)
+{
+    return nameKey == "delay" || nameKey == "delay1" || nameKey == "delay1i"
+        || nameKey == "delay3" || nameKey == "delay3i" || nameKey == "delayn"
+        || nameKey == "smooth" || nameKey == "smooth3" || nameKey == "smth1"
+        || nameKey == "smth3" || nameKey == "smooth3i" || nameKey == "smthn" || nameKey == "smoothi";
+}
+
+bool genericDelayName(const QString &nameKey)
+{
+    return nameKey == "delayn" || nameKey == "smthn";
+}
+
+bool hasGenericDelay(const FormulaNode *node)
+{
+    if (!node)
+        return false;
+    if (const auto *call = dynamic_cast<const CallNode *>(node))
+        return genericDelayName(call->nameKey());
+    if (const auto *unary = dynamic_cast<const UnaryNode *>(node))
+        return hasGenericDelay(unary->operand());
+    if (const auto *binary = dynamic_cast<const BinaryNode *>(node))
+        return hasGenericDelay(binary->left()) || hasGenericDelay(binary->right());
+    if (const auto *conditional = dynamic_cast<const ConditionalNode *>(node)) {
+        return hasGenericDelay(conditional->condition()) || hasGenericDelay(conditional->thenExpression())
+            || hasGenericDelay(conditional->elseExpression());
+    }
+    if (const auto *subscript = dynamic_cast<const SubscriptNode *>(node)) {
+        if (hasGenericDelay(subscript->target()))
+            return true;
+        for (std::size_t index = 0; index < subscript->indexCount(); ++index) {
+            if (hasGenericDelay(subscript->index(index)))
+                return true;
+        }
+        return false;
+    }
+    if (const auto *range = dynamic_cast<const RangeNode *>(node))
+        return hasGenericDelay(range->begin()) || hasGenericDelay(range->end());
+    if (const auto *literal = dynamic_cast<const ArrayLiteralNode *>(node)) {
+        for (std::size_t index = 0; index < literal->valueCount(); ++index) {
+            if (hasGenericDelay(literal->value(index)))
+                return true;
+        }
+    }
+    return false;
+}
+
 bool supportedCall(const CallNode &call)
 {
     const FunctionSignature *signature = findFunctionSignature(call.nameKey());
@@ -29,6 +76,8 @@ bool supportedCall(const CallNode &call)
         || signature->category == FunctionCategory::Array || signature->category == FunctionCategory::TestInput
         || signature->category == FunctionCategory::Statistical)
         return true;
+    if (signature->category == FunctionCategory::Delay)
+        return supportedDelayName(call.nameKey());
     return call.nameKey() == "log" || call.nameKey() == "if_then_else";
 }
 
@@ -193,17 +242,17 @@ void advanceIndices(QVector<std::size_t> &indices, const QVector<std::size_t> &s
 std::optional<std::size_t> flatIndex(const ArrayValue &array, const QVector<QString> &dimensions,
     const QVector<std::size_t> &indices)
 {
-    if (array.dimensions.size() != dimensions.size() || array.shape.size() != dimensions.size()
-        || indices.size() != dimensions.size() || elementCount(array.shape) != array.values.size())
+    if (array.dimensions().size() != dimensions.size() || array.shape().size() != dimensions.size()
+        || indices.size() != dimensions.size() || elementCount(array.shape()) != array.values().size())
         return std::nullopt;
-    const QVector<std::size_t> steps = strides(array.shape);
+    const QVector<std::size_t> steps = strides(array.shape());
     std::size_t flat = 0;
     for (std::size_t position = 0; position < dimensions.size(); ++position) {
-        const auto found = std::find(array.dimensions.begin(), array.dimensions.end(), dimensions[position]);
-        if (found == array.dimensions.end())
+        const auto found = std::find(array.dimensions().begin(), array.dimensions().end(), dimensions[position]);
+        if (found == array.dimensions().end())
             return std::nullopt;
-        const std::size_t dimensionIndex = static_cast<std::size_t>(found - array.dimensions.begin());
-        if (indices[position] >= array.shape[dimensionIndex])
+        const std::size_t dimensionIndex = static_cast<std::size_t>(found - array.dimensions().begin());
+        if (indices[position] >= array.shape()[dimensionIndex])
             return std::nullopt;
         flat += indices[position] * steps[dimensionIndex];
     }
@@ -215,7 +264,7 @@ bool finiteValue(const Value &value)
     if (const auto *scalar = std::get_if<double>(&value))
         return std::isfinite(*scalar);
     const ArrayValue &array = std::get<ArrayValue>(value);
-    return std::all_of(array.values.begin(), array.values.end(), [](double item) { return std::isfinite(item); });
+    return std::all_of(array.values().begin(), array.values().end(), [](double item) { return std::isfinite(item); });
 }
 
 std::optional<double> evaluatedScalar(const EvaluationResult &evaluated, const QVector<QString> &dimensions,
@@ -233,7 +282,7 @@ std::optional<double> evaluatedScalar(const EvaluationResult &evaluated, const Q
         issue = {owner, IssueSeverity::Error, "Array value has incompatible dimensions", "incompatible-array-value", {}};
         return std::nullopt;
     }
-    return array.values[*flat];
+    return array.values()[*flat];
 }
 
 Value integratedValue(const Value &stock, const Value &rate, double factor)
@@ -242,9 +291,9 @@ Value integratedValue(const Value &stock, const Value &rate, double factor)
         return *scalar + factor * std::get<double>(rate);
     const ArrayValue &current = std::get<ArrayValue>(stock);
     const ArrayValue &change = std::get<ArrayValue>(rate);
-    ArrayValue result = current;
-    for (std::size_t index = 0; index < result.values.size(); ++index)
-        result.values[index] += factor * change.values[index];
+    ArrayValue result {current.dimensions(), current.shape(), current.values()};
+    for (std::size_t index = 0; index < result.values().size(); ++index)
+        result.values()[index] += factor * change.values()[index];
     return result;
 }
 
@@ -253,13 +302,14 @@ Value weightedRate(const Value &stock, const Value &k1, const Value &k2, const V
     if (std::get_if<double>(&stock))
         return dt * (std::get<double>(k1) + 2.0 * std::get<double>(k2)
             + 2.0 * std::get<double>(k3) + std::get<double>(k4)) / 6.0;
-    ArrayValue result = std::get<ArrayValue>(k1);
+    const ArrayValue &first = std::get<ArrayValue>(k1);
+    ArrayValue result {first.dimensions(), first.shape(), first.values()};
     const ArrayValue &second = std::get<ArrayValue>(k2);
     const ArrayValue &third = std::get<ArrayValue>(k3);
     const ArrayValue &fourth = std::get<ArrayValue>(k4);
-    for (std::size_t index = 0; index < result.values.size(); ++index) {
-        result.values[index] = dt * (result.values[index] + 2.0 * second.values[index]
-            + 2.0 * third.values[index] + fourth.values[index]) / 6.0;
+    for (std::size_t index = 0; index < result.values().size(); ++index) {
+        result.values()[index] = dt * (result.values()[index] + 2.0 * second.values()[index]
+            + 2.0 * third.values()[index] + fourth.values()[index]) / 6.0;
     }
     return result;
 }
@@ -269,14 +319,140 @@ struct NetRateResult {
     std::optional<ModelIssue> issue;
 };
 
+struct DelayState {
+    QVector<double> levels;
+    QVector<double> inputs;
+    QVector<double> times;
+    QVector<double> currentTimes;
+    QVector<double> outputs;
+    QVector<int> orders;
+    QVector<int> pointers;
+    QVector<bool> initialized;
+    QVector<bool> touched;
+    QVector<bool> outputValid;
+};
+
+struct DelayRateResult {
+    QVector<double> values;
+    std::optional<ModelIssue> issue;
+};
+
+enum class DelayRateStage {
+    ActualStep,
+    Intermediate
+};
+
+bool hasDelayRates(const QVector<DelayPlan> &plans, DelayRateStage stage)
+{
+    return std::any_of(plans.begin(), plans.end(), [stage](const DelayPlan &plan) {
+        return plan.kind != DelayKind::Fixed && (stage == DelayRateStage::ActualStep || !plan.discrete);
+    });
+}
+
+DelayRateResult delayRates(const QVector<DelayPlan> &plans, DelayState &state, DelayRateStage stage)
+{
+    DelayRateResult result;
+    if (!hasDelayRates(plans, stage))
+        return result;
+    result.values.resize(state.levels.size());
+    for (const DelayPlan &plan : plans) {
+        if (plan.kind == DelayKind::Fixed || (plan.discrete && stage == DelayRateStage::Intermediate))
+            continue;
+        for (std::size_t element = 0; element < plan.count; ++element) {
+            const int order = state.orders[plan.base + element];
+            if (order <= 0)
+                continue;
+            const std::size_t slot = plan.base + (order - 1) * plan.count + element;
+            if (!state.touched[slot])
+                continue;
+            const double currentTime = state.currentTimes[slot];
+            if (!std::isfinite(currentTime) || currentTime <= 0.0) {
+                result.issue = ModelIssue {0, IssueSeverity::Error, "Delay time must be positive", "invalid-delay-time", {}};
+                return result;
+            }
+            if (plan.kind == DelayKind::Material && plan.discrete && stage == DelayRateStage::ActualStep) {
+                for (int level = order - 1; level > 0; --level) {
+                    const std::size_t target = plan.base + level * plan.count + element;
+                    const std::size_t source = plan.base + (level - 1) * plan.count + element;
+                    state.times[target] = state.times[source];
+                }
+                state.times[plan.base + element] = currentTime;
+            }
+            double inflow = state.inputs[slot];
+            for (int level = 0; level < order; ++level) {
+                const std::size_t index = plan.base + level * plan.count + element;
+                const double time = plan.kind == DelayKind::Material && plan.discrete ? state.times[index] : currentTime;
+                const double outflow = plan.kind == DelayKind::Material ? state.levels[index] / time : state.levels[index];
+                result.values[index] = (inflow - outflow) * order / (plan.kind == DelayKind::Material ? 1.0 : time);
+                inflow = outflow;
+            }
+        }
+    }
+    return result;
+}
+
+void advanceContinuousDelayStages(const QVector<DelayPlan> &plans, DelayState &state,
+    const QVector<double> &rates, double factor)
+{
+    for (const DelayPlan &plan : plans) {
+        if (plan.kind == DelayKind::Fixed || plan.discrete)
+            continue;
+        for (std::size_t element = 0; element < plan.count; ++element) {
+            const int order = state.orders[plan.base + element];
+            for (int level = 0; level < order; ++level) {
+                const std::size_t slot = plan.base + level * plan.count + element;
+                state.levels[slot] += rates[slot] * factor;
+            }
+        }
+    }
+}
+
+void advanceDelayOutputs(const QVector<DelayPlan> &plans, DelayState &state)
+{
+    for (const DelayPlan &plan : plans) {
+        if (!plan.discrete)
+            continue;
+        if (plan.kind == DelayKind::Fixed) {
+            for (std::size_t element = 0; element < plan.count; ++element) {
+                const std::size_t orderSlot = plan.base + element;
+                const int order = state.orders[orderSlot];
+                if (order <= 0)
+                    continue;
+                const std::size_t slot = plan.base + (order - 1) * plan.count + element;
+                if (!state.touched[slot])
+                    continue;
+                const int pointer = state.pointers[orderSlot];
+                state.levels[plan.base + pointer * plan.count + element] = state.inputs[slot];
+                const int next = (pointer + 1) % order;
+                state.outputs[slot] = state.levels[plan.base + next * plan.count + element];
+                state.outputValid[slot] = true;
+                state.pointers[orderSlot] = next;
+            }
+            continue;
+        }
+        for (std::size_t element = 0; element < plan.count; ++element) {
+            const int order = state.orders[plan.base + element];
+            if (order <= 0)
+                continue;
+            const std::size_t slot = plan.base + (order - 1) * plan.count + element;
+            if (!state.touched[slot])
+                continue;
+            const double level = state.levels[slot];
+            state.outputs[slot] = plan.kind == DelayKind::Material
+                ? level / state.times[plan.base + element] : level;
+            state.outputValid[slot] = true;
+        }
+    }
+}
+
 NetRateResult netRates(const QVector<StockFlows> &bindings, const QHash<EntityId, Value> &state)
 {
     NetRateResult result;
     for (const StockFlows &binding : bindings) {
         const Value &stock = state[binding.stock];
         if (const auto *stockArray = std::get_if<ArrayValue>(&stock))
-            result.values.insert(binding.stock, ArrayValue {stockArray->dimensions, stockArray->shape,
-                QVector<double>(stockArray->values.size(), 0.0)});
+            result.values.insert(binding.stock, ArrayValue {stockArray->dimensions(), stockArray->shape(),
+                QVector<double>(stockArray->values().size(), 0.0)});
         else
             result.values.insert(binding.stock, 0.0);
         const auto accumulate = [&](const FlowRatePlan &alignment) -> std::optional<ModelIssue> {
@@ -298,14 +474,14 @@ NetRateResult netRates(const QVector<StockFlows> &bindings, const QHash<EntityId
             }
             ArrayValue &rateArray = std::get<ArrayValue>(rate);
             if (const auto *flowScalar = std::get_if<double>(&flow)) {
-                for (double &item : rateArray.values)
+                for (double &item : rateArray.values())
                     item += sign * *flowScalar;
                 return std::nullopt;
             }
             const ArrayValue &flowArray = std::get<ArrayValue>(flow);
-            for (std::size_t flat = 0; flat < rateArray.values.size(); ++flat) {
+            for (std::size_t flat = 0; flat < rateArray.values().size(); ++flat) {
                 const std::size_t flowFlat = alignment.direct ? flat : alignment.mapping[flat];
-                rateArray.values[flat] += sign * flowArray.values[flowFlat];
+                rateArray.values()[flat] += sign * flowArray.values()[flowFlat];
             }
             return std::nullopt;
         };
@@ -332,8 +508,10 @@ public:
 
     bool compile(SimulationCompileResult &result)
     {
+        m_result = &result;
         for (const MacroDefinition &macro : m_document.macros())
             m_plan.m_macros.emplace(macro.signature(), std::make_unique<CompiledMacroDefinition>());
+        m_inMacro = true;
         for (const MacroDefinition &macro : m_document.macros()) {
             CompiledMacroDefinition *compiled = m_plan.m_macros.find(macro.signature())->second.get();
             m_locals.clear();
@@ -351,17 +529,45 @@ public:
             if (!checkFormula(macro.formula(), compiled->m_formula, 0, result))
                 return false;
         }
+        m_inMacro = false;
         m_locals.clear();
         for (const ModelElement &element : m_document.model().elements()) {
             if (element.kind() == ElementKind::Lookup)
                 continue;
+            m_arrayCount = 1;
+            for (const QString &name : element.dimensions()) {
+                const Dimension *dimension = m_document.findDimension(name);
+                const std::size_t count = dimension->elements.size();
+                if (count > std::numeric_limits<std::size_t>::max() / m_arrayCount) {
+                    addIssue(result, element.id(), "Simulation array size overflows state storage",
+                        "invalid-simulation-array-shape", {});
+                    return false;
+                }
+                m_arrayCount *= count;
+            }
             CompiledElementFormula compiled;
             const Formula &definition = element.kind() == ElementKind::Stock
                 ? static_cast<const Stock &>(element).initialFormula() : element.formula();
+            if (hasGenericDelay(definition.root())) {
+                const auto *call = dynamic_cast<const CallNode *>(definition.root());
+                if (!call || !genericDelayName(call->nameKey())) {
+                    addIssue(result, element.id(), "DELAY N and SMOOTH N must be the whole equation",
+                        "invalid-delayn-placement", definition.root()->span());
+                    return false;
+                }
+            }
             compiled.formula = compileFormula(definition);
             if (!checkFormula(definition, compiled.formula, element.id(), result))
                 return false;
             for (const ArrayElementFormula &entry : element.elementEquations()) {
+                if (hasGenericDelay(entry.formula().root())) {
+                    const auto *call = dynamic_cast<const CallNode *>(entry.formula().root());
+                    if (!call || !genericDelayName(call->nameKey())) {
+                        addIssue(result, element.id(), "DELAY N and SMOOTH N must be the whole equation",
+                            "invalid-delayn-placement", entry.formula().root()->span());
+                        return false;
+                    }
+                }
                 CompiledArrayElementFormula compiledEntry;
                 compiledEntry.indices = entry.indices();
                 compiledEntry.formula = compileFormula(entry.formula());
@@ -371,6 +577,7 @@ public:
             }
             m_plan.m_formulas.emplace(element.id(), std::move(compiled));
         }
+        m_plan.m_delaySlots = m_delaySlots;
         return true;
     }
 
@@ -442,6 +649,37 @@ private:
                 return nullptr;
             arguments.push_back(std::move(argument));
         }
+        if (supportedDelayName(node.nameKey())) {
+            if (m_inMacro) {
+                addIssue(*m_result, 0, "Delay functions inside macros are not supported", "unsupported-stateful-macro",
+                    node.span());
+                return nullptr;
+            }
+            const bool material = node.nameKey() == "delay" || node.nameKey() == "delay1"
+                || node.nameKey() == "delay1i" || node.nameKey() == "delay3" || node.nameKey() == "delay3i"
+                || node.nameKey() == "delayn";
+            const bool generic = node.nameKey() == "delayn" || node.nameKey() == "smthn";
+            const int order = node.nameKey() == "delay3" || node.nameKey() == "delay3i"
+                || node.nameKey() == "smooth3" || node.nameKey() == "smth3" || node.nameKey() == "smooth3i" ? 3 : 1;
+            const DelayKind kind = node.nameKey() == "delay" ? DelayKind::Fixed
+                : material ? DelayKind::Material : DelayKind::Information;
+            const std::size_t index = m_plan.m_delays.size();
+            const std::size_t base = m_delaySlots;
+            const std::size_t capacity = generic || kind == DelayKind::Fixed
+                ? std::size_t(DelayPlan::maximumOrder) : std::size_t(order);
+            if (m_arrayCount > std::numeric_limits<std::size_t>::max() / capacity) {
+                addIssue(*m_result, 0, "Delay state size overflows storage", "simulation-state-overflow", node.span());
+                return nullptr;
+            }
+            const std::size_t slots = capacity * m_arrayCount;
+            if (slots > std::numeric_limits<std::size_t>::max() - m_delaySlots) {
+                addIssue(*m_result, 0, "Delay state size overflows storage", "simulation-state-overflow", node.span());
+                return nullptr;
+            }
+            m_delaySlots += slots;
+            m_plan.m_delays.push_back({kind, m_arrayCount, base, order, generic, generic || kind == DelayKind::Fixed});
+            return std::make_unique<BoundCallNode>(node.nameKey(), index, std::move(arguments), node.span());
+        }
         if (const FunctionSignature *signature = findFunctionSignature(node.nameKey())) {
             return std::make_unique<BoundCallNode>(node.nameKey(), *signature, std::move(arguments), node.span());
         }
@@ -505,7 +743,11 @@ private:
 
     const Document &m_document;
     SimulationPlan &m_plan;
+    SimulationCompileResult *m_result = nullptr;
     QHash<QString, int> m_locals;
+    std::size_t m_arrayCount = 1;
+    std::size_t m_delaySlots = 0;
+    bool m_inMacro = false;
 };
 
 ArrayLayout::ArrayLayout(QVector<QString> dimensions, QVector<std::size_t> shape,
@@ -796,6 +1038,23 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
     }
 
     QHash<EntityId, Value> values;
+    DelayState delayState;
+    delayState.levels.resize(m_plan.m_delaySlots);
+    delayState.inputs.resize(m_plan.m_delaySlots);
+    delayState.times.resize(m_plan.m_delaySlots);
+    delayState.currentTimes.resize(m_plan.m_delaySlots);
+    delayState.outputs.resize(m_plan.m_delaySlots);
+    delayState.initialized.fill(false, m_plan.m_delaySlots);
+    delayState.touched.fill(false, m_plan.m_delaySlots);
+    delayState.outputValid.fill(false, m_plan.m_delaySlots);
+    delayState.orders.fill(0, m_plan.m_delaySlots);
+    delayState.pointers.fill(0, m_plan.m_delaySlots);
+    for (const DelayPlan &plan : m_plan.m_delays) {
+        if (!plan.initializeOrder && plan.kind != DelayKind::Fixed) {
+            for (std::size_t element = 0; element < plan.count; ++element)
+                delayState.orders[plan.base + element] = plan.order;
+        }
+    }
     double currentTime = m_plan.settings().startTime();
     double evaluationTime = currentTime;
     const auto stopWithIssue = [&](SimulationRunStatus status, EntityId id, QString message, QString code,
@@ -817,8 +1076,20 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
         const Document &document;
         EvaluationContext &evaluation;
         QHash<EntityId, Value> *target;
+        DelayState *delays;
     };
-    ExecutionContext resolved {m_document, context, &values};
+    ExecutionContext resolved {m_document, context, &values, &delayState};
+    context.delayPlans = &m_plan.m_delays;
+    context.delayLevels = &resolved.delays->levels;
+    context.delayInputs = &resolved.delays->inputs;
+    context.delayTimes = &resolved.delays->times;
+    context.delayCurrentTimes = &resolved.delays->currentTimes;
+    context.delayOutputs = &resolved.delays->outputs;
+    context.delayOrders = &resolved.delays->orders;
+    context.delayPointers = &resolved.delays->pointers;
+    context.delayInitialized = &resolved.delays->initialized;
+    context.delayTouched = &resolved.delays->touched;
+    context.delayOutputValid = &resolved.delays->outputValid;
     context.readDimension = [&resolved](const QString &name) {
         return resolved.document.findDimension(name);
     };
@@ -827,11 +1098,22 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
         return value == resolved.target->constEnd() ? std::nullopt : std::optional<Value>(value.value());
     };
     const auto evaluate = [&](const QVector<EntityId> &order, double time, double dt,
-                            QHash<EntityId, Value> &target) -> std::optional<ModelIssue> {
+                            QHash<EntityId, Value> &target, DelayState &delays) -> std::optional<ModelIssue> {
         evaluationTime = time;
         context.time = time;
         context.dt = dt;
         resolved.target = &target;
+        resolved.delays = &delays;
+        delays.touched.fill(false);
+        context.delayLevels = &resolved.delays->levels;
+        context.delayInputs = &resolved.delays->inputs;
+        context.delayTimes = &resolved.delays->times;
+        context.delayCurrentTimes = &resolved.delays->currentTimes;
+        context.delayOutputs = &resolved.delays->outputs;
+        context.delayOrders = &resolved.delays->orders;
+        context.delayInitialized = &resolved.delays->initialized;
+        context.delayTouched = &resolved.delays->touched;
+        context.delayOutputValid = &resolved.delays->outputValid;
         for (EntityId id : order) {
             const auto *element = dynamic_cast<const ModelElement *>(m_document.find(id));
             if (!element)
@@ -862,12 +1144,13 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
                     context.scope = {layout->dimensions(), QVector<std::size_t>(layout->shape().size(), 0),
                         element->nameKey()};
                     for (std::size_t flat = 0; flat < count; ++flat) {
+                        context.scope.elementIndex = flat;
                         const EvaluationResult evaluated = evaluateFormula(formula, context);
                         ModelIssue issue;
                         const auto value = evaluatedScalar(evaluated, element->dimensions(), context.scope.indices, id, issue);
                         if (!value)
                             return issue;
-                        output.values[flat] = *value;
+                        output.values()[flat] = *value;
                         advanceIndices(context.scope.indices, layout->shape());
                     }
                 } else {
@@ -875,17 +1158,17 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
                         const auto flat = layout->flatIndex(entry.indices);
                         if (!flat)
                             return ModelIssue {id, IssueSeverity::Error, "Array element index is invalid", "invalid-array-element-index", {}};
-                        context.scope = {element->dimensions(), entry.indices, element->nameKey()};
+                        context.scope = {element->dimensions(), entry.indices, element->nameKey(), *flat};
                         const EvaluationResult evaluated = evaluateFormula(entry.formula.root(), context);
                         ModelIssue issue;
                         const auto value = evaluatedScalar(evaluated, element->dimensions(), entry.indices, id, issue);
                         if (!value)
                             return issue;
-                        output.values[*flat] = *value;
+                        output.values()[*flat] = *value;
                     }
                 }
                 if (element->lookup()) {
-                    for (double &value : output.values)
+                    for (double &value : output.values())
                         value = element->lookup()->evaluate(value);
                 }
                 target[id] = std::move(output);
@@ -904,7 +1187,7 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
 
     if (cancelled && cancelled())
         return stopWithIssue(SimulationRunStatus::Cancelled, 0, "Simulation cancelled", "simulation-cancelled");
-    if (const auto issue = evaluate(m_plan.m_initializationOrder, currentTime, m_plan.settings().dt(), values))
+    if (const auto issue = evaluate(m_plan.m_initializationOrder, currentTime, m_plan.settings().dt(), values, delayState))
         return failEvaluation(*issue);
 
     double nextSave = m_plan.settings().startTime() + m_plan.settings().saveInterval();
@@ -921,8 +1204,11 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
         const double dt = remaining > 0.0 ? std::min(m_plan.settings().dt(), remaining) : m_plan.settings().dt();
         context.inputTime = currentTime;
         context.inputDt = dt;
-        if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime, dt, values))
+        if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime, dt, values, delayState))
             return failEvaluation(*issue);
+        DelayRateResult delayK1 = delayRates(m_plan.m_delays, delayState, DelayRateStage::ActualStep);
+        if (delayK1.issue)
+            return failEvaluation(*delayK1.issue);
 
         if (firstPoint || currentTime + timeTolerance >= nextSave || remaining <= 0.0) {
             if (run.m_times.isEmpty() || run.m_times.back() != currentTime) {
@@ -943,39 +1229,66 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
             break;
 
         QHash<EntityId, Value> nextValues = values;
+        DelayState nextDelays = delayState;
         if (m_plan.settings().integrationMethod() == IntegrationMethod::Euler) {
             const NetRateResult rates = netRates(m_plan.m_stockFlows, values);
             if (rates.issue)
                 return failEvaluation(*rates.issue);
             for (const StockFlows &binding : m_plan.m_stockFlows)
                 nextValues[binding.stock] = integratedValue(values[binding.stock], rates.values[binding.stock], dt);
+            for (const DelayPlan &plan : m_plan.m_delays) {
+                if (plan.kind == DelayKind::Fixed)
+                    continue;
+                for (std::size_t element = 0; element < plan.count; ++element) {
+                    const int order = delayState.orders[plan.base + element];
+                    for (int level = 0; level < order; ++level) {
+                        const std::size_t slot = plan.base + level * plan.count + element;
+                        nextDelays.levels[slot] += delayK1.values[slot] * dt;
+                    }
+                }
+            }
         } else {
             const NetRateResult k1 = netRates(m_plan.m_stockFlows, values);
             if (k1.issue)
                 return failEvaluation(*k1.issue);
             QHash<EntityId, Value> stage = values;
+            DelayState stageDelays = delayState;
             for (const StockFlows &binding : m_plan.m_stockFlows)
                 stage[binding.stock] = integratedValue(values[binding.stock], k1.values[binding.stock], dt / 2.0);
-            if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime + dt / 2.0, dt, stage))
+            advanceContinuousDelayStages(m_plan.m_delays, stageDelays, delayK1.values, dt / 2.0);
+            if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime + dt / 2.0, dt, stage, stageDelays))
                 return failEvaluation(*issue);
+            DelayRateResult delayK2 = delayRates(m_plan.m_delays, stageDelays, DelayRateStage::Intermediate);
+            if (delayK2.issue)
+                return failEvaluation(*delayK2.issue);
             const NetRateResult k2 = netRates(m_plan.m_stockFlows, stage);
             if (k2.issue)
                 return failEvaluation(*k2.issue);
 
             stage = values;
+            stageDelays = delayState;
             for (const StockFlows &binding : m_plan.m_stockFlows)
                 stage[binding.stock] = integratedValue(values[binding.stock], k2.values[binding.stock], dt / 2.0);
-            if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime + dt / 2.0, dt, stage))
+            advanceContinuousDelayStages(m_plan.m_delays, stageDelays, delayK2.values, dt / 2.0);
+            if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime + dt / 2.0, dt, stage, stageDelays))
                 return failEvaluation(*issue);
+            DelayRateResult delayK3 = delayRates(m_plan.m_delays, stageDelays, DelayRateStage::Intermediate);
+            if (delayK3.issue)
+                return failEvaluation(*delayK3.issue);
             const NetRateResult k3 = netRates(m_plan.m_stockFlows, stage);
             if (k3.issue)
                 return failEvaluation(*k3.issue);
 
             stage = values;
+            stageDelays = delayState;
             for (const StockFlows &binding : m_plan.m_stockFlows)
                 stage[binding.stock] = integratedValue(values[binding.stock], k3.values[binding.stock], dt);
-            if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime + dt, dt, stage))
+            advanceContinuousDelayStages(m_plan.m_delays, stageDelays, delayK3.values, dt);
+            if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime + dt, dt, stage, stageDelays))
                 return failEvaluation(*issue);
+            DelayRateResult delayK4 = delayRates(m_plan.m_delays, stageDelays, DelayRateStage::Intermediate);
+            if (delayK4.issue)
+                return failEvaluation(*delayK4.issue);
             const NetRateResult k4 = netRates(m_plan.m_stockFlows, stage);
             if (k4.issue)
                 return failEvaluation(*k4.issue);
@@ -985,13 +1298,36 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
                     k2.values[binding.stock], k3.values[binding.stock], k4.values[binding.stock], dt);
                 nextValues[binding.stock] = integratedValue(values[binding.stock], rate, 1.0);
             }
+            for (const DelayPlan &plan : m_plan.m_delays) {
+                if (plan.kind == DelayKind::Fixed)
+                    continue;
+                for (std::size_t element = 0; element < plan.count; ++element) {
+                    const int order = delayState.orders[plan.base + element];
+                    for (int stage = 0; stage < order; ++stage) {
+                        const std::size_t slot = plan.base + stage * plan.count + element;
+                        if (plan.discrete) {
+                            nextDelays.levels[slot] += delayK1.values[slot] * dt;
+                        } else {
+                            nextDelays.levels[slot] += (delayK1.values[slot] + 2.0 * delayK2.values[slot]
+                                + 2.0 * delayK3.values[slot] + delayK4.values[slot]) * dt / 6.0;
+                        }
+                    }
+                }
+            }
         }
         for (const StockFlows &binding : m_plan.m_stockFlows) {
             if (!finiteValue(nextValues[binding.stock]))
                 return stopWithIssue(SimulationRunStatus::Failed, binding.stock,
                     "Stock integration produced a non-finite value", "non-finite-simulation-value");
         }
+        for (const double level : nextDelays.levels) {
+            if (!std::isfinite(level))
+                return stopWithIssue(SimulationRunStatus::Failed, 0,
+                    "Delay integration produced a non-finite value", "non-finite-simulation-value");
+        }
+        advanceDelayOutputs(m_plan.m_delays, nextDelays);
         values = std::move(nextValues);
+        delayState = std::move(nextDelays);
         const double previousTime = currentTime;
         ++stepIndex;
         currentTime = std::min(m_plan.settings().stopTime(),

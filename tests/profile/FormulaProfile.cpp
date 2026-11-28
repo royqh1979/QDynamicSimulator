@@ -187,8 +187,8 @@ int main(int argc, char **argv)
             QTextStream(stderr) << "Array evaluation failed: " << (evaluated.error) << "\n";
             return 13;
         }
-        evaluatedValueCount += value->values.size();
-        arrayChecksum = std::accumulate(value->values.begin(), value->values.end(), arrayChecksum);
+        evaluatedValueCount += value->values().size();
+        arrayChecksum = std::accumulate(value->values().begin(), value->values().end(), arrayChecksum);
     }
     const qint64 arrayEvaluationNs = timer.nsecsElapsed();
     if (evaluatedValueCount != static_cast<std::size_t>(count) * 6 || !std::isfinite(arrayChecksum))
@@ -208,8 +208,8 @@ int main(int argc, char **argv)
             QTextStream(stderr) << "Array literal evaluation failed: " << (evaluated.error) << "\n";
             return 15;
         }
-        literalValueCount += value->values.size();
-        literalChecksum = std::accumulate(value->values.begin(), value->values.end(), literalChecksum);
+        literalValueCount += value->values().size();
+        literalChecksum = std::accumulate(value->values().begin(), value->values().end(), literalChecksum);
     }
     const qint64 literalNs = timer.nsecsElapsed();
     if (literalValueCount != evaluatedValueCount || !std::isfinite(literalChecksum))

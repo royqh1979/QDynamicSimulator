@@ -23,9 +23,11 @@ M1 先交付 SFD 建模、方程编辑、Euler/RK4、折线图和文件保存，
 - [Vensim、XMILE 与本程序概念对应](vensim-xmile-mapping.md)：元素、Rate、Arrow、Cloud、Comment 的语义和重构边界。
 - [Vensim MDL 导入设计](vensim-mdl.md)：记录解析、多方程归并、名称引用转换、Sketch 映射及兼容边界。
 - [公式分析器设计](formula-analysis.md)：标量 AST、Pratt Parser、符号解析、依赖图、诊断及分阶段实施。
+- [Array 访问与计算设计讨论](array-access-and-computation.md)：布局、句柄、下标/切片/重排、宏与 mapped 参数、归约、状态积分、历史采样及优化边界。
 - [仿真引擎设计](simulation.md)：仿真设置、编译与执行顺序、Euler/RK4、运行结果、状态函数边界及正确性验证。
 - [Lookup 模型与求解器设计](lookup.md)：不可变 X–Y 定义、独立/内联 Lookup、插值/外推、编译求值与持久化。
 - [纯时间输入函数设计](time-functions.md)：STEP/PULSE/PULSE TRAIN/RAMP、测试输入冻结、数组广播及参考验证。
 - [随机函数与 Run 随机流设计](random-functions.md)：RANDOM/NORMAL/LOGNORMAL/POISSON/EXPRND、种子、独立 Stream ID 和 Euler/RK4 取样。
+- [N 阶延迟与信息平滑设计](delay-functions.md)：DELAY N/SMOOTH N 及一阶/三阶别名、级联 Level、可变 delayTime 和离散/连续输出。
 - [统一名称管理与绑定 AST 设计](call-resolution.md)：Document 名称/invokable 索引、只读源 AST 及 Plan 拥有的完整执行 AST。
 - [模拟器界面设计](simulation-ui.md)：运行设置、Worker 生命周期、取消、结果 Dock、折线图和数据表。

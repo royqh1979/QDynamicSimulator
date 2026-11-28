@@ -106,7 +106,7 @@ void TestArrayFiles::realArrayImports()
     const EvaluationResult evaluated = evaluateFormula(literal.root(), context);
     const auto *values = evaluated.value ? std::get_if<ArrayValue>(&*evaluated.value) : nullptr;
     QVERIFY(values);
-    QCOMPARE(values->values, (QVector<double> {1, 2, 3}));
+    QCOMPARE(values->values(), (QVector<double> {1, 2, 3}));
 
     Document individual;
     QVERIFY2(qds::io::XmileFile::importFile(QStringLiteral(QDS_ARRAY_INDIVIDUAL_XMILE_PATH), individual, &error), qPrintable(error));

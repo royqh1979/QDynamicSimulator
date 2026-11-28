@@ -5,6 +5,7 @@
 #include <core/formula/Formula.h>
 
 #include <functional>
+#include <memory>
 #include <optional>
 #include <QString>
 #include <variant>
@@ -18,15 +19,27 @@ namespace qds::core {
 struct MacroDefinition;
 class CompiledMacroDefinition;
 
-struct ArrayValue {
+struct ArrayData {
     QVector<QString> dimensions;
     QVector<std::size_t> shape;
     QVector<double> values;
+};
 
-    bool operator==(const ArrayValue &other) const
-    {
-        return dimensions == other.dimensions && shape == other.shape && values == other.values;
-    }
+class ArrayValue
+{
+public:
+    ArrayValue() : ArrayValue({}, {}, {}) {}
+    ArrayValue(QVector<QString> dimensions, QVector<std::size_t> shape, QVector<double> values);
+
+    const QVector<QString> &dimensions() const { return m_data->dimensions; }
+    const QVector<std::size_t> &shape() const { return m_data->shape; }
+    const QVector<double> &values() const { return m_data->values; }
+    QVector<double> &values();
+
+    bool operator==(const ArrayValue &other) const;
+
+private:
+    std::shared_ptr<ArrayData> m_data;
 };
 
 using Value = std::variant<double, ArrayValue>;
@@ -88,10 +101,28 @@ private:
     QHash<quint32, std::mt19937> m_streams;
 };
 
+enum class DelayKind {
+    Fixed,
+    Material,
+    Information
+};
+
+struct DelayPlan {
+    static constexpr int maximumOrder = 64;
+
+    DelayKind kind = DelayKind::Material;
+    std::size_t count = 1;
+    std::size_t base = 0;
+    int order = 1;
+    bool initializeOrder = false;
+    bool discrete = false;
+};
+
 struct EvaluationScope {
     QVector<QString> dimensions;
     QVector<std::size_t> indices;
     QString self;
+    std::size_t elementIndex = 0;
 };
 
 struct EvaluationContext {
@@ -108,7 +139,18 @@ struct EvaluationContext {
     MacroReader readMacro;
     mutable ExecutionStack executionStack;
     mutable RandomStreamState randomStreams;
-    EvaluationScope scope;
+    const QVector<DelayPlan> *delayPlans = nullptr;
+    QVector<double> *delayLevels = nullptr;
+    QVector<double> *delayInputs = nullptr;
+    QVector<double> *delayTimes = nullptr;
+    QVector<double> *delayCurrentTimes = nullptr;
+    QVector<double> *delayOutputs = nullptr;
+    QVector<int> *delayOrders = nullptr;
+    QVector<int> *delayPointers = nullptr;
+    QVector<bool> *delayInitialized = nullptr;
+    QVector<bool> *delayTouched = nullptr;
+    QVector<bool> *delayOutputValid = nullptr;
+    mutable EvaluationScope scope;
 };
 
 struct EvaluationResult {
