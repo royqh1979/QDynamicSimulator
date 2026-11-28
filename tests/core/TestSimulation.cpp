@@ -69,6 +69,8 @@ private slots:
     void unifiedRunMetadata();
     void seriesValueSemantics();
     void referenceBindingSemantics();
+    void lookupDefinitions();
+    void lookupSimulation();
     void compilationDiagnostics();
     void cancellationAndRuntimeFailure();
 };
@@ -552,6 +554,93 @@ void TestSimulation::referenceBindingSemantics()
     const QVector<ArrayValue> currentValues = dimensionRun.arraySeries("current");
     QCOMPARE(currentValues.size(), 1);
     QCOMPARE(currentValues.front().values, (QVector<double> {1.0, 2.0}));
+}
+
+void TestSimulation::lookupDefinitions()
+{
+    const auto continuous = LookupDefinition::create({0.0, 1.0, 2.0}, {0.0, 2.0, 4.0}, LookupKind::Continuous);
+    QVERIFY(continuous);
+    expectNear(continuous->evaluate(-1.0), 0.0, 1e-12);
+    expectNear(continuous->evaluate(0.5), 1.0, 1e-12);
+    expectNear(continuous->evaluate(2.5), 4.0, 1e-12);
+
+    const auto extrapolate = LookupDefinition::create({0.0, 1.0, 2.0}, {0.0, 2.0, 4.0}, LookupKind::Extrapolate);
+    QVERIFY(extrapolate);
+    expectNear(extrapolate->evaluate(-1.0), -2.0, 1e-12);
+    expectNear(extrapolate->evaluate(2.5), 5.0, 1e-12);
+
+    const auto discrete = LookupDefinition::create({0.0, 1.0, 2.0}, {0.0, 2.0, 2.0}, LookupKind::Discrete);
+    QVERIFY(discrete);
+    QCOMPARE(discrete->evaluate(0.5), 0.0);
+    QCOMPARE(discrete->evaluate(1.5), 2.0);
+    QCOMPARE(discrete->evaluate(-1.0), 0.0);
+    QCOMPARE(discrete->evaluate(3.0), 2.0);
+
+    QVERIFY(!LookupDefinition::create({}, {}, LookupKind::Continuous));
+    QVERIFY(!LookupDefinition::create({0.0}, {1.0, 2.0}, LookupKind::Continuous));
+    QVERIFY(!LookupDefinition::create({0.0, 0.0}, {1.0, 2.0}, LookupKind::Continuous));
+    QVERIFY(!LookupDefinition::create({0.0, 1.0}, {1.0, 2.0}, LookupKind::Discrete));
+    QVERIFY(!LookupDefinition::create({0.0, 1.0}, {1.0, std::numeric_limits<double>::infinity()}, LookupKind::Continuous));
+    QVERIFY(std::isnan(continuous->evaluate(std::numeric_limits<double>::quiet_NaN())));
+}
+
+void TestSimulation::lookupSimulation()
+{
+    Document document;
+    const EntityId stock = document.createVariable(ElementKind::Stock);
+    const EntityId cloud = document.createCloud();
+    const EntityId flow = document.createFlow(cloud, stock);
+    document.setInitialEquation(stock, "0");
+    const EntityId lookup = document.createLookup();
+    QVERIFY(document.rename(lookup, "Rate Table"));
+    QVERIFY(document.setLookup(lookup, LookupDefinition::create({0.0, 2.0}, {0.0, 4.0}, LookupKind::Continuous)));
+    document.setEquation(flow, "\"Rate Table\"(TIME)");
+    document.setSimulationSettings({0.0, 2.0, 0.5, 0.5});
+    const SimulationRun run = runModel(document);
+    QCOMPARE(run.status(), SimulationRunStatus::Completed);
+    QCOMPARE(run.series("flow1"), (QVector<double> {0.0, 1.0, 2.0, 3.0, 4.0}));
+    for (const RunVariableInfo &variable : run.variables())
+        QVERIFY(variable.kind() != ElementKind::Lookup);
+
+    Document inlineDocument;
+    const EntityId input = inlineDocument.createVariable(ElementKind::Variable);
+    inlineDocument.rename(input, "input");
+    inlineDocument.setEquation(input, "TIME");
+    const EntityId output = inlineDocument.createVariable(ElementKind::Variable);
+    inlineDocument.rename(output, "output");
+    inlineDocument.setEquation(output, "input");
+    QVERIFY(inlineDocument.setLookup(output,
+        LookupDefinition::create({0.0, 2.0}, {0.0, 4.0}, LookupKind::Continuous)));
+    inlineDocument.setSimulationSettings({0.0, 2.0, 1.0, 1.0});
+    const SimulationRun inlineRun = runModel(inlineDocument);
+    QCOMPARE(inlineRun.status(), SimulationRunStatus::Completed);
+    QCOMPARE(inlineRun.series("output"), (QVector<double> {0.0, 2.0, 4.0}));
+
+    Document arrayDocument;
+    arrayDocument.defineDimension("N", 2);
+    const EntityId arrayInput = arrayDocument.createVariable(ElementKind::Variable);
+    arrayDocument.rename(arrayInput, "input");
+    arrayDocument.setDimensions(arrayInput, {"N"});
+    arrayDocument.setEquation(arrayInput, "1");
+    const EntityId arrayLookup = arrayDocument.createLookup();
+    arrayDocument.rename(arrayLookup, "Rate Table");
+    arrayDocument.setLookup(arrayLookup,
+        LookupDefinition::create({0.0, 1.0}, {0.0, 2.0}, LookupKind::Continuous));
+    const EntityId called = arrayDocument.createVariable(ElementKind::Variable);
+    arrayDocument.rename(called, "called");
+    arrayDocument.setDimensions(called, {"N"});
+    arrayDocument.setEquation(called, "\"Rate Table\"(input)");
+    const EntityId inlined = arrayDocument.createVariable(ElementKind::Variable);
+    arrayDocument.rename(inlined, "inlined");
+    arrayDocument.setDimensions(inlined, {"N"});
+    arrayDocument.setEquation(inlined, "input");
+    arrayDocument.setLookup(inlined,
+        LookupDefinition::create({0.0, 1.0}, {0.0, 3.0}, LookupKind::Continuous));
+    arrayDocument.setSimulationSettings({0.0, 0.0, 1.0, 1.0});
+    const SimulationRun arrayRun = runModel(arrayDocument);
+    QCOMPARE(arrayRun.status(), SimulationRunStatus::Completed);
+    QCOMPARE(arrayRun.arraySeries("called").front().values, (QVector<double> {2.0, 2.0}));
+    QCOMPARE(arrayRun.arraySeries("inlined").front().values, (QVector<double> {3.0, 3.0}));
 }
 
 void TestSimulation::compilationDiagnostics()

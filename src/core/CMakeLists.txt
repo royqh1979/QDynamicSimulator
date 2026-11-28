@@ -12,6 +12,7 @@ add_library(qds-core STATIC
     include/core/formula/Formula.h
     include/core/formula/Function.h
     include/core/Identifier.h
+    include/core/Lookup.h
     include/core/Macro.h
     include/core/Model.h
     include/core/SimulationSettings.h
@@ -25,6 +26,7 @@ add_library(qds-core STATIC
     src/formula/Formula.cpp
     src/formula/Function.cpp
     src/Identifier.cpp
+    src/Lookup.cpp
     src/Model.cpp
     src/SimulationSettings.cpp
     src/simulation/Simulation.cpp

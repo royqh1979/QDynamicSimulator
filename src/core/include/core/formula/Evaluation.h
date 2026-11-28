@@ -26,6 +26,7 @@ struct ArrayValue {
 
 using Value = std::variant<double, ArrayValue>;
 using VariableReader = std::function<std::optional<Value>(const QString &nameKey)>;
+using LookupReader = std::function<std::optional<double>(const QString &nameKey, double input)>;
 using DimensionReader = std::function<const Dimension *(const QString &)>;
 
 struct MacroEvaluation {
@@ -46,6 +47,7 @@ struct EvaluationContext {
     double stopTime = 0.0;
     VariableReader readVariable;
     VariableReader readResolvedReference;
+    LookupReader readLookup;
     DimensionReader readDimension;
     MacroReader readMacro;
     EvaluationScope scope;

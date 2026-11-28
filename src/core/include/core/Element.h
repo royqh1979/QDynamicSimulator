@@ -11,6 +11,7 @@ enum class ElementKind {
     Stock,
     Flow,
     Variable,
+    Lookup,
     Connector,
     Cloud,
     Comment

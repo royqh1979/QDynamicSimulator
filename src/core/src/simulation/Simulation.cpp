@@ -126,6 +126,10 @@ QVector<EntityId> topologicalOrder(const QVector<EntityId> &roots, const Documen
         state[id] = 1;
         for (EntityId dependency : dependencies(analysis, id)) {
             const DocumentElement *element = document.find(dependency);
+            if (element && element->kind() == ElementKind::Lookup) {
+                state[dependency] = 2;
+                continue;
+            }
             const bool currentState = element && element->kind() == ElementKind::Stock;
             if (!initialization && currentState)
                 continue;
@@ -385,6 +389,11 @@ SimulationCompileResult compileSimulation(const Document &document)
     QVector<EntityId> outputs;
     for (const ModelElement &element : document.model().elements()) {
         const EntityId id = element.id();
+        if (element.kind() == ElementKind::Lookup) {
+            if (!element.lookup())
+                addIssue(result, id, "Lookup has no definition: " + element.displayName(), "missing-lookup-definition");
+            continue;
+        }
         const Formula &definition = element.kind() == ElementKind::Stock
             ? static_cast<const Stock &>(element).initialFormula() : element.formula();
         if (!definition.root() && element.elementEquations().empty()) {
@@ -443,8 +452,13 @@ SimulationCompileResult compileSimulation(const Document &document)
             ArrayLayout(element.dimensions(), std::move(shape), steps, count));
     }
     for (const ModelElement &element : document.model().elements()) {
-        plan.m_referenceBindings.insert(element.nameKey(),
-            {ReferenceBindingKind::Variable, element.id(), 0});
+        if (element.kind() == ElementKind::Lookup) {
+            plan.m_referenceBindings.insert(element.nameKey(),
+                {ReferenceBindingKind::Lookup, element.id(), 0, element.lookup()});
+        } else {
+            plan.m_referenceBindings.insert(element.nameKey(),
+                {ReferenceBindingKind::Variable, element.id(), 0});
+        }
     }
     for (const Dimension &dimension : document.dimensions()) {
         plan.m_referenceBindings.insert(dimension.nameKey,
@@ -675,6 +689,13 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
         }
         return std::nullopt;
     };
+    context.readLookup = [&resolved](const QString &name, double input) -> std::optional<double> {
+        const auto binding = resolved.plan.m_referenceBindings.constFind(name);
+        if (binding == resolved.plan.m_referenceBindings.constEnd()
+            || binding->kind != ReferenceBindingKind::Lookup || !binding->lookup)
+            return std::nullopt;
+        return binding->lookup->evaluate(input);
+    };
     const auto evaluate = [&](const QVector<EntityId> &order, double time, double dt,
                             QHash<EntityId, Value> &target) -> std::optional<ModelIssue> {
         evaluationTime = time;
@@ -695,7 +716,10 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
                 const auto *scalar = std::get_if<double>(&*evaluated.value);
                 if (!scalar)
                     return ModelIssue {id, IssueSeverity::Error, "Simulation formula did not produce a scalar", "non-scalar-simulation-value", {}};
-                target[id] = *scalar;
+                double value = *scalar;
+                if (element->lookup())
+                    value = element->lookup()->evaluate(value);
+                target[id] = value;
             } else {
                 const auto layout = m_plan.m_arrayLayouts.constFind(id);
                 if (layout == m_plan.m_arrayLayouts.constEnd())
@@ -727,6 +751,10 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
                             return issue;
                         output.values[*flat] = *value;
                     }
+                }
+                if (element->lookup()) {
+                    for (double &value : output.values)
+                        value = element->lookup()->evaluate(value);
                 }
                 target[id] = std::move(output);
             }

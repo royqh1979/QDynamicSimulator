@@ -3,8 +3,10 @@
 #include <core/Element.h>
 #include <core/ElementRange.h>
 #include <core/formula/Formula.h>
+#include <core/Lookup.h>
 
 #include <cstddef>
+#include <optional>
 #include <QString>
 #include <utility>
 #include <QVector>
@@ -49,6 +51,7 @@ public:
     const std::vector<ArrayElementFormula> &elementEquations() const { return m_elementFormulas; }
     const QString &unit() const { return m_unit; }
     const QString &comment() const { return m_comment; }
+    const std::optional<LookupDefinition> &lookup() const { return m_lookup; }
 
 protected:
     ModelElement(EntityId id, ElementKind kind)
@@ -92,6 +95,7 @@ private:
     }
     void setUnit(QString unit) { m_unit = std::move(unit); }
     void setComment(QString comment) { m_comment = std::move(comment); }
+    void setLookup(std::optional<LookupDefinition> lookup) { m_lookup = std::move(lookup); }
 
     QVector<ArrayElementEquation> elementEquationData() const
     {
@@ -108,6 +112,7 @@ private:
     std::vector<ArrayElementFormula> m_elementFormulas;
     QString m_unit;
     QString m_comment;
+    std::optional<LookupDefinition> m_lookup;
 };
 
 class Stock final : public ModelElement
@@ -133,6 +138,15 @@ class Variable final : public ModelElement
 public:
     Variable(EntityId id, ElementKind kind)
         : ModelElement(id, kind)
+    {
+    }
+};
+
+class Lookup final : public ModelElement
+{
+public:
+    explicit Lookup(EntityId id)
+        : ModelElement(id, ElementKind::Lookup)
     {
     }
 };

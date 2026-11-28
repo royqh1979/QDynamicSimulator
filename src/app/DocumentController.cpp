@@ -159,6 +159,14 @@ EntityId DocumentController::createVariable(ElementKind kind, const QPointF &pos
     return id;
 }
 
+EntityId DocumentController::createLookup(const QPointF &position)
+{
+    const EntityId id = m_document.createLookup(vec(position));
+    if (id != 0)
+        pushChanges(ChangeSet {{addedRecord(m_document, id)}}, true);
+    return id;
+}
+
 EntityId DocumentController::createFlow(EntityId from, EntityId to)
 {
     return createFlow(from, to, std::nullopt, std::nullopt);
@@ -334,6 +342,21 @@ void DocumentController::setCommentContent(EntityId id, const QString &content)
     pushChanges(ChangeSet {{std::move(record)}}, true);
 }
 
+bool DocumentController::setLookup(EntityId id, const std::optional<LookupDefinition> &lookup)
+{
+    if (!m_document.find(id))
+        return false;
+    ChangeRecord record;
+    record.id = id;
+    record.kind = m_document.find(id)->kind();
+    record.before = m_document.capture(id);
+    if (!m_document.setLookup(id, lookup))
+        return false;
+    record.after = m_document.capture(id);
+    pushChanges(ChangeSet {{std::move(record)}}, true);
+    return true;
+}
+
 bool DocumentController::setSimulationSettings(const SimulationSettings &settings)
 {
     if (!settings.isValid())
@@ -501,6 +524,8 @@ QVector<EntityId> DocumentController::pasteClipboard(const ClipboardData &clipbo
                 id = m_document.createCloud(source.position + Vec2({offset.x(), offset.y()}));
             } else if (source.kind == ElementKind::Comment) {
                 id = m_document.createComment(source.content, source.position + Vec2({offset.x(), offset.y()}));
+            } else if (source.kind == ElementKind::Lookup) {
+                id = m_document.createLookup(source.position + Vec2({offset.x(), offset.y()}));
             } else {
                 id = m_document.createVariable(source.kind, source.position + Vec2({offset.x(), offset.y()}));
             }
@@ -511,7 +536,7 @@ QVector<EntityId> DocumentController::pasteClipboard(const ClipboardData &clipbo
             ElementData target = source;
             target.id = id;
             target.position = source.position + Vec2({offset.x(), offset.y()});
-            if (source.kind <= ElementKind::Variable)
+            if (source.kind <= ElementKind::Lookup)
                 target.displayName = uniqueCopyName(m_document, source.displayName);
             if (source.kind == ElementKind::Flow)
                 target.flowEndpoints = {idMap[source.flowEndpoints.from], idMap[source.flowEndpoints.to]};

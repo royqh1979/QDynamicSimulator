@@ -27,6 +27,7 @@ struct ElementData {
     QVector<ArrayElementEquation> elementEquations;
     QString unit;
     QString comment;
+    std::optional<LookupDefinition> lookup;
     QString content;
     FlowEndpoints flowEndpoints;
     EntityId from = 0;
@@ -39,7 +40,7 @@ struct ElementData {
     {
         return id == other.id && kind == other.kind && displayName == other.displayName && equation == other.equation
             && dimensions == other.dimensions && elementEquations == other.elementEquations && initialEquation == other.initialEquation
-            && unit == other.unit && comment == other.comment && content == other.content
+            && unit == other.unit && comment == other.comment && lookup == other.lookup && content == other.content
             && flowEndpoints == other.flowEndpoints && from == other.from && to == other.to
             && position == other.position && route == other.route && font == other.font;
     }
@@ -75,6 +76,7 @@ public:
     bool setSimulationSettings(const SimulationSettings &settings);
 
     EntityId createVariable(ElementKind kind, Vec2 position = {});
+    EntityId createLookup(Vec2 position = {});
     EntityId createFlow(EntityId from, EntityId to);
     EntityId createConnector(EntityId from, EntityId to);
     EntityId createCloud(Vec2 position = {});
@@ -94,6 +96,7 @@ public:
     bool setUnit(EntityId id, const QString &unit);
     bool setComment(EntityId id, const QString &comment);
     bool setCommentContent(EntityId id, const QString &content);
+    bool setLookup(EntityId id, const std::optional<LookupDefinition> &lookup);
     bool setPosition(EntityId id, Vec2 position);
     bool setFontStyle(EntityId id, const FontStyle &font);
     bool reconnectFlow(EntityId id, EntityId from, EntityId to);

@@ -301,6 +301,8 @@ QString nativeKindTag(core::ElementKind kind)
         return QStringLiteral("flow");
     case core::ElementKind::Variable:
         return QStringLiteral("variable");
+    case core::ElementKind::Lookup:
+        return QStringLiteral("lookup");
     case core::ElementKind::Cloud:
         return QStringLiteral("cloud");
     case core::ElementKind::Comment:
@@ -320,6 +322,8 @@ core::ElementKind nativeKind(const QString &tag, bool &valid)
         return core::ElementKind::Flow;
     if (tag == QStringLiteral("variable"))
         return core::ElementKind::Variable;
+    if (tag == QStringLiteral("lookup"))
+        return core::ElementKind::Lookup;
     if (tag == QStringLiteral("cloud"))
         return core::ElementKind::Cloud;
     if (tag == QStringLiteral("comment"))
@@ -352,6 +356,73 @@ void writeNativeFont(QXmlStreamWriter &writer, const core::FontStyle &font)
         writer.writeAttribute(QStringLiteral("font-family"), (font.family));
     if (font.pointSize > 0)
         writer.writeAttribute(QStringLiteral("font-size"), QString::number(font.pointSize));
+}
+
+QString numberList(const QVector<double> &values)
+{
+    QStringList parts;
+    for (double value : values)
+        parts.push_back(QString::number(value, 'g', 15));
+    return parts.join(',');
+}
+
+std::optional<QVector<double>> parseNumberList(const QString &text)
+{
+    QVector<double> values;
+    const QStringList parts = text.split(',', Qt::SkipEmptyParts);
+    for (const QString &part : parts) {
+        bool valid = false;
+        const double value = part.trimmed().toDouble(&valid);
+        if (!valid)
+            return std::nullopt;
+        values.push_back(value);
+    }
+    return values;
+}
+
+void writeNativeLookup(QXmlStreamWriter &writer, const core::LookupDefinition &lookup)
+{
+    writer.writeStartElement(QStringLiteral("lookup"));
+    const QString kind = lookup.kind() == core::LookupKind::Continuous ? QStringLiteral("continuous")
+        : lookup.kind() == core::LookupKind::Extrapolate ? QStringLiteral("extrapolate") : QStringLiteral("discrete");
+    writer.writeAttribute(QStringLiteral("kind"), kind);
+    writer.writeTextElement(QStringLiteral("x"), numberList(lookup.x()));
+    writer.writeTextElement(QStringLiteral("y"), numberList(lookup.y()));
+    writer.writeEndElement();
+}
+
+std::optional<core::LookupDefinition> parseNativeLookup(QXmlStreamReader &reader)
+{
+    const QString kindText = reader.attributes().value(QStringLiteral("kind")).toString();
+    core::LookupKind kind = core::LookupKind::Continuous;
+    if (kindText == QStringLiteral("extrapolate"))
+        kind = core::LookupKind::Extrapolate;
+    else if (kindText == QStringLiteral("discrete"))
+        kind = core::LookupKind::Discrete;
+    else if (!kindText.isEmpty() && kindText != QStringLiteral("continuous"))
+        return std::nullopt;
+    QVector<double> x;
+    QVector<double> y;
+    while (reader.readNext() != QXmlStreamReader::Invalid) {
+        if (reader.isEndElement() && reader.name() == QStringLiteral("lookup"))
+            break;
+        if (!reader.isStartElement())
+            continue;
+        if (reader.name() == QStringLiteral("x")) {
+            const auto values = parseNumberList(reader.readElementText());
+            if (!values)
+                return std::nullopt;
+            x = *values;
+        } else if (reader.name() == QStringLiteral("y")) {
+            const auto values = parseNumberList(reader.readElementText());
+            if (!values)
+                return std::nullopt;
+            y = *values;
+        } else {
+            reader.skipCurrentElement();
+        }
+    }
+    return core::LookupDefinition::create(std::move(x), std::move(y), kind);
 }
 
 void writeNativeDimensions(QXmlStreamWriter &writer, const core::Document &document)
@@ -445,6 +516,8 @@ QByteArray writeNativeXml(const core::Document &document, const Workspace &works
             writeNativeRoute(writer, document.diagram().route(element.id()));
         }
         writeNativeArrayDefinition(writer, document, element);
+        if (element.lookup())
+            writeNativeLookup(writer, *element.lookup());
         if (element.elementEquations().empty()) {
             if (element.kind() == core::ElementKind::Stock)
                 writer.writeTextElement(QStringLiteral("initial"), static_cast<const core::Stock &>(element).initialEquation());
@@ -686,6 +759,11 @@ bool parseNativeElement(QXmlStreamReader &reader, NativeRecord &record)
             if (!parseNativeArrayElement(reader, entry))
                 return false;
             record.data.elementEquations.push_back(std::move(entry));
+        } else if (child == QStringLiteral("lookup")) {
+            const auto lookup = parseNativeLookup(reader);
+            if (!lookup)
+                return false;
+            record.data.lookup = *lookup;
         } else if (child == QStringLiteral("units"))
             record.data.unit = reader.readElementText();
         else if (child == QStringLiteral("doc"))

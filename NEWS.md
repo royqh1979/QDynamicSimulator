@@ -84,3 +84,4 @@
 - 结果查询统一使用 nameKey，EntityId 和 RunVariableInfo.id 私有化，仅由 SimulationRun 内部映射；Graph/Table、Causes Strip 和 Runs Compare 不再接触运行副本 ID。
 - 修复不同析构顺序下 Scene、属性面板和仿真结果视图可能访问失效 Controller 的随机崩溃；析构期停止业务通知，连接端点改用弱引用，文档批量重置阻止控制柄重入。
 - SimulationRun 标量/数组序列改为 QVector 值返回，结果表显式持有时间和数值容器，不再依赖 Run 内部指针寿命。
+- 新增不可变 LookupDefinition 和独立/内联 Lookup：支持 continuous、extrapolate、discrete、域外夹取/外推、标量/数组求值、编译依赖、QDS/XMILE 往返及 SDXorg 参考结果验证；不包含专用编辑 UI。

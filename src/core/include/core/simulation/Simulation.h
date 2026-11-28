@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/SimulationSettings.h>
+#include <core/Lookup.h>
 #include <core/Validation.h>
 #include <core/formula/Evaluation.h>
 
@@ -79,13 +80,15 @@ enum class ReferenceBindingKind {
     StartTime,
     StopTime,
     Pi,
-    Infinity
+    Infinity,
+    Lookup
 };
 
 struct ReferenceBinding {
     ReferenceBindingKind kind = ReferenceBindingKind::Variable;
     EntityId variable = 0;
     std::size_t element = 0;
+    std::optional<LookupDefinition> lookup;
 };
 
 struct FlowRatePlan {
