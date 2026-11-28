@@ -19,6 +19,8 @@ QString defaultName(ElementKind kind)
         return "Flow";
     case ElementKind::Variable:
         return "Variable";
+    case ElementKind::Lookup:
+        return "Lookup";
     default:
         return {};
     }
@@ -115,6 +117,13 @@ int removalRank(ElementKind kind)
     if (kind == ElementKind::Flow)
         return 1;
     return 2;
+}
+
+bool validLookupData(ElementKind kind, const std::optional<LookupDefinition> &lookup)
+{
+    if (kind == ElementKind::Lookup)
+        return lookup.has_value();
+    return !lookup || kind == ElementKind::Variable || kind == ElementKind::Flow;
 }
 
 } // namespace
@@ -360,6 +369,15 @@ EntityId Document::createVariable(ElementKind kind, Vec2 position)
     return insert(std::move(variable), position);
 }
 
+EntityId Document::createLookup(Vec2 position)
+{
+    auto lookup = std::make_unique<Lookup>(m_nextId++);
+    const QString name = uniqueName(ElementKind::Lookup);
+    lookup->setName(name, normalizeIdentifier(name));
+    lookup->setLookup(LookupDefinition::create({0.0, 1.0}, {0.0, 1.0}, LookupKind::Continuous));
+    return insert(std::move(lookup), position);
+}
+
 EntityId Document::createFlow(EntityId from, EntityId to)
 {
     if (!validFlowConnection(0, from, to))
@@ -460,6 +478,7 @@ std::optional<ElementData> Document::capture(EntityId id) const
         data.elementEquations = model->elementEquationData();
         data.unit = model->unit();
         data.comment = model->comment();
+        data.lookup = model->lookup();
     }
     if (const auto *stock = dynamic_cast<const Stock *>(element))
         data.initialEquation = stock->initialEquation();
@@ -480,12 +499,12 @@ bool Document::restore(const ElementData &data)
     if (find(id))
         return false;
     const QString normalized = normalizeIdentifier(data.displayName);
-    if (data.kind <= ElementKind::Variable && (normalized.isEmpty() || m_nameIndex.count(normalized)
+    if (data.kind <= ElementKind::Lookup && (normalized.isEmpty() || m_nameIndex.count(normalized)
             || m_dimensionIndex.count(normalized) || hasMacroName(normalized)
             || !validArrayData(data.dimensions, data.elementEquations,
                 data.kind == ElementKind::Stock ? data.initialEquation : data.equation)))
         return false;
-    if (!validFontData(data.kind, data.font))
+    if (!validFontData(data.kind, data.font) || !validLookupData(data.kind, data.lookup))
         return false;
     if ((data.kind == ElementKind::Flow || data.kind == ElementKind::Connector)
         && !validRouteData(data.kind, data.route))
@@ -509,7 +528,9 @@ bool Document::restore(const ElementData &data)
         element = std::make_unique<Comment>(id);
     } else if (data.kind == ElementKind::Stock) {
         element = std::make_unique<Stock>(id);
-    } else if (data.kind <= ElementKind::Variable) {
+    } else if (data.kind == ElementKind::Lookup) {
+        element = std::make_unique<Lookup>(id);
+    } else if (data.kind <= ElementKind::Lookup) {
         element = std::make_unique<Variable>(id, data.kind);
     } else {
         return false;
@@ -523,6 +544,7 @@ bool Document::restore(const ElementData &data)
         model->setFormulaData(data.equation, std::move(dimensions), data.elementEquations);
         model->setUnit(data.unit);
         model->setComment(data.comment);
+        model->setLookup(data.lookup);
         if (auto *stock = dynamic_cast<Stock *>(element.get()))
             stock->setInitialEquation(data.initialEquation);
     }
@@ -547,7 +569,8 @@ bool Document::apply(const ElementData &data)
     DocumentElement *element = findMutable(data.id);
     if (!element)
         return restore(data);
-    if (element->kind() != data.kind || !validFontData(data.kind, data.font))
+    if (element->kind() != data.kind || !validFontData(data.kind, data.font)
+        || !validLookupData(data.kind, data.lookup))
         return false;
     if ((data.kind == ElementKind::Flow || data.kind == ElementKind::Connector)
         && !validRouteData(data.kind, data.route))
@@ -571,6 +594,7 @@ bool Document::apply(const ElementData &data)
         model->setFormulaData(data.equation, std::move(dimensions), data.elementEquations);
         model->setUnit(data.unit);
         model->setComment(data.comment);
+        model->setLookup(data.lookup);
         if (auto *stock = dynamic_cast<Stock *>(element))
             stock->setInitialEquation(data.initialEquation);
     }
@@ -623,7 +647,7 @@ bool Document::rename(EntityId id, const QString &displayName)
 bool Document::setEquation(EntityId id, const QString &equation)
 {
     auto *model = dynamic_cast<ModelElement *>(findMutable(id));
-    if (!model || model->kind() == ElementKind::Stock)
+    if (!model || model->kind() == ElementKind::Stock || model->kind() == ElementKind::Lookup)
         return false;
     model->setEquation(equation);
     return true;
@@ -641,7 +665,7 @@ bool Document::setInitialEquation(EntityId id, const QString &equation)
 bool Document::setDimensions(EntityId id, const QVector<QString> &dimensions)
 {
     auto *model = dynamic_cast<ModelElement *>(findMutable(id));
-    if (!model)
+    if (!model || model->kind() == ElementKind::Lookup)
         return false;
     QVector<QString> keys;
     keys.reserve(dimensions.size());
@@ -697,6 +721,15 @@ bool Document::setCommentContent(EntityId id, const QString &content)
     if (!comment)
         return false;
     comment->setContent(content);
+    return true;
+}
+
+bool Document::setLookup(EntityId id, const std::optional<LookupDefinition> &lookup)
+{
+    auto *model = dynamic_cast<ModelElement *>(findMutable(id));
+    if (!model || !validLookupData(model->kind(), lookup))
+        return false;
+    model->setLookup(lookup);
     return true;
 }
 
@@ -787,7 +820,7 @@ bool Document::validFontData(ElementKind kind, const FontStyle &font)
 {
     if (font.pointSize < 0)
         return false;
-    return kind <= ElementKind::Variable || kind == ElementKind::Comment || font == FontStyle {};
+    return kind <= ElementKind::Lookup || kind == ElementKind::Comment || font == FontStyle {};
 }
 
 bool Document::validRouteData(ElementKind kind, const Route &route)

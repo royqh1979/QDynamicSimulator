@@ -720,16 +720,40 @@ private:
         return evaluate(macro.definition->formula().root());
     }
 
+    EvaluationResult lookup(const CallNode &node)
+    {
+        EvaluationResult input = evaluate(node.argument(0));
+        if (!input.value)
+            return input;
+        const auto evaluateOne = [this, &node](double value) -> std::optional<double> {
+            return m_context.readLookup(node.nameKey(), value);
+        };
+        if (const auto *scalar = std::get_if<double>(&*input.value)) {
+            const auto value = evaluateOne(*scalar);
+            return value ? success(*value) : failure(&node, "Unknown function: " + node.nameKey());
+        }
+        ArrayValue output = *arrayOf(*input.value);
+        for (double &value : output.values) {
+            const auto evaluated = evaluateOne(value);
+            if (!evaluated)
+                return failure(&node, "Unknown function: " + node.nameKey());
+            value = *evaluated;
+        }
+        return success(std::move(output));
+    }
+
     EvaluationResult call(const CallNode &node)
     {
         const FunctionSignature *signature = findFunctionSignature(node.nameKey());
         if (!signature) {
-            if (!m_context.readMacro)
-                return failure(&node, "Unknown function: " + node.nameKey());
-            const auto macro = m_context.readMacro(node.nameKey(), node.argumentCount(), 1);
-            if (!macro)
-                return failure(&node, "Unknown function: " + node.nameKey());
-            return invokeMacro(node, *macro);
+            if (m_context.readMacro) {
+                const auto macro = m_context.readMacro(node.nameKey(), node.argumentCount(), 1);
+                if (macro)
+                    return invokeMacro(node, *macro);
+            }
+            if (m_context.readLookup && node.argumentCount() == 1)
+                return lookup(node);
+            return failure(&node, "Unknown function: " + node.nameKey());
         }
         if (node.argumentCount() < signature->minArguments || node.argumentCount() > signature->maxArguments)
             return failure(&node, "Invalid argument count for function: " + node.nameKey());

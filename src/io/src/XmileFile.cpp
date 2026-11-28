@@ -184,6 +184,8 @@ QString variableTag(core::ElementKind kind)
         return QStringLiteral("flow");
     case core::ElementKind::Variable:
         return QStringLiteral("aux");
+    case core::ElementKind::Lookup:
+        return QStringLiteral("gf");
     case core::ElementKind::Cloud:
         return QStringLiteral("cloud");
     case core::ElementKind::Comment:
@@ -206,6 +208,106 @@ QString elementName(const core::DocumentElement &element)
 const core::ModelElement *findElementByName(const core::Document &document, const QString &name)
 {
     return document.model().findByName(name);
+}
+
+QString xmileNumberList(const QVector<double> &values)
+{
+    QStringList parts;
+    for (double value : values)
+        parts.push_back(QString::number(value, 'g', 15));
+    return parts.join(',');
+}
+
+std::optional<QVector<double>> parseXmileNumberList(const QString &text, QChar separator = ',')
+{
+    QVector<double> values;
+    const QStringList parts = text.split(separator, Qt::SkipEmptyParts);
+    for (const QString &part : parts) {
+        bool valid = false;
+        const double value = part.trimmed().toDouble(&valid);
+        if (!valid)
+            return std::nullopt;
+        values.push_back(value);
+    }
+    return values;
+}
+
+void writeXmileLookupContent(QXmlStreamWriter &writer, const core::LookupDefinition &lookup)
+{
+    const QString type = lookup.kind() == core::LookupKind::Continuous ? QStringLiteral("continuous")
+        : lookup.kind() == core::LookupKind::Extrapolate ? QStringLiteral("extrapolate") : QStringLiteral("discrete");
+    writer.writeAttribute(QStringLiteral("type"), type);
+    writer.writeTextElement(QStringLiteral("xpts"), xmileNumberList(lookup.x()));
+    writer.writeTextElement(QStringLiteral("ypts"), xmileNumberList(lookup.y()));
+}
+
+void writeXmileLookup(QXmlStreamWriter &writer, const core::LookupDefinition &lookup)
+{
+    writer.writeStartElement(QStringLiteral("gf"));
+    writeXmileLookupContent(writer, lookup);
+    writer.writeEndElement();
+}
+
+std::optional<core::LookupDefinition> parseXmileLookup(QXmlStreamReader &reader)
+{
+    core::LookupKind kind = core::LookupKind::Continuous;
+    const QXmlStreamAttributes attributes = reader.attributes();
+    const QString type = attributes.value(QStringLiteral("type")).toString().trimmed();
+    if (type == QStringLiteral("extrapolate"))
+        kind = core::LookupKind::Extrapolate;
+    else if (type == QStringLiteral("discrete"))
+        kind = core::LookupKind::Discrete;
+    else if (!type.isEmpty() && type != QStringLiteral("continuous"))
+        return std::nullopt;
+    if (attributes.value(QStringLiteral("extrapolate")).toString().compare("true", Qt::CaseInsensitive) == 0)
+        kind = core::LookupKind::Extrapolate;
+    if (attributes.value(QStringLiteral("discrete")).toString().compare("true", Qt::CaseInsensitive) == 0)
+        kind = core::LookupKind::Discrete;
+
+    QVector<double> x;
+    QVector<double> y;
+    double minimum = 0.0;
+    double maximum = 0.0;
+    bool hasScale = false;
+    bool validScale = false;
+    while (reader.readNext() != QXmlStreamReader::Invalid) {
+        if (reader.isEndElement() && reader.name() == QStringLiteral("gf"))
+            break;
+        if (!reader.isStartElement())
+            continue;
+        const QString child = reader.name().toString();
+        if (child == QStringLiteral("xpts") || child == QStringLiteral("ypts")) {
+            const QString separatorText = reader.attributes().value(QStringLiteral("sep")).toString();
+            if (separatorText.size() > 1)
+                return std::nullopt;
+            const QChar separator = separatorText.isEmpty() ? QChar(',') : separatorText.front();
+            const auto values = parseXmileNumberList(reader.readElementText(), separator);
+            if (!values)
+                return std::nullopt;
+            if (child == QStringLiteral("xpts"))
+                x = *values;
+            else
+                y = *values;
+        } else if (child == QStringLiteral("xscale")) {
+            bool minimumOk = false;
+            bool maximumOk = false;
+            minimum = reader.attributes().value(QStringLiteral("min")).toDouble(&minimumOk);
+            maximum = reader.attributes().value(QStringLiteral("max")).toDouble(&maximumOk);
+            hasScale = true;
+            validScale = minimumOk && maximumOk && std::isfinite(minimum) && std::isfinite(maximum) && maximum > minimum;
+            reader.skipCurrentElement();
+        } else {
+            reader.skipCurrentElement();
+        }
+    }
+    if (hasScale) {
+        if (!validScale || y.size() < 2 || !x.isEmpty())
+            return std::nullopt;
+        x.resize(y.size());
+        for (int index = 0; index < y.size(); ++index)
+            x[index] = minimum + (maximum - minimum) * index / (y.size() - 1);
+    }
+    return core::LookupDefinition::create(std::move(x), std::move(y), kind);
 }
 
 void writeXmileDimensions(QXmlStreamWriter &writer, const core::Document &document)
@@ -332,11 +434,15 @@ QByteArray writeXml(const core::Document &document, QString *errorMessage)
         writer.writeStartElement(variableTag(variable.kind()));
         writer.writeAttribute(QStringLiteral("name"), name);
         writeXmileArrayDefinition(writer, document, variable);
-        if (variable.elementEquations().empty()) {
+        if (variable.elementEquations().empty() && variable.kind() != core::ElementKind::Lookup) {
             const QString equation = variable.kind() == core::ElementKind::Stock
                 ? static_cast<const core::Stock &>(variable).initialEquation() : variable.equation();
             writer.writeTextElement(QStringLiteral("eqn"), equation.isEmpty() ? QStringLiteral("0") : equation);
         }
+        if (variable.kind() == core::ElementKind::Lookup && variable.lookup())
+            writeXmileLookupContent(writer, *variable.lookup());
+        else if (variable.lookup())
+            writeXmileLookup(writer, *variable.lookup());
         if (!variable.unit().isEmpty())
             writer.writeTextElement(QStringLiteral("units"), (variable.unit()));
         if (!variable.comment().isEmpty())
@@ -362,7 +468,8 @@ QByteArray writeXml(const core::Document &document, QString *errorMessage)
     for (const core::DocumentElement &element : document.elements()) {
         if (element.kind() == core::ElementKind::Connector || element.kind() == core::ElementKind::Cloud)
             continue;
-        writer.writeStartElement(variableTag(element.kind()));
+        writer.writeStartElement(element.kind() == core::ElementKind::Lookup
+            ? QStringLiteral("aux") : variableTag(element.kind()));
         const core::Vec2 position = document.diagram().position(element.id());
         if (element.kind() != core::ElementKind::Comment)
             writer.writeAttribute(QStringLiteral("name"), elementName(element));
@@ -587,8 +694,24 @@ bool parseVariable(
     else if (tag == QStringLiteral("flow")) {
         variable.kind = core::ElementKind::Flow;
         variable.route.mode = core::RouteMode::Straight;
+    } else if (tag == QStringLiteral("gf")) {
+        variable.kind = core::ElementKind::Lookup;
     } else {
         variable.kind = core::ElementKind::Variable;
+    }
+
+    if (variable.kind == core::ElementKind::Lookup) {
+        const auto lookup = parseXmileLookup(reader);
+        if (!lookup) {
+            setError(errorMessage, translate("A lookup definition is invalid: %1").arg(name));
+            return false;
+        }
+        variable.lookup = *lookup;
+        if (!model.restore(variable)) {
+            setError(errorMessage, translate("The model contains a duplicate variable name: %1").arg(name));
+            return false;
+        }
+        return true;
     }
 
     QStringList inflows;
@@ -622,6 +745,14 @@ bool parseVariable(
             variable.unit = reader.readElementText().trimmed();
         else if (child == QStringLiteral("doc"))
             variable.comment = reader.readElementText();
+        else if (child == QStringLiteral("gf")) {
+            const auto lookup = parseXmileLookup(reader);
+            if (!lookup) {
+                setError(errorMessage, translate("A lookup definition is invalid: %1").arg(name));
+                return false;
+            }
+            variable.lookup = *lookup;
+        }
         else if (child == QStringLiteral("inflow"))
             inflows.append(referenceName(reader.readElementText()));
         else if (child == QStringLiteral("outflow"))
@@ -691,7 +822,8 @@ bool parseVariables(
         if (!reader.isStartElement())
             continue;
         const QString tag = reader.name().toString();
-        if (tag == QStringLiteral("stock") || tag == QStringLiteral("flow") || tag == QStringLiteral("aux")) {
+        if (tag == QStringLiteral("stock") || tag == QStringLiteral("flow") || tag == QStringLiteral("aux")
+            || tag == QStringLiteral("gf")) {
             if (!parseVariable(reader, model, pendingFlows, pendingAuxiliaries, pendingFlowEndpoints, errorMessage))
                 return false;
         } else if (tag == QStringLiteral("module")) {

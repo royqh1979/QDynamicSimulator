@@ -105,6 +105,7 @@ class TestXmileFile : public QObject
 
 private slots:
     void nativeRoundTrip();
+    void lookupRoundTrip();
     void plainXmlOpen();
     void sirModelImport();
     void simulationSettingsImport();
@@ -287,6 +288,53 @@ void TestXmileFile::nativeRoundTrip()
     QCOMPARE(commentConnectorCount, 2);
     QCOMPARE(cloudCount, 2);
     QVERIFY(standaloneCloudFound);
+}
+
+void TestXmileFile::lookupRoundTrip()
+{
+    Document document;
+    const EntityId lookup = document.createLookup();
+    QVERIFY(document.rename(lookup, "Rate Table"));
+    const auto definition = LookupDefinition::create(
+        {0.0, 1.0, 2.0}, {0.0, 2.0, 4.0}, LookupKind::Extrapolate);
+    QVERIFY(definition && document.setLookup(lookup, definition));
+    const EntityId inlineVariable = document.createVariable(ElementKind::Variable);
+    document.rename(inlineVariable, "Inline");
+    document.setEquation(inlineVariable, "1");
+    const auto inlineDefinition = LookupDefinition::create(
+        {0.0, 1.0}, {2.0, 2.0}, LookupKind::Discrete);
+    QVERIFY(inlineDefinition && document.setLookup(inlineVariable, inlineDefinition));
+
+    QString error;
+    const QByteArray xml = qds::io::DocumentFile::toXml(document, {}, &error);
+    QVERIFY2(!xml.isEmpty(), qPrintable(error));
+    QVERIFY(xml.contains("<lookup kind=\"extrapolate\""));
+    Document native;
+    qds::io::Workspace workspace;
+    QVERIFY2(qds::io::DocumentFile::fromXml(xml, native, workspace, &error), qPrintable(error));
+    const ModelElement *nativeLookup = native.model().findByName("Rate Table");
+    const ModelElement *nativeInline = native.model().findByName("Inline");
+    QVERIFY(nativeLookup && nativeInline);
+    QVERIFY(nativeLookup->lookup() == definition);
+    QVERIFY(nativeInline->lookup() == inlineDefinition);
+
+    QByteArray invalidXml = xml;
+    invalidXml.replace("<x>0,1,2</x>", "<x>0,0,2</x>");
+    Document invalid;
+    QVERIFY(!qds::io::DocumentFile::fromXml(invalidXml, invalid, workspace, &error));
+
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString path = directory.filePath(QStringLiteral("lookup.xmile"));
+    QVERIFY2(qds::io::XmileFile::exportFile(path, document, &error), qPrintable(error));
+    Document imported;
+    QVERIFY2(qds::io::XmileFile::importFile(path, imported, &error), qPrintable(error));
+    const ModelElement *importedLookup = imported.model().findByName("Rate Table");
+    const ModelElement *importedInline = imported.model().findByName("Inline");
+    QVERIFY(importedLookup && importedInline);
+    QCOMPARE(importedLookup->kind(), ElementKind::Lookup);
+    QVERIFY(importedLookup->lookup() == definition);
+    QVERIFY(importedInline->lookup() == inlineDefinition);
 }
 
 void TestXmileFile::plainXmlOpen()

@@ -111,6 +111,9 @@ private slots:
     void teacupModel();
     void chainedInitializationModel();
     void sirModel();
+    void lookupModel();
+    void lookupXscaleModel();
+    void inlineLookupModel();
 };
 
 void TestSimulationResults::absModel()
@@ -150,6 +153,21 @@ void TestSimulationResults::sirModel()
     for (int index = 0; index < run.times().size(); ++index) {
         QVERIFY(std::abs(susceptible.at(index) + infectious.at(index) + recovered.at(index) - initialPopulation) < 1e-8);
     }
+}
+
+void TestSimulationResults::lookupModel()
+{
+    verifyReferenceModel(QStringLiteral(QDS_LOOKUP_XMILE_PATH), QStringLiteral(QDS_LOOKUP_OUTPUT_PATH));
+}
+
+void TestSimulationResults::lookupXscaleModel()
+{
+    verifyReferenceModel(QStringLiteral(QDS_LOOKUP_XSCALE_XMILE_PATH), QStringLiteral(QDS_LOOKUP_OUTPUT_PATH));
+}
+
+void TestSimulationResults::inlineLookupModel()
+{
+    verifyReferenceModel(QStringLiteral(QDS_INLINE_LOOKUP_XMILE_PATH), QStringLiteral(QDS_INLINE_LOOKUP_OUTPUT_PATH));
 }
 
 } // namespace

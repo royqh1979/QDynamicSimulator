@@ -133,7 +133,7 @@
 | 编号 | 待办需求 | 首版边界 | 优先级 |
 | --- | --- | --- | --- |
 | FR-521 | 完整数组语义与数组仿真：Subrange、`:EXCEPT:` 分片定义、下标映射、混合变量类型及逐元素执行 | Apply-to-All、显式元素、字面量、数组 Stock/Flow/Variable、Euler/RK4 已实现；混合分片拒绝，完整下标映射与数组结果 UI 待办 | 高 |
-| FR-522 | Vensim Lookup 定义、域外插值/外推规则及 Lookup 模型与编辑器 | Lookup 数据模型和求值尚未实现 | 高 |
+| FR-522 | Vensim Lookup 定义、域外插值/外推规则及 Lookup 模型与编辑器 | 核心 LookupDefinition、continuous/extrapolate/discrete、独立/内联 XMILE 与标量/数组仿真已实现；Vensim MDL 文本 Lookup 和图形编辑器待办 | 高 |
 | FR-523 | 状态与历史函数：DELAY 系列、SMOOTH 系列、INITIAL/ACTIVE INITIAL、FORECAST、TREND 等 | 除 Stock 的顶层 INTEG 拆分外，不声称支持这些状态语义 | 高 |
 | FR-524 | Data 与外部数据：原始 Data、`:RAW:`、`:NA:`、插值/保持/前移、TIME SHIFT、Excel/Lotus/ODBC 获取 | `:=` 可作为定义形式保留；外部数据读取和时间序列执行尚未实现 | 高 |
 | FR-525 | 完整宏：输出参数、内部变量、Stock/延迟宏、跨宏调用和模型变量 `$` 引用 | 仅导入无输出参数、无内部变量的表达式宏，其余拒绝 | 中 |

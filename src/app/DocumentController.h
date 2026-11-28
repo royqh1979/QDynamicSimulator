@@ -30,6 +30,7 @@ public:
     QUndoStack &undoStack();
 
     qds::core::EntityId createVariable(qds::core::ElementKind kind, const QPointF &position);
+    qds::core::EntityId createLookup(const QPointF &position);
     qds::core::EntityId createFlow(qds::core::EntityId from, qds::core::EntityId to);
     qds::core::EntityId createFlow(
         qds::core::EntityId from,
@@ -46,6 +47,7 @@ public:
     void setUnit(qds::core::EntityId id, const QString &unit);
     void setComment(qds::core::EntityId id, const QString &comment);
     void setCommentContent(qds::core::EntityId id, const QString &content);
+    bool setLookup(qds::core::EntityId id, const std::optional<qds::core::LookupDefinition> &lookup);
     bool setSimulationSettings(const qds::core::SimulationSettings &settings);
     void setFontStyle(qds::core::EntityId id, const QFont &font);
     void moveElements(const QVector<std::pair<qds::core::EntityId, QPointF>> &positions);

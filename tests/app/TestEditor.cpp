@@ -191,6 +191,7 @@ private slots:
     void orthogonalArrowDirections();
     void actionIcons();
     void unifiedIdUndoRedo();
+    void lookupClipboardUndo();
     void modifierDragOperations();
     void fileDropOpen();
     void mdlOpenAndDrop();
@@ -2684,6 +2685,40 @@ void TestEditor::unifiedIdUndoRedo()
     controller.undoStack().undo();
     const EntityId next = controller.createVariable(ElementKind::Stock, QPointF(400.0, 0.0));
     QVERIFY(next > connector);
+}
+
+void TestEditor::lookupClipboardUndo()
+{
+    DocumentController controller;
+    DiagramScene scene(&controller);
+    const EntityId id = controller.createLookup(QPointF());
+    QVERIFY(id != 0);
+    const auto definition = LookupDefinition::create(
+        {0.0, 1.0, 2.0}, {0.0, 2.0, 4.0}, LookupKind::Extrapolate);
+    QVERIFY(definition && controller.setLookup(id, definition));
+    QVERIFY(controller.document().find(id)->kind() == ElementKind::Lookup);
+    const auto *model = dynamic_cast<const ModelElement *>(controller.document().find(id));
+    QVERIFY(model && model->lookup() == definition);
+
+    controller.undoStack().undo();
+    model = dynamic_cast<const ModelElement *>(controller.document().find(id));
+    QVERIFY(model && model->lookup());
+    QCOMPARE(model->lookup()->x(), (QVector<double> {0.0, 1.0}));
+    controller.undoStack().redo();
+    model = dynamic_cast<const ModelElement *>(controller.document().find(id));
+    QVERIFY(model && model->lookup() == definition);
+
+    const ClipboardData copied = controller.copyElements({id});
+    const QVector<EntityId> pasted = controller.pasteClipboard(copied, QPointF(100.0, 100.0));
+    QCOMPARE(pasted.size(), std::size_t(1));
+    model = dynamic_cast<const ModelElement *>(controller.document().find(pasted.front()));
+    QVERIFY(model && model->lookup() == definition);
+
+    controller.removeElements({id});
+    QVERIFY(!controller.document().find(id));
+    controller.undoStack().undo();
+    model = dynamic_cast<const ModelElement *>(controller.document().find(id));
+    QVERIFY(model && model->lookup() == definition);
 }
 
 void TestEditor::modifierDragOperations()

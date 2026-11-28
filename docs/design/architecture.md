@@ -24,4 +24,5 @@ M1 先交付 SFD 建模、方程编辑、Euler/RK4、折线图和文件保存，
 - [Vensim MDL 导入设计](vensim-mdl.md)：记录解析、多方程归并、名称引用转换、Sketch 映射及兼容边界。
 - [公式分析器设计](formula-analysis.md)：标量 AST、Pratt Parser、符号解析、依赖图、诊断及分阶段实施。
 - [仿真引擎设计](simulation.md)：仿真设置、编译与执行顺序、Euler/RK4、运行结果、状态函数边界及正确性验证。
+- [Lookup 模型与求解器设计](lookup.md)：不可变 X–Y 定义、独立/内联 Lookup、插值/外推、编译求值与持久化。
 - [模拟器界面设计](simulation-ui.md)：运行设置、Worker 生命周期、取消、结果 Dock、折线图和数据表。

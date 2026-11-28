@@ -66,6 +66,11 @@ target_compile_definitions(test-simulation-results PRIVATE
     QDS_CHAINED_INIT_OUTPUT_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/chained_initialization/output.tab"
     QDS_SIR_MODEL_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/SIR/SIR.xmile"
     QDS_SIR_MODEL_OUTPUT_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/samples/SIR/output.csv"
+    QDS_LOOKUP_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/lookups/test_lookups.xmile"
+    QDS_LOOKUP_OUTPUT_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/lookups/output.tab"
+    QDS_LOOKUP_XSCALE_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/lookups/test_lookups_xscale.xmile"
+    QDS_INLINE_LOOKUP_XMILE_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/lookups_inline/test_lookups_inline.xmile"
+    QDS_INLINE_LOOKUP_OUTPUT_PATH="${CMAKE_SOURCE_DIR}/3rdparty/test-models/tests/lookups_inline/output.tab"
 )
 add_test(NAME io-simulation-results COMMAND test-simulation-results)
 add_dependencies(all-test-targets test-simulation-results)

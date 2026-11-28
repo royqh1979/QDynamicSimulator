@@ -211,6 +211,33 @@ int main(int argc, char **argv)
         return 19;
     }
 
+    Document lookupDocument;
+    const EntityId lookup = lookupDocument.createLookup();
+    lookupDocument.rename(lookup, "Rate Table");
+    if (!lookupDocument.setLookup(lookup,
+        LookupDefinition::create({0.0, steps * 0.01}, {0.0, steps * 0.01}, LookupKind::Continuous)))
+        return 20;
+    const EntityId lookupOutput = lookupDocument.createVariable(ElementKind::Variable);
+    lookupDocument.rename(lookupOutput, "output");
+    lookupDocument.setEquation(lookupOutput, "\"Rate Table\"(TIME)");
+    lookupDocument.setSimulationSettings({0.0, steps * 0.01, 0.01, 0.01});
+    const SimulationCompileResult lookupCompiled = compileSimulation(lookupDocument);
+    if (!lookupCompiled.plan)
+        return 21;
+    timer.restart();
+    int lookupRunCount = 0;
+    double solverChecksum = 0.0;
+    for (int index = 0; index < count; ++index) {
+        const SimulationRun run = SimulationRunner(lookupDocument, *lookupCompiled.plan).run();
+        if (run.status() != SimulationRunStatus::Completed || run.times().size() != steps + 1)
+            return 22;
+        solverChecksum += run.series("output").back();
+        ++lookupRunCount;
+    }
+    const qint64 solverNs = timer.nsecsElapsed();
+    if (std::abs(solverChecksum / lookupRunCount - steps * 0.01) > 1e-9)
+        return 23;
+
     QTextStream output(stdout);
     output << "operation,count,total_ms,per_operation_us\n";
     output << "settings_validate," << validationCount << ',' << validationNs / 1.0e6 << ','
@@ -247,5 +274,10 @@ int main(int argc, char **argv)
            << arrayNs / 1000.0 / (arrayRunCount * steps * arraySize) << "\n";
     output << "simulation_array_saved_values," << arraySavedValues << ",\n";
     output << "simulation_array_checksum," << arrayChecksum << ",\n";
+    output << "simulation_lookup_solver," << lookupRunCount << ',' << solverNs / 1.0e6 << ','
+           << solverNs / 1000.0 / lookupRunCount << "\n";
+    output << "simulation_lookup_evaluation," << lookupRunCount * steps << ',' << solverNs / 1.0e6 << ','
+           << solverNs / 1000.0 / (lookupRunCount * steps) << "\n";
+    output << "simulation_lookup_solver_checksum," << solverChecksum << ",\n";
     return 0;
 }

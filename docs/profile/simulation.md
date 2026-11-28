@@ -113,6 +113,17 @@ RK4 校验和约为 2.20265e+07。Euler 与 RK4 分列，不用不同方法的�
 
 共保存 16016000 个数组元素值，逐元素期望使用 `pow(1 + i*DT, steps)` 计算，校验和匹配。该结果使用 Release `profile-simulation.exe 1000`，用于后续同场景回归，不设置额外性能门槛。
 
+## Lookup 求解器
+
+固定独立 Lookup 为两点 continuous 恒等映射，Variable 公式为 `"Rate Table"(TIME)`；1000 次运行共执行 100 万时间步，每次校验 Completed、1001 个样本和最终输出。结果：
+
+| 操作 | 数量 | 总耗时 ms | 每操作 μs |
+| --- | ---: | ---: | ---: |
+| simulation_lookup_solver | 1000 | 172.677 | 172.677 |
+| simulation_lookup_evaluation | 1000000 | 172.677 | 0.172677 |
+
+校验和为 10000。三种模式的端点、域内/域外行为、独立/内联、数组、QDS/XMILE 往返和非法定义均由专项测试覆盖；SDXorg lookups、lookups_xscale 与 lookups_inline 使用其 output.tab 做逐时刻参考比对，xpts/ypts 的 sep 变体及 XMILE corpus 全量通过。Lookup 图形编辑器和 Vensim MDL 文本 Lookup 不在本阶段。
+
 ## 执行优化后的基线对比
 
 完成固定数组布局、引用预绑定、Stock/Flow 布局对齐和 Context 复用后，使用与 [仿真计算热点审查](simulation-hotspots.md) 相同的原始基线，在相同冷却条件下复测最终实现两轮。下表同时列出总耗时和归一化耗时，不以单次异常或不同负载替代基线。
