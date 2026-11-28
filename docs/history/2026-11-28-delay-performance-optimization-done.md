@@ -50,9 +50,24 @@
 
 目标：Run 内预分配可复用速率工作区，只清理和计算启用槽位；Fixed 和离散中间阶段不占用工作。不得共享跨 Run 工作区。先由阶段一/二结果确定该阶段是否仍有明显收益。
 
-## 阶段四：按证据决定 RK 阶段状态拆分
+## 阶段四：取消
 
-只有前述阶段后仍有明确热点时，才拆分 Run 稳定状态、连续阶段可变状态和离散输出缓存。数组槽/Arena 需要 shape、别名、宏寿命和结果移出分析，不属于当前 KISS 首选，不在证据不足时实施。
+用户决定取消 RK 阶段状态拆分。只有优化后仍存在明确且值得处理的剩余热点时才继续其它分析，不预设需要 DelayState 拆分、数组槽或 Arena。
+
+## Delay 访问寿命与参数装箱优化
+
+- 分支 `perf/delay-access-lifetime`。剩余插桩仍显示 input/time 视图的 dimensions/shape 元数据复制和构造/析构，Delay 每元素还将 double 重新装箱为 Value。
+- ArrayElementView 改为只持有调用期间有效的 dimensions/shape const 引用；Plan 或调用函数局部对象均覆盖视图寿命，不新增长期指针。
+- Delay 的 evaluateOne 直接接收 double，标量路径只拆箱一次，数组视图读取后不再构造四个 Value variant。保持状态推进、错误语义和现有执行路径。
+- 对比上一阶段相同负载并执行全量回归；本阶段不属于 RK 状态拆分，不自动提交。
+
+### 实施结果与计划收尾
+
+- ArrayElementView 的 dimensions/shape 改为 const 引用，Plan 或调用方局部对象覆盖视图寿命；未新增跨调用指针。
+- Delay 的 evaluateOne 直接接收 double，标量路径只拆箱一次，数组路径不再逐元素构造四个 Value variant。
+- 相对上一阶段，Material/Information 数组再降约 5.4%/5.6%；与最初基线相比每元素步约 576.0→290.9 ns、525.5→241.3 ns。checksum 不变。
+- 剩余主要是实际状态计算、RK 阶段和输出管理，没有足够证据继续做 DelayState 拆分、统一热循环或容器特判。Release 与 Debug 的 18/18 CTest 和完整 XMILE corpus 通过，当前阶段尚未提交。
+- 阶段四按用户决定取消；本优化计划到此结束，不再为完成计划寻找微优化。
 
 ## 每阶段验收与记录
 
@@ -169,4 +184,4 @@
 - ArrayElementView 对相同布局直接返回，不再逐视图查询输入 Dimension；不同布局仍执行完整校验和映射。
 - 新增 `[A,B]→[B,A]` 的 Delay Euler/RK4 重排测试。测试初次期望算式写错，按实际映射修正，生产逻辑未为此改变。
 - 两轮 Material 数组耗时下降 46.6%，Information 下降 51.3%；每元素步分别约 576.0→307.5 ns、525.5→255.8 ns，checksum 不变。
-- gprof 的 `Document::findDimension` 从约 641 万次降至 810 次，确认目标冗余消除。Release 与 Debug 的 18/18 CTest 和完整 XMILE corpus 通过，尚未提交、合并或推送。
+- gprof 的 `Document::findDimension` 从约 641 万次降至 810 次，确认目标冗余消除。Release 与 Debug 的 18/18 CTest 和完整 XMILE corpus 通过，阶段提交为 `689e91a`，未合并、未推送。

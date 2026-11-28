@@ -67,6 +67,7 @@ output = pipe[pointer]
 - 可选 initial 和阶数表达式只在首次初始化时求值，避免每步重复读取或随机取样。
 - Delay 与其它 mapped functions 共用 ArrayElementView：输入/时间只求值一次，相同布局直接寻址，不同布局按维度名映射，不为当前元素重复求值 AST 或创建完整广播数组。
 - Apply-to-All 当前元素只检查当前初始化槽，整体求值才检查整组；initial/order 视图只在需要初始化时创建，稳态只建立 input/time。相同布局由目标 shape 保证一致性，不重复查询输入 Dimension；不同布局仍执行完整校验。
+- ArrayElementView 只持有调用期间有效的 dimensions/shape const 引用，不复制布局元数据。Delay 的逐元素状态函数直接接收 double，标量只拆箱一次，不再为每个元素构造参数 Value。
 - 首阶段带状态宏以 `unsupported-stateful-macro` 拒绝；宏调用路径状态身份另行设计。`FORCST`/`TREND` 等未实现状态函数仍在编译期以 `unsupported-simulation-function` 拒绝。
 - 资源上限 `DelayPlan::maximumOrder=64` 是本项目保护措施，不是 Vensim 原生上限。数组元素数与状态槽计算执行溢出检查。
 

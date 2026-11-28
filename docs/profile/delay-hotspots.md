@@ -87,6 +87,19 @@ Material 每元素步由约 576.0 ns 降至 307.5 ns，Information 由约 525.5 
 
 新增不同维度顺序 Delay 测试，`[A,B]` 输入重排到 `[B,A]` 的初始输出在 Euler/RK4 均正确。测试初次期望算式写错，已按 `A+10B` 的真实映射修正，未为通过测试修改生产实现。三组 SDXorg 参考、边界、连续/离散/Fixed 混合及 Release/Debug 18/18 CTest 和完整 XMILE corpus 全部通过。
 
+## 访问寿命与参数装箱的后续结果
+
+进一步将 ArrayElementView 的 dimensions/shape 改为调用期 const 引用，并让 Delay 的逐元素状态函数直接接收 double，避免布局元数据复制和参数重新装箱。相对上一阶段两轮结果：
+
+| 场景 | 上一阶段 ms | 本阶段 ms | 再降 |
+| --- | ---: | ---: | ---: |
+| material_n_array | 496.6264 / 487.4954 | 467.5061 / 463.3947 | 约 5.4% |
+| information_n_array | 412.0512 / 406.3926 | 386.0798 / 386.1610 | 约 5.6% |
+
+与最初基线相比，Material 每元素步约 576.0 ns 降至 290.9 ns，Information 约 525.5 ns 降至 241.3 ns，checksum 不变。标量场景有小幅波动，未据此宣称一致收益。
+
+剩余热点主要是实际状态计算、RK 阶段和输出管理。阶段四已取消，没有足够证据继续做 DelayState 拆分、统一热循环或更多容器特判。Release 与 Debug 的 18/18 CTest 和完整 XMILE corpus 通过。
+
 ## 结论与后续顺序
 
 本轮不支持继续优化速率 Vector、清零或 ArrayData 数量。优先审查一个统一的“减少 Delay 每元素重复准备”阶段：
