@@ -320,6 +320,193 @@ NetRateResult netRates(const QVector<StockFlows> &bindings, const QHash<EntityId
 
 } // namespace
 
+class SimulationCompiler
+{
+public:
+    SimulationCompiler(const Document &document, SimulationPlan &plan)
+        : m_document(document)
+        , m_plan(plan)
+    {
+    }
+
+    bool compile(SimulationCompileResult &result)
+    {
+        for (const MacroDefinition &macro : m_document.macros())
+            m_plan.m_macros.emplace(macro.signature(), std::make_unique<CompiledMacroDefinition>());
+        for (const MacroDefinition &macro : m_document.macros()) {
+            CompiledMacroDefinition *compiled = m_plan.m_macros.find(macro.signature())->second.get();
+            m_locals.clear();
+            for (const MacroParameter &parameter : macro.parameters())
+                m_locals.insert(parameter.nameKey());
+            for (const MacroParameter &parameter : macro.parameters()) {
+                CompiledMacroParameter compiledParameter;
+                compiledParameter.m_nameKey = parameter.nameKey();
+                compiledParameter.m_defaultFormula = compileFormula(parameter.defaultFormula());
+                if (!checkFormula(parameter.defaultFormula(), compiledParameter.m_defaultFormula, 0, result))
+                    return false;
+                compiled->m_parameters.push_back(std::move(compiledParameter));
+            }
+            compiled->m_formula = compileFormula(macro.formula());
+            if (!checkFormula(macro.formula(), compiled->m_formula, 0, result))
+                return false;
+        }
+        m_locals.clear();
+        for (const ModelElement &element : m_document.model().elements()) {
+            if (element.kind() == ElementKind::Lookup)
+                continue;
+            CompiledElementFormula compiled;
+            const Formula &definition = element.kind() == ElementKind::Stock
+                ? static_cast<const Stock &>(element).initialFormula() : element.formula();
+            compiled.formula = compileFormula(definition);
+            if (!checkFormula(definition, compiled.formula, element.id(), result))
+                return false;
+            for (const ArrayElementFormula &entry : element.elementEquations()) {
+                CompiledArrayElementFormula compiledEntry;
+                compiledEntry.indices = entry.indices();
+                compiledEntry.formula = compileFormula(entry.formula());
+                if (!checkFormula(entry.formula(), compiledEntry.formula, element.id(), result))
+                    return false;
+                compiled.elements.push_back(std::move(compiledEntry));
+            }
+            m_plan.m_formulas.emplace(element.id(), std::move(compiled));
+        }
+        return true;
+    }
+
+private:
+    CompiledFormula compileFormula(const Formula &formula)
+    {
+        return CompiledFormula(compileNode(formula.root()));
+    }
+
+    bool checkFormula(const Formula &source, const CompiledFormula &compiled, EntityId owner,
+        SimulationCompileResult &result)
+    {
+        if (!source.root() || compiled.root())
+            return true;
+        addIssue(result, owner, "Failed to bind simulation formula", "simulation-binding", source.root()->span());
+        return false;
+    }
+
+    std::unique_ptr<FormulaNode> reference(const ReferenceNode &node)
+    {
+        if (m_locals.contains(node.nameKey()))
+            return std::make_unique<LocalReferenceNode>(node.nameKey(), node.span());
+        if (const FunctionSignature *signature = findFunctionSignature(node.nameKey());
+            signature && signature->minArguments == 0 && signature->maxArguments == 0) {
+            if (node.nameKey() == "time")
+                return bound(node, BoundReferenceKind::Time);
+            if (node.nameKey() == "dt")
+                return bound(node, BoundReferenceKind::Dt);
+            if (node.nameKey() == "starttime")
+                return bound(node, BoundReferenceKind::StartTime);
+            if (node.nameKey() == "stoptime")
+                return bound(node, BoundReferenceKind::StopTime);
+            if (node.nameKey() == "pi")
+                return bound(node, BoundReferenceKind::Pi);
+            if (node.nameKey() == "inf")
+                return bound(node, BoundReferenceKind::Infinity);
+            return nullptr;
+        }
+        const int separator = node.nameKey().indexOf('.');
+        if (separator >= 0) {
+            const Dimension *dimension = m_document.findDimension(node.nameKey().left(separator));
+            const DimensionElement *element = dimension
+                ? dimension->findElement(node.nameKey().mid(separator + 1)) : nullptr;
+            if (dimension && element) {
+                return std::make_unique<BoundReferenceNode>(BoundReferenceKind::DimensionElement, node.nameKey(), 0,
+                    static_cast<std::size_t>(element - dimension->elements.data() + 1), node.span());
+            }
+        }
+        if (m_document.findDimension(node.nameKey()))
+            return bound(node, BoundReferenceKind::Dimension);
+        if (const ModelElement *model = m_document.findByName(node.nameKey()))
+            return bound(node, BoundReferenceKind::Variable, model->id());
+        return nullptr;
+    }
+
+    std::unique_ptr<FormulaNode> bound(const ReferenceNode &node, BoundReferenceKind kind, EntityId variable = 0,
+        std::size_t element = 0)
+    {
+        return std::make_unique<BoundReferenceNode>(kind, node.nameKey(), variable, element, node.span());
+    }
+
+    std::unique_ptr<FormulaNode> call(const CallNode &node)
+    {
+        std::vector<std::unique_ptr<FormulaNode>> arguments;
+        arguments.reserve(node.argumentCount());
+        for (std::size_t position = 0; position < node.argumentCount(); ++position) {
+            auto argument = compileNode(node.argument(position));
+            if (!argument)
+                return nullptr;
+            arguments.push_back(std::move(argument));
+        }
+        if (const FunctionSignature *signature = findFunctionSignature(node.nameKey())) {
+            return std::make_unique<BoundCallNode>(node.nameKey(), *signature, std::move(arguments), node.span());
+        }
+        if (const MacroDefinition *macro = m_document.findMacro(node.nameKey(), int(node.argumentCount()), 1)) {
+            const auto compiled = m_plan.m_macros.find(macro->signature());
+            if (compiled == m_plan.m_macros.end())
+                return nullptr;
+            return std::make_unique<BoundCallNode>(node.nameKey(), compiled->second.get(), std::move(arguments),
+                node.span());
+        }
+        if (const ModelElement *model = m_document.findByName(node.nameKey());
+            model && model->kind() == ElementKind::Lookup && model->lookup() && node.argumentCount() == 1) {
+            return std::make_unique<BoundCallNode>(node.nameKey(), &*model->lookup(), std::move(arguments),
+                node.span());
+        }
+        return nullptr;
+    }
+
+    std::unique_ptr<FormulaNode> compileNode(const FormulaNode *node)
+    {
+        if (!node)
+            return nullptr;
+        if (const auto *number = dynamic_cast<const NumberNode *>(node))
+            return std::make_unique<NumberNode>(number->value(), node->span());
+        if (const auto *referenceNode = dynamic_cast<const ReferenceNode *>(node))
+            return reference(*referenceNode);
+        if (const auto *unary = dynamic_cast<const UnaryNode *>(node))
+            return std::make_unique<UnaryNode>(unary->op(), compileNode(unary->operand()), node->span());
+        if (const auto *binary = dynamic_cast<const BinaryNode *>(node)) {
+            return std::make_unique<BinaryNode>(binary->op(), compileNode(binary->left()), compileNode(binary->right()),
+                node->span());
+        }
+        if (const auto *callNode = dynamic_cast<const CallNode *>(node))
+            return call(*callNode);
+        if (const auto *conditional = dynamic_cast<const ConditionalNode *>(node)) {
+            return std::make_unique<ConditionalNode>(compileNode(conditional->condition()),
+                compileNode(conditional->thenExpression()), compileNode(conditional->elseExpression()), node->span());
+        }
+        if (const auto *subscript = dynamic_cast<const SubscriptNode *>(node)) {
+            std::vector<std::unique_ptr<FormulaNode>> indices;
+            indices.reserve(subscript->indexCount());
+            for (std::size_t position = 0; position < subscript->indexCount(); ++position)
+                indices.push_back(compileNode(subscript->index(position)));
+            return std::make_unique<SubscriptNode>(compileNode(subscript->target()), std::move(indices), node->span());
+        }
+        if (dynamic_cast<const WildcardNode *>(node))
+            return std::make_unique<WildcardNode>(node->span());
+        if (const auto *range = dynamic_cast<const RangeNode *>(node))
+            return std::make_unique<RangeNode>(compileNode(range->begin()), compileNode(range->end()), node->span());
+        if (const auto *position = dynamic_cast<const DimensionPositionNode *>(node))
+            return std::make_unique<DimensionPositionNode>(position->position(), node->span());
+        if (const auto *literal = dynamic_cast<const ArrayLiteralNode *>(node)) {
+            std::vector<std::unique_ptr<FormulaNode>> values;
+            values.reserve(literal->valueCount());
+            for (std::size_t position = 0; position < literal->valueCount(); ++position)
+                values.push_back(compileNode(literal->value(position)));
+            return std::make_unique<ArrayLiteralNode>(std::move(values), node->span());
+        }
+        return nullptr;
+    }
+
+    const Document &m_document;
+    SimulationPlan &m_plan;
+    QSet<QString> m_locals;
+};
+
 ArrayLayout::ArrayLayout(QVector<QString> dimensions, QVector<std::size_t> shape,
     QVector<std::size_t> strides, std::size_t count)
     : m_dimensions(std::move(dimensions))
@@ -421,6 +608,9 @@ SimulationCompileResult compileSimulation(const Document &document)
         return result;
 
     SimulationPlan plan;
+    SimulationCompiler compiler(document, plan);
+    if (!compiler.compile(result))
+        return result;
     plan.m_settings = settings;
     plan.m_outputOrder = outputs;
     plan.m_initializationOrder = topologicalOrder(initializationRoots, document, analysis, true, result);
@@ -451,33 +641,6 @@ SimulationCompileResult compileSimulation(const Document &document)
         plan.m_arrayLayouts.insert(element.id(),
             ArrayLayout(element.dimensions(), std::move(shape), steps, count));
     }
-    for (const ModelElement &element : document.model().elements()) {
-        if (element.kind() == ElementKind::Lookup) {
-            plan.m_referenceBindings.insert(element.nameKey(),
-                {ReferenceBindingKind::Lookup, element.id(), 0, element.lookup()});
-        } else {
-            plan.m_referenceBindings.insert(element.nameKey(),
-                {ReferenceBindingKind::Variable, element.id(), 0});
-        }
-    }
-    for (const Dimension &dimension : document.dimensions()) {
-        plan.m_referenceBindings.insert(dimension.nameKey,
-            {ReferenceBindingKind::Dimension, 0, 0});
-        for (std::size_t index = 0; index < dimension.elements.size(); ++index) {
-            const DimensionElement &element = dimension.elements[index];
-            if (!element.nameKey.isEmpty()) {
-                plan.m_referenceBindings.insert(dimension.nameKey + "." + element.nameKey,
-                    {ReferenceBindingKind::DimensionElement, 0, index + 1});
-            }
-        }
-    }
-    plan.m_referenceBindings.insert(QStringLiteral("self"), {ReferenceBindingKind::Self, 0, 0});
-    plan.m_referenceBindings.insert(QStringLiteral("time"), {ReferenceBindingKind::Time, 0, 0});
-    plan.m_referenceBindings.insert(QStringLiteral("dt"), {ReferenceBindingKind::Dt, 0, 0});
-    plan.m_referenceBindings.insert(QStringLiteral("starttime"), {ReferenceBindingKind::StartTime, 0, 0});
-    plan.m_referenceBindings.insert(QStringLiteral("stoptime"), {ReferenceBindingKind::StopTime, 0, 0});
-    plan.m_referenceBindings.insert(QStringLiteral("pi"), {ReferenceBindingKind::Pi, 0, 0});
-    plan.m_referenceBindings.insert(QStringLiteral("inf"), {ReferenceBindingKind::Infinity, 0, 0});
     for (EntityId stock : stocks) {
         StockFlows binding;
         binding.stock = stock;
@@ -633,70 +796,18 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
     context.stopTime = m_plan.settings().stopTime();
     context.inputTime = currentTime;
     context.inputDt = m_plan.settings().dt();
-    struct ResolvedReferenceContext {
-        const SimulationPlan &plan;
+    struct ExecutionContext {
         const Document &document;
         EvaluationContext &evaluation;
         QHash<EntityId, Value> *target;
     };
-    ResolvedReferenceContext resolved {m_plan, m_document, context, &values};
+    ExecutionContext resolved {m_document, context, &values};
     context.readDimension = [&resolved](const QString &name) {
         return resolved.document.findDimension(name);
     };
-    context.readMacro = makeMacroReader(m_document);
-    context.readVariable = [&resolved](const QString &name) -> std::optional<Value> {
-        const ModelElement *element = resolved.document.model().findByName(name);
-        if (!element || !resolved.target->contains(element->id()))
-            return std::nullopt;
-        return resolved.target->value(element->id());
-    };
-    context.readResolvedReference = [&resolved](const QString &name) -> std::optional<Value> {
-        const auto binding = resolved.plan.m_referenceBindings.constFind(name);
-        if (binding == resolved.plan.m_referenceBindings.constEnd())
-            return std::nullopt;
-        if (binding->kind == ReferenceBindingKind::Time)
-            return resolved.evaluation.time;
-        if (binding->kind == ReferenceBindingKind::Dt)
-            return resolved.evaluation.dt;
-        if (binding->kind == ReferenceBindingKind::StartTime)
-            return resolved.evaluation.startTime;
-        if (binding->kind == ReferenceBindingKind::StopTime)
-            return resolved.evaluation.stopTime;
-        if (binding->kind == ReferenceBindingKind::Pi)
-            return 3.14159265358979323846;
-        if (binding->kind == ReferenceBindingKind::Infinity)
-            return std::numeric_limits<double>::infinity();
-        EntityId variable = binding->variable;
-        if (binding->kind == ReferenceBindingKind::Self) {
-            const auto self = resolved.plan.m_referenceBindings.constFind(resolved.evaluation.scope.self);
-            if (self == resolved.plan.m_referenceBindings.constEnd()
-                || self->kind != ReferenceBindingKind::Variable)
-                return std::nullopt;
-            variable = self->variable;
-        } else if (binding->kind != ReferenceBindingKind::Variable) {
-            variable = 0;
-        }
-        if (variable != 0) {
-            const auto value = resolved.target->constFind(variable);
-            return value == resolved.target->constEnd() ? std::nullopt : std::optional<Value>(value.value());
-        }
-        if (binding->kind == ReferenceBindingKind::DimensionElement)
-            return static_cast<double>(binding->element);
-        if (binding->kind == ReferenceBindingKind::Dimension) {
-            for (std::size_t index = 0; index < resolved.evaluation.scope.dimensions.size(); ++index) {
-                if (resolved.evaluation.scope.dimensions[index] == name
-                    && index < resolved.evaluation.scope.indices.size())
-                    return static_cast<double>(resolved.evaluation.scope.indices[index] + 1);
-            }
-        }
-        return std::nullopt;
-    };
-    context.readLookup = [&resolved](const QString &name, double input) -> std::optional<double> {
-        const auto binding = resolved.plan.m_referenceBindings.constFind(name);
-        if (binding == resolved.plan.m_referenceBindings.constEnd()
-            || binding->kind != ReferenceBindingKind::Lookup || !binding->lookup)
-            return std::nullopt;
-        return binding->lookup->evaluate(input);
+    context.readEntity = [&resolved](EntityId id) -> std::optional<Value> {
+        const auto value = resolved.target->constFind(id);
+        return value == resolved.target->constEnd() ? std::nullopt : std::optional<Value>(value.value());
     };
     const auto evaluate = [&](const QVector<EntityId> &order, double time, double dt,
                             QHash<EntityId, Value> &target) -> std::optional<ModelIssue> {
@@ -708,11 +819,13 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
             const auto *element = dynamic_cast<const ModelElement *>(m_document.find(id));
             if (!element)
                 return ModelIssue {id, IssueSeverity::Error, "Simulation variable no longer exists", "missing-simulation-variable", {}};
-            const Formula &formula = element->kind() == ElementKind::Stock
-                ? static_cast<const Stock *>(element)->initialFormula() : element->formula();
+            const auto compiled = m_plan.m_formulas.find(id);
+            if (compiled == m_plan.m_formulas.end())
+                return ModelIssue {id, IssueSeverity::Error, "Simulation formula is not compiled", "missing-simulation-formula", {}};
+            const FormulaNode *formula = compiled->second.formula.root();
             context.scope = {};
             if (element->dimensions().isEmpty()) {
-                const EvaluationResult evaluated = evaluateFormula(formula.root(), context);
+                const EvaluationResult evaluated = evaluateFormula(formula, context);
                 if (!evaluated.value)
                     return ModelIssue {id, IssueSeverity::Error, evaluated.error, "simulation-evaluation", evaluated.errorSpan};
                 const auto *scalar = std::get_if<double>(&*evaluated.value);
@@ -728,11 +841,11 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
                     return ModelIssue {id, IssueSeverity::Error, "Array shape is invalid or too large", "invalid-simulation-array-shape", {}};
                 const std::size_t count = layout->count();
                 ArrayValue output {layout->dimensions(), layout->shape(), QVector<double>(count)};
-                if (element->elementEquations().empty()) {
+                if (compiled->second.elements.empty()) {
                     context.scope = {layout->dimensions(), QVector<std::size_t>(layout->shape().size(), 0),
                         element->nameKey()};
                     for (std::size_t flat = 0; flat < count; ++flat) {
-                        const EvaluationResult evaluated = evaluateFormula(formula.root(), context);
+                        const EvaluationResult evaluated = evaluateFormula(formula, context);
                         ModelIssue issue;
                         const auto value = evaluatedScalar(evaluated, element->dimensions(), context.scope.indices, id, issue);
                         if (!value)
@@ -741,14 +854,14 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
                         advanceIndices(context.scope.indices, layout->shape());
                     }
                 } else {
-                    for (const ArrayElementFormula &entry : element->elementEquations()) {
-                        const auto flat = layout->flatIndex(entry.indices());
+                    for (const CompiledArrayElementFormula &entry : compiled->second.elements) {
+                        const auto flat = layout->flatIndex(entry.indices);
                         if (!flat)
                             return ModelIssue {id, IssueSeverity::Error, "Array element index is invalid", "invalid-array-element-index", {}};
-                        context.scope = {element->dimensions(), entry.indices(), element->nameKey()};
-                        const EvaluationResult evaluated = evaluateFormula(entry.formula().root(), context);
+                        context.scope = {element->dimensions(), entry.indices, element->nameKey()};
+                        const EvaluationResult evaluated = evaluateFormula(entry.formula.root(), context);
                         ModelIssue issue;
-                        const auto value = evaluatedScalar(evaluated, element->dimensions(), entry.indices(), id, issue);
+                        const auto value = evaluatedScalar(evaluated, element->dimensions(), entry.indices, id, issue);
                         if (!value)
                             return issue;
                         output.values[*flat] = *value;

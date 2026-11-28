@@ -69,6 +69,7 @@ private slots:
     void unifiedRunMetadata();
     void seriesValueSemantics();
     void referenceBindingSemantics();
+    void boundAstOwnershipAndMacroRecursion();
     void lookupDefinitions();
     void lookupSimulation();
     void timeFunctionBoundaries();
@@ -555,6 +556,42 @@ void TestSimulation::referenceBindingSemantics()
     const QVector<ArrayValue> currentValues = dimensionRun.arraySeries("current");
     QCOMPARE(currentValues.size(), 1);
     QCOMPARE(currentValues.front().values, (QVector<double> {1.0, 2.0}));
+}
+
+void TestSimulation::boundAstOwnershipAndMacroRecursion()
+{
+    Document document;
+    MacroDefinitionData fact;
+    fact.displayName = "Fact";
+    fact.parameters = {{"x", {}}};
+    fact.equation = "IF x <= 1 THEN 1 ELSE x * Fact(x - 1)";
+    QVERIFY(document.defineMacro(fact));
+    const EntityId output = document.createVariable(ElementKind::Variable);
+    QVERIFY(document.rename(output, "output"));
+    QVERIFY(document.setEquation(output, "Fact(5)"));
+    QVERIFY(document.setSimulationSettings({0.0, 0.0, 1.0, 1.0}));
+
+    const ModelElement *model = static_cast<const ModelElement *>(document.find(output));
+    const FormulaNode *sourceRoot = model->formula().root();
+    const std::size_t sourceNodes = formulaNodeCount(sourceRoot);
+    const MacroDefinition *sourceMacro = document.findMacro("Fact", 1);
+    const FormulaNode *sourceMacroRoot = sourceMacro->formula().root();
+    const std::size_t sourceMacroNodes = formulaNodeCount(sourceMacroRoot);
+    SimulationCompileResult compiled = compileSimulation(document);
+    QVERIFY2(compiled.plan, "Compilation failed");
+    QVERIFY(model->formula().root() == sourceRoot);
+    QCOMPARE(formulaNodeCount(sourceRoot), sourceNodes);
+    QCOMPARE(model->equation(), QString("Fact(5)"));
+    QVERIFY(sourceMacro->formula().root() == sourceMacroRoot);
+    QCOMPARE(formulaNodeCount(sourceMacroRoot), sourceMacroNodes);
+    QCOMPARE(sourceMacro->equation(), fact.equation);
+
+    SimulationPlan moved = std::move(*compiled.plan);
+    const SimulationRun run = SimulationRunner(document, moved).run();
+    QCOMPARE(run.status(), SimulationRunStatus::Completed);
+    QCOMPARE(run.series("output"), QVector<double> {120.0});
+    QCOMPARE(model->formula().root(), sourceRoot);
+    QCOMPARE(sourceMacro->formula().root(), sourceMacroRoot);
 }
 
 void TestSimulation::lookupDefinitions()

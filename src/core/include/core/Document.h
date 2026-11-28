@@ -123,15 +123,28 @@ private:
     bool prepareMacro(MacroDefinitionData &macro) const;
     static std::unique_ptr<MacroDefinition> makeMacro(const MacroDefinitionData &macro);
     bool hasMacroName(const QString &nameKey) const;
+    bool hasName(const QString &nameKey) const;
     bool validArrayData(const QVector<QString> &dimensions,
         const QVector<ArrayElementEquation> &elementEquations, const QString &equation) const;
     QString uniqueName(ElementKind kind);
     void updateReferences(EntityId id, const QString &oldName, const QString &newName);
 
+    enum class NamedKind { ModelElement, Dimension };
+    struct NamedBinding {
+        NamedKind kind = NamedKind::ModelElement;
+        EntityId element = 0;
+        int dimension = -1;
+    };
+    enum class InvokableKind { Macro, Lookup };
+    struct InvokableBinding {
+        InvokableKind kind = InvokableKind::Macro;
+        EntityId element = 0;
+    };
+
     std::unordered_map<EntityId, std::unique_ptr<DocumentElement>> m_elements;
-    QHash<QString, EntityId> m_nameIndex;
+    QHash<QString, NamedBinding> m_namedIndex;
     QVector<Dimension> m_dimensions;
-    QHash<QString, int> m_dimensionIndex;
+    QHash<QString, InvokableBinding> m_invokableIndex;
     std::map<MacroSignature, std::unique_ptr<MacroDefinition>> m_macros;
     std::unordered_map<ElementKind, std::uint64_t> m_nextNameSuffix;
     EntityId m_nextId = 1;

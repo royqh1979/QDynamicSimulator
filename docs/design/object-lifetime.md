@@ -130,7 +130,8 @@ MainWindow 关闭时可以显式 reset 以完成正常会话收尾，但内存�
 | `Document::find/findByName/findDimension/findMacro/findMutable`、`Model::findByName`、`Dimension::findElement` | 保留。对象多态、不可复制或需要按地址保持身份；Document 修改、移动、清空后必须重新查询，禁止长期保存 |
 | `DiagramScene::selectedModelElement/selectedComment` | 保留。返回 Document 所有的当前选择对象，仅在当前刷新/提交调用中使用；Controller/Scene 本身的寿命另由 QPointer 保护 |
 | `SimulationRun::variable` | 保留。私有、Run 发布后不可变，只用于当前查询 |
-| `DimensionReader`、`MacroEvaluation::definition` | 保留。同步求值期间 Document/共享运行副本保持存活，指针不得逃逸到异步任务 |
+| `DimensionReader`、`MacroEvaluation::definition` | 保留。通用同步求值期间 Document 保持存活，指针不得逃逸到长期表或异步任务 |
+| SimulationPlan 的 Bound 节点及 CompiledMacroDefinition/LookupDefinition const 指针 | 受控例外。Plan 唯一拥有执行 AST 和编译宏，内部指针使用稳定堆身份；Lookup 指针只指向配套不可变 Document 副本。SimulationRunRequest 共同持有副本和 Plan，寿命覆盖 Worker。历史 Run 不保留这些指针 |
 | `Evaluation.cpp::arrayOf` | 保留。std::variant 的即时 alternative 访问，Value 在递归求值调用栈中存活 |
 | `XmileFile.cpp::findElementByName/findFlowLayout` | 保留。文件内同步查询，Document/routes 在导入调用栈中存活；不为消除指针而复制完整模型或布局 |
 

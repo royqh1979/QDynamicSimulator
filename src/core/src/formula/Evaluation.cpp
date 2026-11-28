@@ -1,6 +1,8 @@
 #include <core/formula/Evaluation.h>
 
+#include <core/formula/Binding.h>
 #include <core/formula/Function.h>
+#include <core/Lookup.h>
 #include <core/Macro.h>
 
 #include <QHash>
@@ -116,12 +118,18 @@ public:
             return success(static_cast<const NumberNode *>(node)->value());
         case FormulaNodeKind::Reference:
             return reference(*static_cast<const ReferenceNode *>(node));
+        case FormulaNodeKind::BoundReference:
+            return boundReference(*static_cast<const BoundReferenceNode *>(node));
+        case FormulaNodeKind::LocalReference:
+            return localReference(*static_cast<const LocalReferenceNode *>(node));
         case FormulaNodeKind::Unary:
             return unary(*static_cast<const UnaryNode *>(node));
         case FormulaNodeKind::Binary:
             return binary(*static_cast<const BinaryNode *>(node));
         case FormulaNodeKind::Call:
             return call(*static_cast<const CallNode *>(node));
+        case FormulaNodeKind::BoundCall:
+            return boundCall(*static_cast<const BoundCallNode *>(node));
         case FormulaNodeKind::Conditional:
             return conditional(*static_cast<const ConditionalNode *>(node));
         case FormulaNodeKind::Subscript:
@@ -177,14 +185,49 @@ private:
         return !m_macroFrames.isEmpty() && m_macroFrames.back().contains(nameKey);
     }
 
+    EvaluationResult boundReference(const BoundReferenceNode &node)
+    {
+        switch (node.referenceKind()) {
+        case BoundReferenceKind::Variable:
+            if (!m_context.readEntity)
+                return failure(&node, "No variable reader for: " + node.nameKey());
+            return checkedValue(m_context.readEntity(node.variable()), node.nameKey(), node);
+        case BoundReferenceKind::Dimension:
+            for (std::size_t index = 0; index < m_context.scope.dimensions.size(); ++index) {
+                if (m_context.scope.dimensions[index] == node.nameKey()
+                    && index < m_context.scope.indices.size())
+                    return success(static_cast<double>(m_context.scope.indices[index] + 1));
+            }
+            return failure(&node, "Dimension requires a current array element: " + node.nameKey());
+        case BoundReferenceKind::DimensionElement:
+            return success(static_cast<double>(node.element()));
+        case BoundReferenceKind::Time:
+            return success(m_context.time);
+        case BoundReferenceKind::Dt:
+            return success(m_context.dt);
+        case BoundReferenceKind::StartTime:
+            return success(m_context.startTime);
+        case BoundReferenceKind::StopTime:
+            return success(m_context.stopTime);
+        case BoundReferenceKind::Pi:
+            return success(3.14159265358979323846);
+        case BoundReferenceKind::Infinity:
+            return success(std::numeric_limits<double>::infinity());
+        }
+        return failure(&node, "Unknown bound reference");
+    }
+
+    EvaluationResult localReference(const LocalReferenceNode &node)
+    {
+        if (!hasLocal(node.nameKey()))
+            return failure(&node, "Unresolved macro parameter: " + node.nameKey());
+        return success(m_macroFrames.back().value(node.nameKey()));
+    }
+
     EvaluationResult reference(const ReferenceNode &node)
     {
         if (hasLocal(node.nameKey()))
             return success(m_macroFrames.back().value(node.nameKey()));
-        if (m_context.readResolvedReference) {
-            if (std::optional<Value> value = m_context.readResolvedReference(node.nameKey()))
-                return checkedValue(std::move(value), node.nameKey(), node);
-        }
         if (const FunctionSignature *signature = findFunctionSignature(node.nameKey());
             signature && signature->minArguments == 0 && signature->maxArguments == 0) {
             if (node.nameKey() == "self")
@@ -516,6 +559,10 @@ private:
                             resolved = true;
                         }
                     }
+                } else if (const auto *bound = dynamic_cast<const BoundReferenceNode *>(indexNode);
+                    bound && bound->referenceKind() == BoundReferenceKind::Dimension) {
+                    dimensionName = bound->nameKey();
+                    resolved = true;
                 }
                 if (resolved && !dimensionName.isEmpty()) {
                     const auto scope = std::find(m_context.scope.dimensions.begin(), m_context.scope.dimensions.end(), dimensionName);
@@ -621,7 +668,8 @@ private:
         return success(ArrayValue {m_context.scope.dimensions, shape, std::move(values)});
     }
 
-    EvaluationResult reduce(const CallNode &node, const Value &input)
+    template <typename Call>
+    EvaluationResult reduce(const Call &node, const Value &input)
     {
         const ArrayValue *array = arrayOf(input);
         if (!array) {
@@ -652,7 +700,7 @@ private:
         return failure(&node, "Unknown array reduction: " + node.nameKey());
     }
 
-    EvaluationResult rank(const CallNode &node, const QVector<Value> &arguments)
+    EvaluationResult rank(const FormulaNode &node, const QVector<Value> &arguments)
     {
         const auto *rankValue = std::get_if<double>(&arguments[1]);
         const ArrayValue *primary = arrayOf(arguments[0]);
@@ -689,10 +737,9 @@ private:
         return success(static_cast<double>(order[rankIndex] + 1));
     }
 
-    EvaluationResult invokeMacro(const CallNode &node, const MacroEvaluation &macro)
+    template <typename Call, typename Definition>
+    EvaluationResult invokeMacro(const Call &node, const Definition &definition)
     {
-        if (!macro.definition)
-            return failure(&node, "Invalid macro definition");
         if (m_macroFrames.size() >= 64)
             return failure(&node, "Macro recursion depth limit exceeded");
 
@@ -707,27 +754,25 @@ private:
 
         m_macroFrames.push_back({});
         MacroFrameGuard guard(m_macroFrames);
-        for (int index = 0; index < macro.definition->parameters().size(); ++index) {
+        for (int index = 0; index < definition.parameters().size(); ++index) {
             Value value = index < arguments.size() ? std::move(arguments[index]) : Value();
             if (index >= arguments.size()) {
-                EvaluationResult evaluated = evaluate(macro.definition->parameters()[index].defaultFormula().root());
+                EvaluationResult evaluated = evaluate(definition.parameters()[index].defaultFormula().root());
                 if (!evaluated.value)
                     return evaluated;
                 value = std::move(*evaluated.value);
             }
-            m_macroFrames.back().insert(macro.definition->parameters()[index].nameKey(), std::move(value));
+            m_macroFrames.back().insert(definition.parameters()[index].nameKey(), std::move(value));
         }
-        return evaluate(macro.definition->formula().root());
+        return evaluate(definition.formula().root());
     }
 
-    EvaluationResult lookup(const CallNode &node)
+    template <typename Call, typename Reader>
+    EvaluationResult lookup(const Call &node, Reader evaluateOne)
     {
         EvaluationResult input = evaluate(node.argument(0));
         if (!input.value)
             return input;
-        const auto evaluateOne = [this, &node](double value) -> std::optional<double> {
-            return m_context.readLookup(node.nameKey(), value);
-        };
         if (const auto *scalar = std::get_if<double>(&*input.value)) {
             const auto value = evaluateOne(*scalar);
             return value ? success(*value) : failure(&node, "Unknown function: " + node.nameKey());
@@ -742,8 +787,8 @@ private:
         return success(std::move(output));
     }
 
-    template <typename Operation>
-    EvaluationResult timeFunction(const CallNode &node, Operation operation)
+    template <typename Call, typename Operation>
+    EvaluationResult timeFunction(const Call &node, Operation operation)
     {
         QVector<Value> inputs;
         QVector<QString> dimensions;
@@ -782,20 +827,47 @@ private:
 
     EvaluationResult call(const CallNode &node)
     {
-        const FunctionSignature *signature = findFunctionSignature(node.nameKey());
-        if (!signature) {
-            if (m_context.readMacro) {
-                const auto macro = m_context.readMacro(node.nameKey(), node.argumentCount(), 1);
-                if (macro)
-                    return invokeMacro(node, *macro);
+        if (const FunctionSignature *signature = findFunctionSignature(node.nameKey()))
+            return builtin(node, *signature);
+        if (m_context.readMacro) {
+            const auto macro = m_context.readMacro(node.nameKey(), node.argumentCount(), 1);
+            if (macro) {
+                if (!macro->definition)
+                    return failure(&node, "Invalid macro definition");
+                return invokeMacro(node, *macro->definition);
             }
-            if (m_context.readLookup && node.argumentCount() == 1)
-                return lookup(node);
-            return failure(&node, "Unknown function: " + node.nameKey());
         }
-        if (node.argumentCount() < signature->minArguments || node.argumentCount() > signature->maxArguments)
+        if (m_context.readLookup && node.argumentCount() == 1) {
+            return lookup(node, [this, &node](double value) -> std::optional<double> {
+                return m_context.readLookup(node.nameKey(), value);
+            });
+        }
+        return failure(&node, "Unknown function: " + node.nameKey());
+    }
+
+    EvaluationResult boundCall(const BoundCallNode &node)
+    {
+        switch (node.callKind()) {
+        case BoundCallKind::Builtin:
+            return builtin(node, node.signature());
+        case BoundCallKind::Macro:
+            return node.macro() ? invokeMacro(node, *node.macro()) : failure(&node, "Invalid macro definition");
+        case BoundCallKind::Lookup:
+            if (!node.lookup())
+                return failure(&node, "Invalid Lookup definition");
+            return lookup(node, [&node](double value) -> std::optional<double> {
+                return node.lookup()->evaluate(value);
+            });
+        }
+        return failure(&node, "Unknown bound call");
+    }
+
+    template <typename Call>
+    EvaluationResult builtin(const Call &node, const FunctionSignature &signature)
+    {
+        if (node.argumentCount() < signature.minArguments || node.argumentCount() > signature.maxArguments)
             return failure(&node, "Invalid argument count for function: " + node.nameKey());
-        if (signature->category == FunctionCategory::Time || node.nameKey() == "pi" || node.nameKey() == "inf")
+        if (signature.category == FunctionCategory::Time || node.nameKey() == "pi" || node.nameKey() == "inf")
             return constant(node, node.nameKey());
         if (node.nameKey() == "if_then_else") {
             EvaluationResult condition = evaluate(node.argument(0));
@@ -840,7 +912,7 @@ private:
         }
         const bool arrayReduction = node.nameKey() == "sum" || node.nameKey() == "mean" || node.nameKey() == "stddev"
             || node.nameKey() == "size";
-        if (signature->category != FunctionCategory::Mathematical && node.nameKey() != "log"
+        if (signature.category != FunctionCategory::Mathematical && node.nameKey() != "log"
             && !arrayReduction && node.nameKey() != "rank")
             return failure(&node, "Function is not supported: " + node.nameKey());
 

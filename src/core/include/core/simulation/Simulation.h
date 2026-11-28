@@ -2,14 +2,19 @@
 
 #include <core/SimulationSettings.h>
 #include <core/Lookup.h>
+#include <core/Macro.h>
 #include <core/Validation.h>
+#include <core/formula/Binding.h>
 #include <core/formula/Evaluation.h>
 
 #include <QHash>
 #include <QVector>
 
 #include <functional>
+#include <map>
+#include <memory>
 #include <optional>
+#include <unordered_map>
 
 namespace qds::core {
 
@@ -70,27 +75,6 @@ private:
     std::size_t m_count;
 };
 
-enum class ReferenceBindingKind {
-    Variable,
-    Dimension,
-    DimensionElement,
-    Self,
-    Time,
-    Dt,
-    StartTime,
-    StopTime,
-    Pi,
-    Infinity,
-    Lookup
-};
-
-struct ReferenceBinding {
-    ReferenceBindingKind kind = ReferenceBindingKind::Variable;
-    EntityId variable = 0;
-    std::size_t element = 0;
-    std::optional<LookupDefinition> lookup;
-};
-
 struct FlowRatePlan {
     EntityId flow = 0;
     bool subtract = false;
@@ -107,11 +91,17 @@ struct StockFlows {
 class SimulationPlan
 {
 public:
+    SimulationPlan(SimulationPlan &&) noexcept = default;
+    SimulationPlan &operator=(SimulationPlan &&) noexcept = default;
+    SimulationPlan(const SimulationPlan &) = delete;
+    SimulationPlan &operator=(const SimulationPlan &) = delete;
+
     const SimulationSettings &settings() const { return m_settings; }
     const QVector<EntityId> &outputOrder() const { return m_outputOrder; }
 
 private:
     friend SimulationCompileResult compileSimulation(const Document &document);
+    friend class SimulationCompiler;
     friend class SimulationRunner;
     SimulationPlan() = default;
 
@@ -121,7 +111,8 @@ private:
     QVector<EntityId> m_outputOrder;
     QVector<StockFlows> m_stockFlows;
     QHash<EntityId, ArrayLayout> m_arrayLayouts;
-    QHash<QString, ReferenceBinding> m_referenceBindings;
+    std::unordered_map<EntityId, CompiledElementFormula> m_formulas;
+    std::map<MacroSignature, std::unique_ptr<CompiledMacroDefinition>> m_macros;
 };
 
 struct SimulationCompileResult {

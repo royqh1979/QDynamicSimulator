@@ -151,3 +151,35 @@ gprof 复查不再出现旧的运行时 flatIndex，Simulation 的逐元素 coor
 - 插桩结果仍由既有数组负载和 profiler 自身主导，不能用其绝对耗时替代普通 Release。新增函数的算术本身没有显示出需要立即重构的高占比热点。
 
 上述发现只形成后续候选，不改变本轮生产代码；profile 的目的因此同时包括耗时基线和冗余审查。
+
+## Plan 绑定 AST：名称解析消除与编译成本
+
+本轮将全局引用和调用在编译期转换为 Plan 自有的 Bound 节点。Document 副本及原始 AST 不变；宏体和默认参数也在 Plan 内绑定，不按调用展开。完整迁移过程见 [重构计划](../history/2026-11-28-call-resolution-done.md)。
+
+固定 Release `profile-simulation 1000`，基线与两轮结果：
+
+| 场景 | 原始基线 | 第 1 轮 | 第 2 轮 |
+| --- | ---: | ---: | ---: |
+| Lookup 求解，1000 次/100 万次调用 | 149.118 ms，0.149118 μs/调用 | 65.9907 ms，0.0659907 μs/调用 | 66.5164 ms，0.0665164 μs/调用 |
+| 时间函数，1000 次/100 万次求值 | 1081.5 ms，1.0815 μs/求值 | 1174.33 ms，1.17433 μs/求值 | 1164.95 ms，1.16495 μs/求值 |
+
+Lookup 两轮分别减少约 55.8% 和 55.4%，checksum 均为 10000。时间函数两轮上升约 8.6%/7.7%，保留该现象；插桩未发现新的名称解析或宏试探热点，不用其它场景收益掩盖它。所有场景样本数和 checksum 一致。
+
+独立编译成本：
+
+| 编译场景 | 编译耗时 | 同轮运行耗时 | 结论 |
+| --- | ---: | ---: | --- |
+| 指数小模型 | 2.6617 / 2.7959 μs/次 | 311.279 / 315.808 ms/1000 次 | 未显示缓存需求 |
+| Lookup | 3.1617 μs/次 | 66.5164 ms/1000 次 | 编译约占 4.8% |
+| 带默认参数 Macro | 5.0017 μs/次 | 356.583 ms/1000 次 | 编译约占 1.4% |
+
+因此本轮不增加 Plan revision 或缓存。Macro checksum 为 20000。
+
+独立 `-O3 -g -pg` 插桩复查包含 Lookup/Macro 的完整 profile：
+
+- `readMacro()`/`makeMacroReader()` 无调用记录；
+- `findFunctionSignature()` 共 18071 次、`Document::findByName()` 共 6008 次，来自编译、名称检查或元数据阶段，不再是百万次运行调用；
+- `LookupDefinition::evaluate()` 共 1002000 次，数值 checksum 不变；
+- gprof 的 BFD Dwarf 警告和插桩开销只影响辅助证据，绝对耗时以普通 Release 为准。
+
+新增回归覆盖源 Formula/宏 AST 根指针、节点数和文本不变，Plan 移动后的递归宏，Lookup/Macro 双向名称冲突及索引移动/clear。Debug 全量 CTest 18/18、Release/Core/IO 和两种构建的完整 XMILE corpus 均通过。Release 的 `pngExportAndClipboard` 持续因系统剪贴板被其它程序占用而失败（`OpenClipboard 0x800401d0`）；用户已明确接受该系统问题，不作为本轮提交阻塞。

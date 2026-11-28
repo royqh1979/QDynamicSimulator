@@ -1,6 +1,7 @@
 #pragma once
 
 #include <core/Dimension.h>
+#include <core/Element.h>
 #include <core/formula/Formula.h>
 
 #include <functional>
@@ -26,6 +27,7 @@ struct ArrayValue {
 
 using Value = std::variant<double, ArrayValue>;
 using VariableReader = std::function<std::optional<Value>(const QString &nameKey)>;
+using EntityReader = std::function<std::optional<Value>(EntityId id)>;
 using LookupReader = std::function<std::optional<double>(const QString &nameKey, double input)>;
 using DimensionReader = std::function<const Dimension *(const QString &)>;
 
@@ -48,7 +50,7 @@ struct EvaluationContext {
     double startTime = 0.0;
     double stopTime = 0.0;
     VariableReader readVariable;
-    VariableReader readResolvedReference;
+    EntityReader readEntity;
     LookupReader readLookup;
     DimensionReader readDimension;
     MacroReader readMacro;

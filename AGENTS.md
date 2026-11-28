@@ -47,7 +47,7 @@
 - `connect()`、`QTimer::singleShot()` 等以 lambda 作槽时必须传入合适的 QObject context，且连接寿命不得超过其捕获对象寿命。
 - 不得用 `&` 引用捕获局部变量供长命连接使用；需要写回局部变量时，使用与局部变量同生命周期的局部 QObject context，或在返回前显式 disconnect。
 - 按值捕获的裸指针必须明显比 context 长寿，优先捕获值类型或 shared_ptr。
-- Document::find 等接口返回的 raw pointer 只能在调用栈上即时使用；不得保存为成员、放入长期容器、供异步任务/长命 lambda 持有，Document 发生修改、移动、清空或删除后必须重新获取。该纪律不替代后续生命周期接口设计。
+- Document::find 等接口返回的 raw pointer 只能在调用栈上即时使用；不得保存为成员、放入长期容器、供异步任务/长命 lambda 持有，Document 发生修改、移动、清空或删除后必须重新获取。唯一例外是 `docs/design/call-resolution.md` 定义的 Plan 绑定：Plan 拥有执行 AST 和编译宏，Lookup const 指针只能属于 Request 共享持有的不可变运行副本；Request 共同保证 Document 与 Plan 寿命，绑定不进入历史 Run。
 
 ## 5. 构建与测试规则
 
