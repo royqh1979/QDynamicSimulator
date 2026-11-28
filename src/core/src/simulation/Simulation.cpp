@@ -336,12 +336,26 @@ struct DelayRateResult {
     std::optional<ModelIssue> issue;
 };
 
-DelayRateResult delayRates(const QVector<DelayPlan> &plans, DelayState &state, bool advanceDiscrete)
+enum class DelayRateStage {
+    ActualStep,
+    Intermediate
+};
+
+bool hasDelayRates(const QVector<DelayPlan> &plans, DelayRateStage stage)
+{
+    return std::any_of(plans.begin(), plans.end(), [stage](const DelayPlan &plan) {
+        return plan.kind != DelayKind::Fixed && (stage == DelayRateStage::ActualStep || !plan.discrete);
+    });
+}
+
+DelayRateResult delayRates(const QVector<DelayPlan> &plans, DelayState &state, DelayRateStage stage)
 {
     DelayRateResult result;
+    if (!hasDelayRates(plans, stage))
+        return result;
     result.values.resize(state.levels.size());
     for (const DelayPlan &plan : plans) {
-        if (plan.kind == DelayKind::Fixed)
+        if (plan.kind == DelayKind::Fixed || (plan.discrete && stage == DelayRateStage::Intermediate))
             continue;
         for (std::size_t element = 0; element < plan.count; ++element) {
             const int order = state.orders[plan.base + element];
@@ -355,17 +369,17 @@ DelayRateResult delayRates(const QVector<DelayPlan> &plans, DelayState &state, b
                 result.issue = ModelIssue {0, IssueSeverity::Error, "Delay time must be positive", "invalid-delay-time", {}};
                 return result;
             }
-            if (plan.kind == DelayKind::Material && plan.discrete && advanceDiscrete) {
-                for (int stage = order - 1; stage > 0; --stage) {
-                    const std::size_t target = plan.base + stage * plan.count + element;
-                    const std::size_t source = plan.base + (stage - 1) * plan.count + element;
+            if (plan.kind == DelayKind::Material && plan.discrete && stage == DelayRateStage::ActualStep) {
+                for (int level = order - 1; level > 0; --level) {
+                    const std::size_t target = plan.base + level * plan.count + element;
+                    const std::size_t source = plan.base + (level - 1) * plan.count + element;
                     state.times[target] = state.times[source];
                 }
                 state.times[plan.base + element] = currentTime;
             }
             double inflow = state.inputs[slot];
-            for (int stage = 0; stage < order; ++stage) {
-                const std::size_t index = plan.base + stage * plan.count + element;
+            for (int level = 0; level < order; ++level) {
+                const std::size_t index = plan.base + level * plan.count + element;
                 const double time = plan.kind == DelayKind::Material && plan.discrete ? state.times[index] : currentTime;
                 const double outflow = plan.kind == DelayKind::Material ? state.levels[index] / time : state.levels[index];
                 result.values[index] = (inflow - outflow) * order / (plan.kind == DelayKind::Material ? 1.0 : time);
@@ -374,6 +388,22 @@ DelayRateResult delayRates(const QVector<DelayPlan> &plans, DelayState &state, b
         }
     }
     return result;
+}
+
+void advanceContinuousDelayStages(const QVector<DelayPlan> &plans, DelayState &state,
+    const QVector<double> &rates, double factor)
+{
+    for (const DelayPlan &plan : plans) {
+        if (plan.kind == DelayKind::Fixed || plan.discrete)
+            continue;
+        for (std::size_t element = 0; element < plan.count; ++element) {
+            const int order = state.orders[plan.base + element];
+            for (int level = 0; level < order; ++level) {
+                const std::size_t slot = plan.base + level * plan.count + element;
+                state.levels[slot] += rates[slot] * factor;
+            }
+        }
+    }
 }
 
 void advanceDelayOutputs(const QVector<DelayPlan> &plans, DelayState &state)
@@ -1175,7 +1205,7 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
         context.inputDt = dt;
         if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime, dt, values, delayState))
             return failEvaluation(*issue);
-        DelayRateResult delayK1 = delayRates(m_plan.m_delays, delayState, true);
+        DelayRateResult delayK1 = delayRates(m_plan.m_delays, delayState, DelayRateStage::ActualStep);
         if (delayK1.issue)
             return failEvaluation(*delayK1.issue);
 
@@ -1205,8 +1235,17 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
                 return failEvaluation(*rates.issue);
             for (const StockFlows &binding : m_plan.m_stockFlows)
                 nextValues[binding.stock] = integratedValue(values[binding.stock], rates.values[binding.stock], dt);
-            for (int index = 0; index < nextDelays.levels.size(); ++index)
-                nextDelays.levels[index] += delayK1.values[index] * dt;
+            for (const DelayPlan &plan : m_plan.m_delays) {
+                if (plan.kind == DelayKind::Fixed)
+                    continue;
+                for (std::size_t element = 0; element < plan.count; ++element) {
+                    const int order = delayState.orders[plan.base + element];
+                    for (int level = 0; level < order; ++level) {
+                        const std::size_t slot = plan.base + level * plan.count + element;
+                        nextDelays.levels[slot] += delayK1.values[slot] * dt;
+                    }
+                }
+            }
         } else {
             const NetRateResult k1 = netRates(m_plan.m_stockFlows, values);
             if (k1.issue)
@@ -1215,11 +1254,10 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
             DelayState stageDelays = delayState;
             for (const StockFlows &binding : m_plan.m_stockFlows)
                 stage[binding.stock] = integratedValue(values[binding.stock], k1.values[binding.stock], dt / 2.0);
-            for (int index = 0; index < stageDelays.levels.size(); ++index)
-                stageDelays.levels[index] += delayK1.values[index] * dt / 2.0;
+            advanceContinuousDelayStages(m_plan.m_delays, stageDelays, delayK1.values, dt / 2.0);
             if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime + dt / 2.0, dt, stage, stageDelays))
                 return failEvaluation(*issue);
-            DelayRateResult delayK2 = delayRates(m_plan.m_delays, stageDelays, false);
+            DelayRateResult delayK2 = delayRates(m_plan.m_delays, stageDelays, DelayRateStage::Intermediate);
             if (delayK2.issue)
                 return failEvaluation(*delayK2.issue);
             const NetRateResult k2 = netRates(m_plan.m_stockFlows, stage);
@@ -1230,11 +1268,10 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
             stageDelays = delayState;
             for (const StockFlows &binding : m_plan.m_stockFlows)
                 stage[binding.stock] = integratedValue(values[binding.stock], k2.values[binding.stock], dt / 2.0);
-            for (int index = 0; index < stageDelays.levels.size(); ++index)
-                stageDelays.levels[index] += delayK2.values[index] * dt / 2.0;
+            advanceContinuousDelayStages(m_plan.m_delays, stageDelays, delayK2.values, dt / 2.0);
             if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime + dt / 2.0, dt, stage, stageDelays))
                 return failEvaluation(*issue);
-            DelayRateResult delayK3 = delayRates(m_plan.m_delays, stageDelays, false);
+            DelayRateResult delayK3 = delayRates(m_plan.m_delays, stageDelays, DelayRateStage::Intermediate);
             if (delayK3.issue)
                 return failEvaluation(*delayK3.issue);
             const NetRateResult k3 = netRates(m_plan.m_stockFlows, stage);
@@ -1245,11 +1282,10 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
             stageDelays = delayState;
             for (const StockFlows &binding : m_plan.m_stockFlows)
                 stage[binding.stock] = integratedValue(values[binding.stock], k3.values[binding.stock], dt);
-            for (int index = 0; index < stageDelays.levels.size(); ++index)
-                stageDelays.levels[index] += delayK3.values[index] * dt;
+            advanceContinuousDelayStages(m_plan.m_delays, stageDelays, delayK3.values, dt);
             if (const auto issue = evaluate(m_plan.m_evaluationOrder, currentTime + dt, dt, stage, stageDelays))
                 return failEvaluation(*issue);
-            DelayRateResult delayK4 = delayRates(m_plan.m_delays, stageDelays, false);
+            DelayRateResult delayK4 = delayRates(m_plan.m_delays, stageDelays, DelayRateStage::Intermediate);
             if (delayK4.issue)
                 return failEvaluation(*delayK4.issue);
             const NetRateResult k4 = netRates(m_plan.m_stockFlows, stage);
@@ -1262,6 +1298,8 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
                 nextValues[binding.stock] = integratedValue(values[binding.stock], rate, 1.0);
             }
             for (const DelayPlan &plan : m_plan.m_delays) {
+                if (plan.kind == DelayKind::Fixed)
+                    continue;
                 for (std::size_t element = 0; element < plan.count; ++element) {
                     const int order = delayState.orders[plan.base + element];
                     for (int stage = 0; stage < order; ++stage) {

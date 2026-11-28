@@ -46,6 +46,7 @@ output = YN
 - `SMOOTH N` 的各级都使用当前平滑时间，不滚动 delayTime，输出直接为最后一级状态。
 - `DELAY1`/`DELAY3`/`SMOOTH`/`SMTH1`/`SMTH3` 及 I 变体是连续一阶/三阶别名：使用当前阶段的 delayTime，不按离散输出缓存。
 - 离散计划只推进一次实际 DT；连续计划参与 Euler/RK4 各阶段导数计算。Stock 的 RK4 与离散输出冻结可以共存。
+- 速率计算区分实际步与 RK 中间阶段：Fixed 不创建微分速率，离散 N 只在实际步计算 K1，连续计划参与各阶段；Euler 只积分具有微分速率的计划。
 - 未触达的调用保持原状态，不伪造输入或重新初始化。
 
 XMILE `DELAY` 使用固定管道。初始化时将 delayTime/DT 四舍五入为步数，至少为 1、最多为 `DelayPlan::maximumOrder`；每个数组元素有独立阶数和管道指针：

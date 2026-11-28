@@ -1000,6 +1000,11 @@ void TestSimulation::delayFunctionBoundaries()
     QCOMPARE(fixed.arraySeries("output").at(5).values, (QVector<double> {2.0, 2.0, 3.0}));
     QCOMPARE(fixed.arraySeries("output").at(8).values, (QVector<double> {2.0, 2.0, 3.0}));
     QCOMPARE(fixed.arraySeries("output").at(9).values, (QVector<double> {2.0, 3.0, 3.0}));
+    arrays.setSimulationSettings({0.0, 2.25, 0.25, 0.25, IntegrationMethod::RungeKutta4});
+    const SimulationRun fixedRk4 = runModel(arrays);
+    QCOMPARE(fixedRk4.status(), SimulationRunStatus::Completed);
+    QCOMPARE(fixedRk4.arraySeries("output").at(5).values, (QVector<double> {2.0, 2.0, 3.0}));
+    QCOMPARE(fixedRk4.arraySeries("output").at(9).values, (QVector<double> {2.0, 3.0, 3.0}));
     arrays.setEquation(arrayOutput, "delay(input, 16.25, N)");
     QCOMPARE(runModel(arrays).status(), SimulationRunStatus::Failed);
 
@@ -1011,6 +1016,24 @@ void TestSimulation::delayFunctionBoundaries()
     const SimulationRun skipped = runModel(conditional);
     QCOMPARE(skipped.status(), SimulationRunStatus::Completed);
     QCOMPARE(skipped.series("output"), (QVector<double> {5.0, 5.0, 5.0, 5.0, 5.0}));
+
+    Document mixed;
+    const EntityId fixedOutput = mixed.createVariable(ElementKind::Variable);
+    mixed.rename(fixedOutput, "fixed");
+    mixed.setEquation(fixedOutput, "delay(1, 1, 0)");
+    const EntityId discreteOutput = mixed.createVariable(ElementKind::Variable);
+    mixed.rename(discreteOutput, "discrete");
+    mixed.setEquation(discreteOutput, "delayn(1, 2, 0, 2)");
+    const EntityId continuousOutput = mixed.createVariable(ElementKind::Variable);
+    mixed.rename(continuousOutput, "continuous");
+    mixed.setEquation(continuousOutput, "delay1(1, 2, 0)");
+    mixed.setSimulationSettings({0.0, 0.5, 0.25, 0.25, IntegrationMethod::RungeKutta4});
+    const SimulationRun mixedRun = runModel(mixed);
+    QCOMPARE(mixedRun.status(), SimulationRunStatus::Completed);
+    QCOMPARE(mixedRun.series("fixed"), (QVector<double> {0.0, 0.0, 0.0}));
+    QCOMPARE(mixedRun.series("discrete"), (QVector<double> {0.0, 0.0, 0.0625}));
+    QVERIFY(mixedRun.series("continuous").back() > 0.2);
+    QVERIFY(mixedRun.series("continuous").back() < 0.23);
 
     Document macro;
     MacroDefinitionData definition;
