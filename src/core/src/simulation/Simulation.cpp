@@ -274,10 +274,15 @@ NetRateResult netRates(const QVector<StockFlows> &bindings, const QHash<EntityId
                 QVector<double>(stockArray->values.size(), 0.0)});
         else
             result.values.insert(binding.stock, 0.0);
-        const auto accumulate = [&](EntityId flowId, bool subtract) -> std::optional<ModelIssue> {
-            const Value &flow = state[flowId];
+        const auto accumulate = [&](const FlowRatePlan &alignment) -> std::optional<ModelIssue> {
+            const Value &flow = state[alignment.flow];
             Value &rate = result.values[binding.stock];
-            const double sign = subtract ? -1.0 : 1.0;
+            const double sign = alignment.subtract ? -1.0 : 1.0;
+            if (!alignment.compatible) {
+                return ModelIssue {binding.stock, IssueSeverity::Error,
+                    std::get_if<double>(&rate) ? "Array flow is incompatible with scalar stock"
+                        : "Flow dimensions are incompatible with stock", "incompatible-stock-flow", {}};
+            }
             if (auto *scalar = std::get_if<double>(&rate)) {
                 const auto *flowScalar = std::get_if<double>(&flow);
                 if (!flowScalar)
@@ -294,22 +299,13 @@ NetRateResult netRates(const QVector<StockFlows> &bindings, const QHash<EntityId
             }
             const ArrayValue &flowArray = std::get<ArrayValue>(flow);
             for (std::size_t flat = 0; flat < rateArray.values.size(); ++flat) {
-                const auto flowIndex = flatIndex(flowArray, rateArray.dimensions, coordinates(flat, rateArray.shape));
-                if (!flowIndex)
-                    return ModelIssue {binding.stock, IssueSeverity::Error,
-                        "Flow dimensions are incompatible with stock", "incompatible-stock-flow", {}};
-                rateArray.values[flat] += sign * flowArray.values[*flowIndex];
+                const std::size_t flowFlat = alignment.direct ? flat : alignment.mapping[flat];
+                rateArray.values[flat] += sign * flowArray.values[flowFlat];
             }
             return std::nullopt;
         };
-        for (const EntityId flow : binding.inflows) {
-            if (const auto issue = accumulate(flow, false)) {
-                result.issue = *issue;
-                return result;
-            }
-        }
-        for (const EntityId flow : binding.outflows) {
-            if (const auto issue = accumulate(flow, true)) {
+        for (const FlowRatePlan &flow : binding.flows) {
+            if (const auto issue = accumulate(flow)) {
                 result.issue = *issue;
                 return result;
             }
@@ -340,6 +336,35 @@ std::optional<std::size_t> ArrayLayout::flatIndex(const QVector<std::size_t> &in
         flat += indices[position] * m_strides[position];
     }
     return flat;
+}
+
+QVector<std::size_t> ArrayLayout::mappingFrom(const ArrayLayout &source) const
+{
+    if (m_dimensions.size() != source.m_dimensions.size())
+        return {};
+    QVector<std::size_t> sourcePositions;
+    sourcePositions.reserve(m_dimensions.size());
+    for (std::size_t position = 0; position < m_dimensions.size(); ++position) {
+        const auto found = std::find(source.m_dimensions.begin(), source.m_dimensions.end(), m_dimensions[position]);
+        if (found == source.m_dimensions.end()
+            || m_shape[position] != source.m_shape[found - source.m_dimensions.begin()])
+            return {};
+        sourcePositions.push_back(found - source.m_dimensions.begin());
+    }
+
+    QVector<std::size_t> mapping;
+    mapping.reserve(m_count);
+    for (std::size_t flat = 0; flat < m_count; ++flat) {
+        const QVector<std::size_t> targetIndices = coordinates(flat, m_shape);
+        QVector<std::size_t> sourceIndices(sourcePositions.size());
+        for (std::size_t position = 0; position < sourcePositions.size(); ++position)
+            sourceIndices[sourcePositions[position]] = targetIndices[position];
+        const auto sourceFlat = source.flatIndex(sourceIndices);
+        if (!sourceFlat)
+            return {};
+        mapping.push_back(*sourceFlat);
+    }
+    return mapping;
 }
 
 SimulationCompileResult compileSimulation(const Document &document)
@@ -396,22 +421,6 @@ SimulationCompileResult compileSimulation(const Document &document)
             plan.m_initializationOrder.push_back(id);
     }
     plan.m_evaluationOrder = topologicalOrder(runtimeRoots, document, analysis, false, result);
-    for (EntityId stock : stocks) {
-        StockFlows binding;
-        binding.stock = stock;
-        for (const ModelElement &element : document.model().elements()) {
-            if (element.kind() != ElementKind::Flow)
-                continue;
-            const FlowEndpoints endpoints = static_cast<const Flow &>(element).endpoints();
-            if (endpoints.to == stock)
-                binding.inflows.push_back(element.id());
-            if (endpoints.from == stock)
-                binding.outflows.push_back(element.id());
-        }
-        std::sort(binding.inflows.begin(), binding.inflows.end());
-        std::sort(binding.outflows.begin(), binding.outflows.end());
-        plan.m_stockFlows.push_back(std::move(binding));
-    }
     for (const ModelElement &element : document.model().elements()) {
         if (element.dimensions().isEmpty())
             continue;
@@ -455,6 +464,49 @@ SimulationCompileResult compileSimulation(const Document &document)
     plan.m_referenceBindings.insert(QStringLiteral("stoptime"), {ReferenceBindingKind::StopTime, 0, 0});
     plan.m_referenceBindings.insert(QStringLiteral("pi"), {ReferenceBindingKind::Pi, 0, 0});
     plan.m_referenceBindings.insert(QStringLiteral("inf"), {ReferenceBindingKind::Infinity, 0, 0});
+    for (EntityId stock : stocks) {
+        StockFlows binding;
+        binding.stock = stock;
+        QVector<EntityId> inflows;
+        QVector<EntityId> outflows;
+        for (const ModelElement &element : document.model().elements()) {
+            if (element.kind() != ElementKind::Flow)
+                continue;
+            const FlowEndpoints endpoints = static_cast<const Flow &>(element).endpoints();
+            if (endpoints.to == stock)
+                inflows.push_back(element.id());
+            if (endpoints.from == stock)
+                outflows.push_back(element.id());
+        }
+        std::sort(inflows.begin(), inflows.end());
+        std::sort(outflows.begin(), outflows.end());
+        const auto appendFlow = [&](EntityId flow, bool subtract) {
+            FlowRatePlan rate;
+            rate.flow = flow;
+            rate.subtract = subtract;
+            const auto stockLayout = plan.m_arrayLayouts.constFind(stock);
+            const auto flowLayout = plan.m_arrayLayouts.constFind(flow);
+            const bool stockArray = stockLayout != plan.m_arrayLayouts.constEnd();
+            const bool flowArray = flowLayout != plan.m_arrayLayouts.constEnd();
+            if (stockArray && flowArray) {
+                if (stockLayout->dimensions() == flowLayout->dimensions()
+                    && stockLayout->shape() == flowLayout->shape()) {
+                    rate.direct = true;
+                } else {
+                    rate.mapping = stockLayout->mappingFrom(*flowLayout);
+                    rate.compatible = rate.mapping.size() == stockLayout->count();
+                }
+            } else if (!stockArray && flowArray) {
+                rate.compatible = false;
+            }
+            binding.flows.push_back(std::move(rate));
+        };
+        for (EntityId flow : inflows)
+            appendFlow(flow, false);
+        for (EntityId flow : outflows)
+            appendFlow(flow, true);
+        plan.m_stockFlows.push_back(std::move(binding));
+    }
     if (result.issues.empty())
         result.plan = std::move(plan);
     return result;

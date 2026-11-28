@@ -138,11 +138,12 @@ SimulationRun                     一次运行的完整不可变记录
 
 ### 5.1 执行性能重构的目标不变量
 
-第一阶段固定布局与无分配遍历、第二阶段普通公式引用预绑定已实现；Flow 对齐和上下文复用属于待实施方案。对象结构与基线见 [仿真执行计划性能重构方案](../history/2026-11-28-simulation-execution-plan.md)：
+第一阶段固定布局与无分配遍历、第二阶段普通公式引用预绑定、第三阶段 Stock/Flow 布局对齐已实现；上下文复用属于待评估方案。对象结构与基线见 [仿真执行计划性能重构方案](../history/2026-11-28-simulation-execution-plan.md)：
 
 - SimulationPlan 从单纯顺序/关系扩展为包含 ArrayLayout、普通公式引用绑定和 Stock/Flow 对齐的完整执行描述；全部新增元数据由 Plan 自持有并在编译发布后不可变，仍不得持有 Document、Formula、AST、ModelElement 或 MacroDefinition 裸指针。
 - ArrayLayout 固定 dimensions、shape、strides 和元素数；StockRatePlan 固定 Flow 方向及相同布局/重排映射。它们是编译结果，不是运行期可变缓存。
 - ReferenceBinding 以值区分 Variable、Dimension、DimensionElement、SELF、TIME/DT/STARTTIME/STOPTIME、PI/INF。普通引用一次查询 Plan 绑定后直接读取当前状态；内置绑定在编译时覆盖同名模型名称，宏局部帧仍优先。状态表只进行一次 EntityId 查找，未知或未计算名称继续使用原有诊断路径。
+- 每个 FlowRatePlan 固定 Flow、加减方向、直接平铺标志、兼容性和可选重排映射。相同布局不再逐元素调用 coordinates/flatIndex；重排映射由 ArrayLayout 在编译期生成。不兼容布局保留运行时 `incompatible-stock-flow` 和失败前缀，不改写成编译失败。
 - EvaluationContext、当前下标和阶段 Value 若复用，只能作为单次 run() 的局部可变状态，不写回 Plan、不跨 Run/Worker、不进入历史结果。
 - ArrayValue、SimulationRunRequest、SimulationRun 和 Document/Formula 的既有所有权不变；每次模型运行仍重新编译，不使用需要手工失效的全局缓存。
 

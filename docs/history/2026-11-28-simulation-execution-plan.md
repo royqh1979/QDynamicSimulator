@@ -2,7 +2,7 @@
 
 创建时间：2026-11-28 07:48:46 +0800
 
-状态：第一、二阶段已实现，专项测试/profile 和 Release、Debug 全量均通过，等待用户审核；Flow 对齐与上下文复用尚未开始。
+状态：第一至第三阶段已实现，专项测试/profile 和 Release、Debug 全量均通过，等待用户审核；上下文复用尚未开始。
 
 ## 1. 基线
 
@@ -47,7 +47,7 @@ SimulationPlan（编译发布后不可变）
 
 - `ArrayLayout` 持有 dimensions、shape、strides 和元素数；维度数一致、元素数等于 shape 乘积且无溢出、strides 与维度顺序一致。Plan 发布后不得改写。
 - 引用绑定以值表达 Variable/EntityId、Dimension 当前元素、特殊常量等解析结果。普通变量运行期不再重复 normalizeIdentifier 或 Document::findByName；宏局部名称仍优先按宏帧解析，不用全局绑定覆盖局部变量。
-- Flow 对齐计划区分相同布局直接平铺、维度重排预计算映射和不兼容布局编译错误；不能在运行时按位置猜测。
+- Flow 对齐计划区分相同布局直接平铺、维度重排预计算映射和不兼容布局标记；不能在运行时按位置猜测。不兼容性在编译期识别，但运行时仍在原净流量阶段产生 `incompatible-stock-flow` 和既有失败前缀，不改成编译失败。
 - 所有新增元数据由 Plan 以值/const 值容器拥有，不引用 Document 内部对象。Plan 移出编译结果后仍可独立保存其执行元数据，不增加新的悬空指针条件。
 
 `SimulationCompileResult` 仍在成功时提供完整 Plan、失败时提供诊断；不得发布半初始化 Plan 供 Runner 使用。
@@ -95,7 +95,7 @@ Runner 继续使用同步的 const Document& 和 const SimulationPlan&。新增�
    编译期形成统一引用解析结果，运行期直接按 EntityId 读取状态，并将 contains+value 合并为一次查找。完整迁移普通变量、Dimension、特殊常量、宏参数/局部变量和 SELF，不长期保留两套普通名称解析规则。
 
 3. **Stock/Flow 统一布局对齐计划**  
-   相同布局直接按 flat 下标累加；重排布局使用编译期映射；不兼容布局在计划建立时诊断。保持标量广播、方向符号、失败位置和原子性。
+   相同布局直接按 flat 下标累加；重排布局使用编译期映射；不兼容布局在计划建立时标记，运行时沿用原诊断和失败前缀。保持标量广播、方向符号、失败位置和原子性。
 
 4. **复审后决定上下文与扫描优化**  
    重新 profile 后，才决定是否复用 EvaluationContext、合并 finite 扫描或调整状态容器。每项独立计划和测量，不与前三项混成一次不可归因修改。

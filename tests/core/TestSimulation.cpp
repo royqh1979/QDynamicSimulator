@@ -383,6 +383,20 @@ void TestSimulation::arrayDimensionFailures()
     QVERIFY(!stocks.isEmpty());
     QCOMPARE(stocks.size(), 1);
     QCOMPARE(stocks.front().values, (QVector<double> {1.0, 1.0}));
+
+    Document scalarStock;
+    scalarStock.defineDimension("N", 2);
+    const EntityId scalar = scalarStock.createVariable(ElementKind::Stock);
+    scalarStock.setInitialEquation(scalar, "1");
+    const EntityId scalarCloud = scalarStock.createCloud();
+    const EntityId arrayFlow = scalarStock.createFlow(scalarCloud, scalar);
+    scalarStock.setDimensions(arrayFlow, {"N"});
+    scalarStock.setEquation(arrayFlow, "1");
+    scalarStock.setSimulationSettings({0.0, 1.0, 1.0, 1.0});
+    const SimulationRun incompatible = runModel(scalarStock);
+    QCOMPARE(incompatible.status(), SimulationRunStatus::Failed);
+    QVERIFY(!incompatible.issues().isEmpty());
+    QCOMPARE(incompatible.issues().front().code, QStringLiteral("incompatible-stock-flow"));
 }
 
 void TestSimulation::rungeKutta4()

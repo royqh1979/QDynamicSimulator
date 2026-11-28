@@ -110,3 +110,19 @@ Plan 以自有 ReferenceBinding 值保存 Variable、Dimension、DimensionElemen
 gprof 调用次数确认：`Document::findByName()` 从约 2104 万次降至 3003 次，`findFunctionSignature()` 从约 3707 万次降至 1004 次；名称规范化和 Dimension 查询也显著减少。netRates 的坐标/flatIndex 仍是第三阶段目标。
 
 专项测试新增同名 TIME 优先级、Dimension 当前元素和 Dimension.Element；宏参数/局部变量、SELF、数组和未知引用由既有测试继续覆盖。本阶段 Release、Debug 全量 CTest 均为 18/18 通过。
+
+## 第三阶段：Stock/Flow 编译期布局对齐
+
+StockFlows 现在持有不可变 FlowRatePlan：Flow、加减方向、直接平铺标志、兼容性和可选映射。相同 dimensions/shape 直接按 flat 下标累加；重排布局由 ArrayLayout 在编译期生成 Stock flat 到 Flow flat 的映射；标量广播保持原路径。不兼容布局在编译期标记，运行时仍产生原有 `incompatible-stock-flow` 和失败前缀。
+
+普通 Release 结果：
+
+| 场景 | 原始基线 ms | 第 1 轮 ms | 热态异常轮次 ms | 延长冷却后第 3 轮 ms |
+| --- | ---: | ---: | ---: | ---: |
+| simulation_array_euler | 15085.3 | 9489.29 | 36437.2 | 9616.61 |
+| simulation_euler | 448.134 | 327.956 | 327.446 | 327.890 |
+| simulation_rk4 | 1725.38 | 1513.26 | 1535.93 | 1548.68 |
+
+两个正常轮次数组相对原始基线分别减少约 37.1% 和 36.3%。异常轮次的标量 Euler/RK4 仍处于正常范围，数组单独出现长负载波动，因此保留原始数据但不用于代码收益归因。最终结论基于两个相近轮次。所有 checksum 和样本数一致。
+
+gprof 复查不再出现旧的运行时 flatIndex，Simulation 的逐元素 coordinates 不再用于 netRates。专项测试覆盖同布局、维度重排、标量广播、不同维度/形状失败及标量 Stock 接数组 Flow，失败仍发生在运行期并保留前缀。本阶段 Release、Debug 全量 CTest 均为 18/18 通过。
