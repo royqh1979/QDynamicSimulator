@@ -336,8 +336,8 @@ public:
         for (const MacroDefinition &macro : m_document.macros()) {
             CompiledMacroDefinition *compiled = m_plan.m_macros.find(macro.signature())->second.get();
             m_locals.clear();
-            for (const MacroParameter &parameter : macro.parameters())
-                m_locals.insert(parameter.nameKey());
+            for (int index = 0; index < macro.parameters().size(); ++index)
+                m_locals.insert(macro.parameters()[index].nameKey(), index);
             for (const MacroParameter &parameter : macro.parameters()) {
                 CompiledMacroParameter compiledParameter;
                 compiledParameter.m_nameKey = parameter.nameKey();
@@ -391,7 +391,7 @@ private:
     std::unique_ptr<FormulaNode> reference(const ReferenceNode &node)
     {
         if (m_locals.contains(node.nameKey()))
-            return std::make_unique<LocalReferenceNode>(node.nameKey(), node.span());
+            return std::make_unique<LocalReferenceNode>(node.nameKey(), m_locals.value(node.nameKey()), node.span());
         if (const FunctionSignature *signature = findFunctionSignature(node.nameKey());
             signature && signature->minArguments == 0 && signature->maxArguments == 0) {
             if (node.nameKey() == "time")
@@ -504,7 +504,7 @@ private:
 
     const Document &m_document;
     SimulationPlan &m_plan;
-    QSet<QString> m_locals;
+    QHash<QString, int> m_locals;
 };
 
 ArrayLayout::ArrayLayout(QVector<QString> dimensions, QVector<std::size_t> shape,
@@ -792,6 +792,7 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
         return run;
     };
     EvaluationContext context;
+    context.executionStack.reserveValues(ExecutionStack::runValueStorageBytes / int(sizeof(Value)));
     context.startTime = m_plan.settings().startTime();
     context.stopTime = m_plan.settings().stopTime();
     context.inputTime = currentTime;

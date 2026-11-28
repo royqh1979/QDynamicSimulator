@@ -55,16 +55,19 @@ private:
 class LocalReferenceNode final : public FormulaNode
 {
 public:
-    LocalReferenceNode(QString nameKey, SourceSpan span)
+    LocalReferenceNode(QString nameKey, std::size_t slot, SourceSpan span)
         : FormulaNode(FormulaNodeKind::LocalReference, span)
         , m_nameKey(std::move(nameKey))
+        , m_slot(slot)
     {
     }
 
     const QString &nameKey() const { return m_nameKey; }
+    std::size_t slot() const { return m_slot; }
 
 private:
     QString m_nameKey;
+    std::size_t m_slot;
 };
 
 enum class BoundCallKind {
