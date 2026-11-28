@@ -28,6 +28,12 @@ add_executable(profile-array
 target_link_libraries(profile-array PRIVATE QDS::Core Qt5::Core)
 add_dependencies(all-profile-targets profile-array)
 
+add_executable(profile-array-operations
+    ArrayOperationProfile.cpp
+)
+target_link_libraries(profile-array-operations PRIVATE QDS::Core Qt5::Core)
+add_dependencies(all-profile-targets profile-array-operations)
+
 add_executable(random-samples
     RandomSamples.cpp
 )

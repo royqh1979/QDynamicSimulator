@@ -87,6 +87,7 @@ int main(int argc, char **argv)
         {"array_identity", "input"},
         {"array_macro_nested_16", "Identity16(input)"},
         {"array_broadcast", "input + 1"},
+        {"array_binary_same", "input + input"},
         {"array_subscript", "input[2]", false}
     };
     QTextStream out(stdout);
