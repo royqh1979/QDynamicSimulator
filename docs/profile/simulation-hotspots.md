@@ -126,3 +126,17 @@ StockFlows 现在持有不可变 FlowRatePlan：Flow、加减方向、直接平�
 两个正常轮次数组相对原始基线分别减少约 37.1% 和 36.3%。异常轮次的标量 Euler/RK4 仍处于正常范围，数组单独出现长负载波动，因此保留原始数据但不用于代码收益归因。最终结论基于两个相近轮次。所有 checksum 和样本数一致。
 
 gprof 复查不再出现旧的运行时 flatIndex，Simulation 的逐元素 coordinates 不再用于 netRates。专项测试覆盖同布局、维度重排、标量广播、不同维度/形状失败及标量 Stock 接数组 Flow，失败仍发生在运行期并保留前缀。本阶段 Release、Debug 全量 CTest 均为 18/18 通过。
+
+## 第四阶段：单次运行 EvaluationContext 复用
+
+第三阶段后仍有约 600 万次求值环境/宏 reader 建立，因此在 run() 内建立一次 EvaluationContext、readers 和宏 reader。每次 evaluate 只更新 time、实际 DT 和当前 target 指针；每个变量继续清空并重设 scope。ResolvedReferenceContext 使用可切换的 target 指针，不跨 Run 保存状态，也不改变 Plan/Document/Run 的不可变性。有限值扫描和状态容器结构未在本阶段修改。
+
+相同冷却条件下的两轮普通 Release 结果：
+
+| 场景 | 第三阶段正常结果 ms | Context 复用第 1 轮 ms | Context 复用第 2 轮 ms |
+| --- | ---: | ---: | ---: |
+| simulation_array_euler | 9489.29 / 9616.61 | 9544.53 | 9594.27 |
+| simulation_euler | 327.956 / 327.890 | 313.911 | 311.886 |
+| simulation_rk4 | 1513.26 / 1548.68 | 1450.11 | 1451.38 |
+
+数组基本持平，Euler/RK4 进一步降低，符合 Context 复用主要影响标量和多阶段求值的预期。所有 checksum 和样本数一致。gprof 中 makeMacroReader 从约 600 万次降至 3001 次。本阶段 Release、Debug 全量 CTest 均为 18/18 通过；没有继续加入 finite 扫描或状态容器优化。

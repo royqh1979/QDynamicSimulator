@@ -614,69 +614,73 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
             std::move(message), std::move(code), span});
         return run;
     };
+    EvaluationContext context;
+    context.startTime = m_plan.settings().startTime();
+    context.stopTime = m_plan.settings().stopTime();
+    struct ResolvedReferenceContext {
+        const SimulationPlan &plan;
+        const Document &document;
+        EvaluationContext &evaluation;
+        QHash<EntityId, Value> *target;
+    };
+    ResolvedReferenceContext resolved {m_plan, m_document, context, &values};
+    context.readDimension = [&resolved](const QString &name) {
+        return resolved.document.findDimension(name);
+    };
+    context.readMacro = makeMacroReader(m_document);
+    context.readVariable = [&resolved](const QString &name) -> std::optional<Value> {
+        const ModelElement *element = resolved.document.model().findByName(name);
+        if (!element || !resolved.target->contains(element->id()))
+            return std::nullopt;
+        return resolved.target->value(element->id());
+    };
+    context.readResolvedReference = [&resolved](const QString &name) -> std::optional<Value> {
+        const auto binding = resolved.plan.m_referenceBindings.constFind(name);
+        if (binding == resolved.plan.m_referenceBindings.constEnd())
+            return std::nullopt;
+        if (binding->kind == ReferenceBindingKind::Time)
+            return resolved.evaluation.time;
+        if (binding->kind == ReferenceBindingKind::Dt)
+            return resolved.evaluation.dt;
+        if (binding->kind == ReferenceBindingKind::StartTime)
+            return resolved.evaluation.startTime;
+        if (binding->kind == ReferenceBindingKind::StopTime)
+            return resolved.evaluation.stopTime;
+        if (binding->kind == ReferenceBindingKind::Pi)
+            return 3.14159265358979323846;
+        if (binding->kind == ReferenceBindingKind::Infinity)
+            return std::numeric_limits<double>::infinity();
+        EntityId variable = binding->variable;
+        if (binding->kind == ReferenceBindingKind::Self) {
+            const auto self = resolved.plan.m_referenceBindings.constFind(resolved.evaluation.scope.self);
+            if (self == resolved.plan.m_referenceBindings.constEnd()
+                || self->kind != ReferenceBindingKind::Variable)
+                return std::nullopt;
+            variable = self->variable;
+        } else if (binding->kind != ReferenceBindingKind::Variable) {
+            variable = 0;
+        }
+        if (variable != 0) {
+            const auto value = resolved.target->constFind(variable);
+            return value == resolved.target->constEnd() ? std::nullopt : std::optional<Value>(value.value());
+        }
+        if (binding->kind == ReferenceBindingKind::DimensionElement)
+            return static_cast<double>(binding->element);
+        if (binding->kind == ReferenceBindingKind::Dimension) {
+            for (std::size_t index = 0; index < resolved.evaluation.scope.dimensions.size(); ++index) {
+                if (resolved.evaluation.scope.dimensions[index] == name
+                    && index < resolved.evaluation.scope.indices.size())
+                    return static_cast<double>(resolved.evaluation.scope.indices[index] + 1);
+            }
+        }
+        return std::nullopt;
+    };
     const auto evaluate = [&](const QVector<EntityId> &order, double time, double dt,
                             QHash<EntityId, Value> &target) -> std::optional<ModelIssue> {
         evaluationTime = time;
-        EvaluationContext context;
         context.time = time;
         context.dt = dt;
-        context.startTime = m_plan.settings().startTime();
-        context.stopTime = m_plan.settings().stopTime();
-        context.readDimension = [this](const QString &name) { return m_document.findDimension(name); };
-        context.readMacro = makeMacroReader(m_document);
-        context.readVariable = [this, &target](const QString &name) -> std::optional<Value> {
-            const ModelElement *element = m_document.model().findByName(name);
-            if (!element || !target.contains(element->id()))
-                return std::nullopt;
-            return target.value(element->id());
-        };
-        struct ResolvedReferenceContext {
-            const SimulationPlan &plan;
-            QHash<EntityId, Value> &target;
-            EvaluationContext &evaluation;
-        };
-        ResolvedReferenceContext resolved {m_plan, target, context};
-        context.readResolvedReference = [&resolved](const QString &name) -> std::optional<Value> {
-            const auto binding = resolved.plan.m_referenceBindings.constFind(name);
-            if (binding == resolved.plan.m_referenceBindings.constEnd())
-                return std::nullopt;
-            if (binding->kind == ReferenceBindingKind::Time)
-                return resolved.evaluation.time;
-            if (binding->kind == ReferenceBindingKind::Dt)
-                return resolved.evaluation.dt;
-            if (binding->kind == ReferenceBindingKind::StartTime)
-                return resolved.evaluation.startTime;
-            if (binding->kind == ReferenceBindingKind::StopTime)
-                return resolved.evaluation.stopTime;
-            if (binding->kind == ReferenceBindingKind::Pi)
-                return 3.14159265358979323846;
-            if (binding->kind == ReferenceBindingKind::Infinity)
-                return std::numeric_limits<double>::infinity();
-            EntityId variable = binding->variable;
-            if (binding->kind == ReferenceBindingKind::Self) {
-                const auto self = resolved.plan.m_referenceBindings.constFind(resolved.evaluation.scope.self);
-                if (self == resolved.plan.m_referenceBindings.constEnd()
-                    || self->kind != ReferenceBindingKind::Variable)
-                    return std::nullopt;
-                variable = self->variable;
-            } else if (binding->kind != ReferenceBindingKind::Variable) {
-                variable = 0;
-            }
-            if (variable != 0) {
-                const auto value = resolved.target.constFind(variable);
-                return value == resolved.target.constEnd() ? std::nullopt : std::optional<Value>(value.value());
-            }
-            if (binding->kind == ReferenceBindingKind::DimensionElement)
-                return static_cast<double>(binding->element);
-            if (binding->kind == ReferenceBindingKind::Dimension) {
-                for (std::size_t index = 0; index < resolved.evaluation.scope.dimensions.size(); ++index) {
-                    if (resolved.evaluation.scope.dimensions[index] == name
-                        && index < resolved.evaluation.scope.indices.size())
-                        return static_cast<double>(resolved.evaluation.scope.indices[index] + 1);
-                }
-            }
-            return std::nullopt;
-        };
+        resolved.target = &target;
         for (EntityId id : order) {
             const auto *element = dynamic_cast<const ModelElement *>(m_document.find(id));
             if (!element)
