@@ -71,6 +71,7 @@ private slots:
     void referenceBindingSemantics();
     void lookupDefinitions();
     void lookupSimulation();
+    void timeFunctionBoundaries();
     void compilationDiagnostics();
     void cancellationAndRuntimeFailure();
 };
@@ -641,6 +642,58 @@ void TestSimulation::lookupSimulation()
     QCOMPARE(arrayRun.status(), SimulationRunStatus::Completed);
     QCOMPARE(arrayRun.arraySeries("called").front().values, (QVector<double> {2.0, 2.0}));
     QCOMPARE(arrayRun.arraySeries("inlined").front().values, (QVector<double> {3.0, 3.0}));
+}
+
+void TestSimulation::timeFunctionBoundaries()
+{
+    Document document;
+    const auto addVariable = [&document](const QString &name, const QString &equation) {
+        const EntityId id = document.createVariable(ElementKind::Variable);
+        document.rename(id, name);
+        document.setEquation(id, equation);
+    };
+    addVariable("step", "STEP(2, 1)");
+    addVariable("pulse", "PULSE(1, 1)");
+    addVariable("zero_width", "PULSE(1, 0)");
+    addVariable("train", "pulse_train(1, 1, 2, 3)");
+    addVariable("single", "pulse_train(1, 1, 0, 4)");
+    addVariable("ramp", "RAMP(2, 1, 3)");
+    document.setSimulationSettings({0.0, 4.0, 0.5, 0.5});
+    const SimulationRun run = runModel(document);
+    QCOMPARE(run.status(), SimulationRunStatus::Completed);
+    QCOMPARE(run.series("step"), (QVector<double> {0.0, 0.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0}));
+    QCOMPARE(run.series("pulse"), (QVector<double> {0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0}));
+    QCOMPARE(run.series("zero_width"), (QVector<double> {0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}));
+    QCOMPARE(run.series("train"), (QVector<double> {0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0}));
+    QCOMPARE(run.series("single"), (QVector<double> {0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0}));
+    QCOMPARE(run.series("ramp"), (QVector<double> {0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 4.0, 4.0}));
+
+    document.setSimulationSettings({0.0, 4.0, 0.5, 0.5, IntegrationMethod::RungeKutta4});
+    const SimulationRun rk4 = runModel(document);
+    QCOMPARE(rk4.status(), SimulationRunStatus::Completed);
+    for (const QString &name : {QStringLiteral("step"), QStringLiteral("pulse"), QStringLiteral("zero_width"),
+             QStringLiteral("train"), QStringLiteral("single"), QStringLiteral("ramp")})
+        QCOMPARE(rk4.series(name), run.series(name));
+
+    Document array;
+    array.defineDimension("N", 2);
+    const EntityId height = array.createVariable(ElementKind::Variable);
+    array.rename(height, "height");
+    array.setDimensions(height, {"N"});
+    array.setEquation(height, "2,3");
+    const EntityId start = array.createVariable(ElementKind::Variable);
+    array.rename(start, "start");
+    array.setDimensions(start, {"N"});
+    array.setEquation(start, "0,1");
+    const EntityId output = array.createVariable(ElementKind::Variable);
+    array.rename(output, "output");
+    array.setDimensions(output, {"N"});
+    array.setEquation(output, "STEP(height, start)");
+    array.setSimulationSettings({0.0, 1.0, 1.0, 1.0});
+    const SimulationRun arrayRun = runModel(array);
+    QCOMPARE(arrayRun.status(), SimulationRunStatus::Completed);
+    QCOMPARE(arrayRun.arraySeries("output").at(0).values, (QVector<double> {2.0, 0.0}));
+    QCOMPARE(arrayRun.arraySeries("output").at(1).values, (QVector<double> {2.0, 3.0}));
 }
 
 void TestSimulation::compilationDiagnostics()

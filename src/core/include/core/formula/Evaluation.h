@@ -43,6 +43,8 @@ struct EvaluationScope {
 struct EvaluationContext {
     double time = 0.0;
     double dt = 1.0;
+    double inputTime = 0.0;
+    double inputDt = 1.0;
     double startTime = 0.0;
     double stopTime = 0.0;
     VariableReader readVariable;
