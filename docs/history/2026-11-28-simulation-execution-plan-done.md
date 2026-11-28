@@ -112,3 +112,67 @@ Runner 继续使用同步的 const Document& 和 const SimulationPlan&。新增�
 - 多 Run、旧结果、模型修改后重编译和 Worker 销毁不回归。
 - 同环境 profile 报告各阶段绝对耗时和调用次数变化，不设置超出当前需求的极限门槛。
 - Release 后 Debug 全量通过才视为对应阶段完成；既有环境失败必须明确报告，不以跳过测试代替。
+
+## 6. 实际执行过程
+
+### 6.1 基线与热点确认
+
+先保持生产代码不变，运行普通 Release `profile-simulation 1000`，再在独立目录以 `-O3 -g -pg` 构建相同负载并采集 gprof。确认标量 RK4/Euler 比例约 3.85，基本符合四次阶段求值；16 元素数组/Euler 总步耗时比约 33.7，异常集中在数组辅助处理。
+
+热点证据包括逐元素 coordinates/flatIndex、固定 shape/strides 重建、名称规范化、Document/Dimension 查找、scope 元数据复制和 EvaluationContext/宏 reader 重建。gprof 插桩自身约占 35.8% self-time，因此后续以普通 Release 为绝对耗时依据，gprof 主要用于调用次数和路径核对。基线、调用次数和负载定义详见 `docs/profile/simulation-hotspots.md`。
+
+### 6.2 第一阶段：固定数组布局与无分配遍历
+
+分支：`perf/simulation-array-layout`；提交：`d5816a7 Precompute simulation array layouts`。
+
+- 在 Plan 中增加自持有的 ArrayLayout，编译期固定 dimensions、shape、strides 和元素数，不保存 Document/Formula/AST 指针。
+- Apply-to-All 直接递增 EvaluationScope.indices，显式元素使用预计算 strides；未提前实施引用绑定或 Flow 对齐。
+- Core 仿真测试、Release 和 Debug 全量通过。
+- 数组由 15085.3 ms 降至首轮 13601.7 ms、第三轮 13763.8 ms，正常轮次减少约 9.9%/8.8%。第二轮为 21535.8 ms，同时未修改的 RK4 也升至 4184.12 ms，保留为系统波动，不归因于本阶段代码。
+- 插桩复查确认 QVector<QString>/QVector<size_t> 复制次数显著减少；Apply-to-All 的 Simulation coordinates 调用消除。
+
+### 6.3 第二阶段：普通公式引用预绑定
+
+分支：`perf/simulation-reference-binding`；提交：`42fa0b8 Prebind simulation formula references`。
+
+- Plan 以值保存 Variable、Dimension、DimensionElement、SELF、TIME/DT/STARTTIME/STOPTIME、PI/INF 的 ReferenceBinding；不引入 Document 对象指针。
+- 内置绑定覆盖同名模型名称，宏局部帧仍优先；变量读取由 contains+value 改为一次 EntityId 查找。
+- 新增同名 TIME、Dimension 当前元素和 Dimension.Element 回归；宏、SELF、数组和未知引用沿用既有测试。
+- 初版解析 lambda 捕获多个引用，两轮数组为 14776.5/14692.2 ms，比第一阶段正常结果慢。分析 std::function 小对象存储后，改为只捕获一个栈上 ResolvedReferenceContext 指针，数组降至 14435.5 ms，标量恢复。
+- 随后将特殊常量/SELF 纳入统一绑定类型，避免普通引用先做多次字符串比较。持续热态出现 60891.9/60982.8 ms 异常；暂停后为 18025.4 ms。相同冷却条件下最终实现两轮为 11140.6/11875.1 ms，较原始基线减少约 26.2%/21.3%。
+- gprof 确认 Document::findByName 从约 2104 万次降至 3003 次，findFunctionSignature 从约 3707 万次降至 1004 次。Release、Debug 全量通过。
+
+### 6.4 第三阶段：Stock/Flow 编译期布局对齐
+
+分支：`perf/simulation-flow-alignment`；提交：`945eb53 Precompute stock flow layout alignment`。
+
+- StockFlows 改为持有 FlowRatePlan，固定 Flow、加减方向、直接平铺标志、兼容性和可选映射。
+- 相同布局直接按 flat 下标累加；重排布局由 ArrayLayout 在编译期生成映射；标量广播保持原路径。
+- 实施时发现原方案“不兼容布局在编译期报错”会破坏现有运行时失败及失败前缀，因此修正为编译期标记、运行时仍产生 `incompatible-stock-flow`。没有为追求优化而修改既有语义。
+- 新增标量 Stock 接数组 Flow 用例；初次夹具漏定义 N 导致 setDimensions 失败，修正夹具后保留并验证原场景。
+- 数组正常两轮为 9489.29/9616.61 ms，较原始基线减少约 37.1%/36.3%；中间热态异常为 36437.2 ms，原始数据保留。
+- gprof 不再出现旧运行时 flatIndex，Simulation 的逐元素 coordinates 不再用于 netRates。Release、Debug 全量通过。
+
+### 6.5 第四阶段：单次运行 EvaluationContext 复用
+
+分支：`perf/simulation-context-reuse`；提交：`65350dd Reuse simulation evaluation contexts`。
+
+- 第三阶段后仍有约 600 万次求值环境/宏 reader 建立，具备独立优化依据。
+- Context、readers 和宏 reader 改为每次 run() 建立一次；evaluate 只更新 time、实际 DT 和当前 target 指针；每个变量仍清空并重设 scope。
+- 可变上下文仅属于当前运行，不写回 Plan、不跨 Run/Worker、不进入历史结果。有限值扫描和状态容器未顺带修改。
+- 两轮 Euler 为 313.911/311.886 ms，RK4 为 1450.11/1451.38 ms，数组为 9544.53/9594.27 ms；数组与第三阶段持平，标量和多阶段路径进一步改善。
+- makeMacroReader 从约 600 万次降至 3001 次。Release、Debug 全量通过。
+
+## 7. 最终对比与合并
+
+最终实现相对原始基线的两轮结果：
+
+| 场景 | 原始 ms | 最终两轮 ms | 降幅 |
+| --- | ---: | ---: | ---: |
+| 标量 Euler | 448.134 | 313.911 / 311.886 | 30.0% / 30.4% |
+| 标量 RK4 | 1725.38 | 1450.11 / 1451.38 | 16.0% / 15.9% |
+| 16 元素数组 Euler | 15085.3 | 9544.53 / 9594.27 | 36.7% / 36.4% |
+
+各阶段 checksum、样本数、数组重排/广播/守恒、取消和失败语义均保持不变。主 profile 的归一化对比见 `docs/profile/simulation.md`，完整测量条件及异常轮次见 `docs/profile/simulation-hotspots.md`。
+
+系列分支最终由 `64ced11 Merge simulation execution optimizations` 合并到 master；计划文件随后标记为 done。整个优化没有引入可变全局缓存、Plan 对 Document/AST 的裸指针或跨 Run 可变上下文。
