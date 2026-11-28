@@ -277,10 +277,13 @@ QDS 在 model 前保存完整维度定义，每个变量保存维度引用及零
 标量和数组共用一种求值结果，不维护数组专用 AST 或平行运算规则：
 
 ```cpp
-struct ArrayValue {
+struct ArrayData {
     QVector<QString> dimensions; // 有序维度 nameKey
     QVector<std::size_t> shape;
     QVector<double> values;          // 行主序
+};
+class ArrayValue {
+    // 共享 ArrayData；const 读取共享，非 const values() 在不唯一时克隆
 };
 using Value = std::variant<double, ArrayValue>;
 using VariableReader = std::function<std::optional<Value>(const QString &nameKey)>;
@@ -301,7 +304,7 @@ struct EvaluationContext {
 using EvaluationResult = std::optional<Value> + error/errorSpan;
 ```
 
-ArrayValue 的维度长度等于 shape 长度，元素数等于各维长度乘积，Document/Evaluator 在边界检查这些不变量。调用方拥有变量和 Dimension 对象，Result 只持有值，不保存指针。`readVariable` 与标量阶段一样接收 nameKey，并通过现有索引定位当前值；下标和数组运算不依赖 AST 中的语义绑定。
+ArrayValue 的维度长度等于 shape 长度，元素数等于各维长度乘积，Document/Evaluator 在边界检查这些不变量。ArrayData 在堆上由共享句柄持有，ExecutionStack、宏参数和结果只复制句柄，不复制三组 QVector 元数据。ArrayData 类型允许可变，但函数参数只读，新结果必须创建独立对象；非 const `values()` 在句柄不唯一时克隆，保证调用方修改结果副本不会反写输入或历史 Run。Result 不保存 Document、Dimension 或栈槽的裸引用。`readVariable` 与标量阶段一样接收 nameKey，并通过现有索引定位当前值；下标和数组运算不依赖 AST 中的语义绑定。
 
 ### 10.2 下标、作用域与切片
 
@@ -314,6 +317,8 @@ ArrayValue 的维度长度等于 shape 长度，元素数等于各维长度乘�
 标量对数组广播。数组间运算要求维度集合一致，顺序可以不同；按名称重排到输出维度，不仅按位置比较 shape。当前方程提供 scope.dimensions 时以它为输出顺序，否则采用数组操作数的维度顺序。维度集合不一致返回错误，不隐式引入 sub-range。
 
 算术、比较、逻辑、一元数学函数和双参数 MAX/MIN 逐元素执行；标量条件保持短路。数组条件的 IF/AND/OR 逐元素求值，不能沿用标量短路。数组条件分支和逻辑结果仍使用 0/1 double。
+
+Delay 与 mapped functions 共用 Evaluator 内部的短寿命 ArrayElementView：参数只求值一次，维度映射在视图创建时建立，按 flat index 或已有坐标只读访问。相同布局直接行主序寻址，不分配映射或 strides；不同布局按维度名重排。读取当前元素不再重复求值 AST 或生成完整广播数组；只有真正产生数组结果时才分配 ArrayData。
 
 单参数 MAX/MIN、SUM、MEAN、STDDEV 对切片归约为 double，STDDEV 使用总体标准差（除以 N）；SIZE 返回元素数。RANK 返回按行主序平坦位置，可选次级排序数组先按维度名对齐。整体求值可直接计算普通 Apply-to-All 数组运算；需要按当前元素归约的公式由调用方设置 scope.indices 逐点调用，后续执行器负责遍历，不在 Evaluator 内隐藏循环状态。
 

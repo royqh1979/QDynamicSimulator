@@ -147,7 +147,7 @@ SimulationRun                     一次运行的完整不可变记录
 - 全局变量、Dimension、DimensionElement、SELF、TIME/DT/STARTTIME/STOPTIME、PI/INF 和调用在编译时转换为显式 Bound 节点，取代 ReferenceBinding。运行期不再按 nameKey 查询全局引用；宏局部帧仍优先，变量状态按 EntityId 读取。
 - 每个 FlowRatePlan 固定 Flow、加减方向、直接平铺标志、兼容性和可选重排映射。相同布局不再逐元素调用 coordinates/flatIndex；重排映射由 ArrayLayout 在编译期生成。不兼容布局保留运行时 `incompatible-stock-flow` 和失败前缀，不改写成编译失败。
 - EvaluationContext、ExecutionStack、当前下标和阶段 Value 作为单次 run() 的局部可变状态复用，不写回 Plan、不跨 Run/Worker、不进入历史结果。Run 为 ExecutionStack 预留 4 MiB Value 存储，参数和宏局部变量使用连续 slot 与 base index；每次 evaluate 只更新 time、实际 DT 和当前 target 指针，每个变量仍清空并重设 scope。绑定 AST 不再需要运行期宏 reader 或名称引用 reader。
-- ArrayValue、SimulationRunRequest、SimulationRun 和 Document/Formula 的既有所有权不变；每次模型运行仍重新编译，不使用需要手工失效的全局缓存。
+- ArrayValue 以共享 ArrayData 堆句柄在 ExecutionStack、变量状态和 Run 采样间传递；求值参数只读，新结果独立分配，非 const 可变访问在句柄不唯一时克隆。发布到 Run 后不再写入，SimulationRunRequest、SimulationRun 和 Document/Formula 的其它所有权不变；每次模型运行仍重新编译，不使用需要手工失效的全局缓存。
 
 ## 6. 编译与执行顺序
 

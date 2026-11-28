@@ -5,6 +5,7 @@
 #include <core/formula/Formula.h>
 
 #include <functional>
+#include <memory>
 #include <optional>
 #include <QString>
 #include <variant>
@@ -18,15 +19,27 @@ namespace qds::core {
 struct MacroDefinition;
 class CompiledMacroDefinition;
 
-struct ArrayValue {
+struct ArrayData {
     QVector<QString> dimensions;
     QVector<std::size_t> shape;
     QVector<double> values;
+};
 
-    bool operator==(const ArrayValue &other) const
-    {
-        return dimensions == other.dimensions && shape == other.shape && values == other.values;
-    }
+class ArrayValue
+{
+public:
+    ArrayValue() : ArrayValue({}, {}, {}) {}
+    ArrayValue(QVector<QString> dimensions, QVector<std::size_t> shape, QVector<double> values);
+
+    const QVector<QString> &dimensions() const { return m_data->dimensions; }
+    const QVector<std::size_t> &shape() const { return m_data->shape; }
+    const QVector<double> &values() const { return m_data->values; }
+    QVector<double> &values();
+
+    bool operator==(const ArrayValue &other) const;
+
+private:
+    std::shared_ptr<ArrayData> m_data;
 };
 
 using Value = std::variant<double, ArrayValue>;

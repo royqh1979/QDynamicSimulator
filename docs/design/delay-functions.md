@@ -65,6 +65,7 @@ output = pipe[pointer]
 - Run 持有当前 Level、各级 delayTime、当前输入/时间、初始化标志、离散输出缓存和阶数。全部状态按 `base+elementIndex` 定位，无全局状态或跨 Run 污染。
 - 通用 N 和 Fixed 按最大阶数预留状态；实际阶数与 Fixed 指针按数组元素独立保存，禁止不同元素共享阶数或管道位置。
 - 可选 initial 和阶数表达式只在首次初始化时求值，避免每步重复读取或随机取样。
+- Delay 与其它 mapped functions 共用 ArrayElementView：输入/时间只求值一次，相同布局直接寻址，不同布局按维度名映射，不为当前元素重复求值 AST 或创建完整广播数组。
 - 首阶段带状态宏以 `unsupported-stateful-macro` 拒绝；宏调用路径状态身份另行设计。`FORCST`/`TREND` 等未实现状态函数仍在编译期以 `unsupported-simulation-function` 拒绝。
 - 资源上限 `DelayPlan::maximumOrder=64` 是本项目保护措施，不是 Vensim 原生上限。数组元素数与状态槽计算执行溢出检查。
 

@@ -242,17 +242,17 @@ void advanceIndices(QVector<std::size_t> &indices, const QVector<std::size_t> &s
 std::optional<std::size_t> flatIndex(const ArrayValue &array, const QVector<QString> &dimensions,
     const QVector<std::size_t> &indices)
 {
-    if (array.dimensions.size() != dimensions.size() || array.shape.size() != dimensions.size()
-        || indices.size() != dimensions.size() || elementCount(array.shape) != array.values.size())
+    if (array.dimensions().size() != dimensions.size() || array.shape().size() != dimensions.size()
+        || indices.size() != dimensions.size() || elementCount(array.shape()) != array.values().size())
         return std::nullopt;
-    const QVector<std::size_t> steps = strides(array.shape);
+    const QVector<std::size_t> steps = strides(array.shape());
     std::size_t flat = 0;
     for (std::size_t position = 0; position < dimensions.size(); ++position) {
-        const auto found = std::find(array.dimensions.begin(), array.dimensions.end(), dimensions[position]);
-        if (found == array.dimensions.end())
+        const auto found = std::find(array.dimensions().begin(), array.dimensions().end(), dimensions[position]);
+        if (found == array.dimensions().end())
             return std::nullopt;
-        const std::size_t dimensionIndex = static_cast<std::size_t>(found - array.dimensions.begin());
-        if (indices[position] >= array.shape[dimensionIndex])
+        const std::size_t dimensionIndex = static_cast<std::size_t>(found - array.dimensions().begin());
+        if (indices[position] >= array.shape()[dimensionIndex])
             return std::nullopt;
         flat += indices[position] * steps[dimensionIndex];
     }
@@ -264,7 +264,7 @@ bool finiteValue(const Value &value)
     if (const auto *scalar = std::get_if<double>(&value))
         return std::isfinite(*scalar);
     const ArrayValue &array = std::get<ArrayValue>(value);
-    return std::all_of(array.values.begin(), array.values.end(), [](double item) { return std::isfinite(item); });
+    return std::all_of(array.values().begin(), array.values().end(), [](double item) { return std::isfinite(item); });
 }
 
 std::optional<double> evaluatedScalar(const EvaluationResult &evaluated, const QVector<QString> &dimensions,
@@ -282,7 +282,7 @@ std::optional<double> evaluatedScalar(const EvaluationResult &evaluated, const Q
         issue = {owner, IssueSeverity::Error, "Array value has incompatible dimensions", "incompatible-array-value", {}};
         return std::nullopt;
     }
-    return array.values[*flat];
+    return array.values()[*flat];
 }
 
 Value integratedValue(const Value &stock, const Value &rate, double factor)
@@ -291,9 +291,9 @@ Value integratedValue(const Value &stock, const Value &rate, double factor)
         return *scalar + factor * std::get<double>(rate);
     const ArrayValue &current = std::get<ArrayValue>(stock);
     const ArrayValue &change = std::get<ArrayValue>(rate);
-    ArrayValue result = current;
-    for (std::size_t index = 0; index < result.values.size(); ++index)
-        result.values[index] += factor * change.values[index];
+    ArrayValue result {current.dimensions(), current.shape(), current.values()};
+    for (std::size_t index = 0; index < result.values().size(); ++index)
+        result.values()[index] += factor * change.values()[index];
     return result;
 }
 
@@ -302,13 +302,14 @@ Value weightedRate(const Value &stock, const Value &k1, const Value &k2, const V
     if (std::get_if<double>(&stock))
         return dt * (std::get<double>(k1) + 2.0 * std::get<double>(k2)
             + 2.0 * std::get<double>(k3) + std::get<double>(k4)) / 6.0;
-    ArrayValue result = std::get<ArrayValue>(k1);
+    const ArrayValue &first = std::get<ArrayValue>(k1);
+    ArrayValue result {first.dimensions(), first.shape(), first.values()};
     const ArrayValue &second = std::get<ArrayValue>(k2);
     const ArrayValue &third = std::get<ArrayValue>(k3);
     const ArrayValue &fourth = std::get<ArrayValue>(k4);
-    for (std::size_t index = 0; index < result.values.size(); ++index) {
-        result.values[index] = dt * (result.values[index] + 2.0 * second.values[index]
-            + 2.0 * third.values[index] + fourth.values[index]) / 6.0;
+    for (std::size_t index = 0; index < result.values().size(); ++index) {
+        result.values()[index] = dt * (result.values()[index] + 2.0 * second.values()[index]
+            + 2.0 * third.values()[index] + fourth.values()[index]) / 6.0;
     }
     return result;
 }
@@ -450,8 +451,8 @@ NetRateResult netRates(const QVector<StockFlows> &bindings, const QHash<EntityId
     for (const StockFlows &binding : bindings) {
         const Value &stock = state[binding.stock];
         if (const auto *stockArray = std::get_if<ArrayValue>(&stock))
-            result.values.insert(binding.stock, ArrayValue {stockArray->dimensions, stockArray->shape,
-                QVector<double>(stockArray->values.size(), 0.0)});
+            result.values.insert(binding.stock, ArrayValue {stockArray->dimensions(), stockArray->shape(),
+                QVector<double>(stockArray->values().size(), 0.0)});
         else
             result.values.insert(binding.stock, 0.0);
         const auto accumulate = [&](const FlowRatePlan &alignment) -> std::optional<ModelIssue> {
@@ -473,14 +474,14 @@ NetRateResult netRates(const QVector<StockFlows> &bindings, const QHash<EntityId
             }
             ArrayValue &rateArray = std::get<ArrayValue>(rate);
             if (const auto *flowScalar = std::get_if<double>(&flow)) {
-                for (double &item : rateArray.values)
+                for (double &item : rateArray.values())
                     item += sign * *flowScalar;
                 return std::nullopt;
             }
             const ArrayValue &flowArray = std::get<ArrayValue>(flow);
-            for (std::size_t flat = 0; flat < rateArray.values.size(); ++flat) {
+            for (std::size_t flat = 0; flat < rateArray.values().size(); ++flat) {
                 const std::size_t flowFlat = alignment.direct ? flat : alignment.mapping[flat];
-                rateArray.values[flat] += sign * flowArray.values[flowFlat];
+                rateArray.values()[flat] += sign * flowArray.values()[flowFlat];
             }
             return std::nullopt;
         };
@@ -1149,7 +1150,7 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
                         const auto value = evaluatedScalar(evaluated, element->dimensions(), context.scope.indices, id, issue);
                         if (!value)
                             return issue;
-                        output.values[flat] = *value;
+                        output.values()[flat] = *value;
                         advanceIndices(context.scope.indices, layout->shape());
                     }
                 } else {
@@ -1163,11 +1164,11 @@ SimulationRun SimulationRunner::run(const Cancellation &cancelled)
                         const auto value = evaluatedScalar(evaluated, element->dimensions(), entry.indices, id, issue);
                         if (!value)
                             return issue;
-                        output.values[*flat] = *value;
+                        output.values()[*flat] = *value;
                     }
                 }
                 if (element->lookup()) {
-                    for (double &value : output.values)
+                    for (double &value : output.values())
                         value = element->lookup()->evaluate(value);
                 }
                 target[id] = std::move(output);

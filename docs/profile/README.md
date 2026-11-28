@@ -10,6 +10,8 @@ cmake --build <RELEASE_BUILD_DIR> --target all-profile-targets --parallel
 <RELEASE_BUILD_DIR>/tests/profile/profile-formula.exe 1000
 <RELEASE_BUILD_DIR>/tests/profile/profile-simulation.exe 1000
 <RELEASE_BUILD_DIR>/tests/profile/profile-delay.exe 100 1000 16
+<RELEASE_BUILD_DIR>/tests/profile/profile-array.exe 100000 16
+<RELEASE_BUILD_DIR>/tests/profile/profile-array.exe 100000 4
 <RELEASE_BUILD_DIR>/tests/profile/profile-mdl.exe 50
 <RELEASE_BUILD_DIR>/tests/profile/random-samples.exe 20000 > random-samples.csv
 python tests/profile/check_random_samples.py random-samples.csv
@@ -28,7 +30,8 @@ python tests/profile/check_random_samples.py random-samples.csv
 - [仿真计算热点审查](simulation-hotspots.md)。
 - [随机函数、统计分布与独立 SciPy 校验](random-functions.md)。
 - [延迟、平滑、Fixed 与数组状态性能](delay-functions.md)。
+- [数组堆句柄与元素访问性能](array-values.md)。
 
-`profile-delay` 的三个参数依次为运行次数、步数和数组元素数；输出编译/运行分阶段 CSV、状态数、checksum 和 C++ 分配计数。
+`profile-delay` 的三个参数依次为运行次数、步数和数组元素数；输出编译/运行分阶段 CSV、状态数、checksum 和 C++ 分配计数。`profile-array` 的两个参数依次为求值迭代数和数组大小，分别覆盖身份读取、嵌套宏、广播和单元素下标。
 
 `random-samples` 输出 C++ 原始 MT uint32 及五种分布样本；`check_random_samples.py` 使用 NumPy `RandomState` 对照原始 MT，并以 SciPy CDF/KS 和 Poisson 卡方检验验证分布。Poisson 不使用仅适用于连续分布的 `scipy.stats.kstest` 直接判定。

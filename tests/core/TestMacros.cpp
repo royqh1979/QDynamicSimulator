@@ -162,6 +162,7 @@ void TestMacros::recursionAndErrors()
 void TestMacros::runtimeScopesAndRecursion()
 {
     Document document;
+    document.defineDimension("N", 3);
     const EntityId input = document.createVariable(ElementKind::Variable);
     document.rename(input, "Input");
     const EntityId globalA = document.createVariable(ElementKind::Variable);
@@ -198,7 +199,9 @@ void TestMacros::runtimeScopesAndRecursion()
     expectScalar(document, output, 3.0);
 
     int inputReads = 0;
+    const ArrayValue inputArray {{"n"}, {3}, {1.0, 2.0, 3.0}};
     EvaluationContext context;
+    context.readDimension = [&document](const QString &name) { return document.findDimension(name); };
     context.readVariable = [&](const QString &name) -> std::optional<Value> {
         if (name == "input") {
             ++inputReads;
@@ -209,7 +212,7 @@ void TestMacros::runtimeScopesAndRecursion()
         if (name == "offset")
             return 10.0;
         if (name == "values")
-            return ArrayValue {{"n"}, {3}, {1.0, 2.0, 3.0}};
+            return inputArray;
         return std::nullopt;
     };
     document.setEquation(output, "Twice(Input)");
@@ -221,6 +224,22 @@ void TestMacros::runtimeScopesAndRecursion()
     expectScalar(document, output, context, 100.0);
     document.setEquation(output, "Total(Values)");
     expectScalar(document, output, context, 6.0);
+
+    for (int index = 1; index <= 24; ++index) {
+        MacroDefinitionData identity;
+        identity.displayName = "Identity" + QString::number(index);
+        identity.parameters = {parameter("x")};
+        identity.equation = index == 1 ? QStringLiteral("x")
+            : QStringLiteral("Identity%1(x)").arg(index - 1);
+        QVERIFY(document.defineMacro(identity));
+    }
+    document.setEquation(output, "Identity24(Values) + 1");
+    const EvaluationResult nested = evaluate(document, output, context);
+    QVERIFY2(nested.value.has_value(), qPrintable(nested.error));
+    const auto *nestedArray = std::get_if<ArrayValue>(&*nested.value);
+    QVERIFY(nestedArray);
+    QCOMPARE(nestedArray->values(), (QVector<double> {2.0, 3.0, 4.0}));
+    QCOMPARE(inputArray.values(), (QVector<double> {1.0, 2.0, 3.0}));
 }
 
 void TestMacros::dependencyClosure()

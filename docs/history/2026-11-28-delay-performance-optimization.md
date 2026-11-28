@@ -72,4 +72,16 @@
 - 首轮 Debug 发现 RK 最终合成仍访问 Fixed 的空 K1；Release 对应路径属于未定义行为。根据完整调用栈在最终合成中跳过 Fixed，Debug/Release 专项通过后，废弃并重测所有受影响 profile 轮次。
 - 最终两轮 Release 显示离散 RK4 总耗时下降 32.9%，Fixed 下降 21.9%；数组 Material/Information 两轮均值分别下降 4.1%/4.0%。连续 DELAY3 均值增加 0.9%，围绕基线波动，未判定稳定回退。
 - gprof 的 QVector resize 减少 200050 次，与目标调用完全一致；C++ 分配计数不变。完整数据见 `docs/profile/delay-functions.md`。
-- 修正后 Release 与 Debug 均重新构建 `all-test-targets`，18/18 CTest 和完整 XMILE corpus 通过；阶段一按授权提交，不合并、不推送。
+- 修正后 Release 与 Debug 均重新构建 `all-test-targets`，18/18 CTest 和完整 XMILE corpus 通过；阶段一提交为 `dea3337`，未合并、未推送。
+
+## 阶段二实际过程
+
+- 在 `perf/array-value-handles` 先建立 `profile-array` 基线，覆盖身份读取、16 层宏、广播和标量下标，数组大小 16/4 各两轮；不只用 Delay 结果选择表示。
+- ArrayValue 改为共享 ArrayData 堆句柄。const 读取不复制三组 QVector；非 const `values()` 在不唯一时克隆，保持 `seriesValueSemantics` 和历史 Run 不被副本反写。ArrayData 不强制不可变，但参数只读、结果独立创建、发布后不再写。
+- 新增 24 层嵌套宏数组参数、栈扩容和共享输入不被新结果修改的正式测试。
+- 引入通用 ArrayElementView，Delay 与 mapped functions 共用；参数只求值一次，不再为当前元素生成完整广播数组。
+- 初版视图对相同布局也创建映射/strides，导致 Delay 数组回退约 35%。改为相同布局直接行主序寻址后，Material/Information 相比阶段一分别下降 36.1%/37.5%，相对最初基线下降 38.7%/40.0%。
+- Evaluator 两轮对比：身份读取约下降 18.2%/21.8%（16/4 元素），嵌套宏下降 8.3%/10.0%，下标下降 5.8%/8.8%；广播因 ArrayData 发布分配增加而回退 10.6%/5.4%。未隐藏不利场景。
+- 数组 Delay 的 C++ 分配从 13 次/Run 增至 2018 次/Run，反映每个变量发布的 ArrayData；当前负载下收益大于成本。完整数据见 `docs/profile/array-values.md`。
+- 最终相等性审查避免以句柄相同替代内容比较；测试区分共享 NaN 数组与独立 NaN 数组，保持 QVector 既有语义。`all-profile-targets` 构建通过。
+- Release 与 Debug 均重新构建 `all-test-targets`，18/18 CTest 和完整 XMILE corpus 通过。按用户要求只报告阶段二 profile，尚未提交、合并或推送。

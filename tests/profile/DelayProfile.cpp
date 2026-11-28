@@ -95,7 +95,7 @@ double finalChecksum(const SimulationRun &run, bool array)
     if (!array)
         return run.series("output").back();
     double result = 0.0;
-    for (const double value : run.arraySeries("output").back().values)
+    for (const double value : run.arraySeries("output").back().values())
         result += value;
     return result;
 }

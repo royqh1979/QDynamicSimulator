@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <QString>
 #include <unordered_map>
 #include <QHash>
@@ -95,11 +96,11 @@ void expectArray(const EvaluationResult &result, const QVector<QString> &dimensi
     QVERIFY2(result.value.has_value(), qPrintable(result.error));
     const auto *array = std::get_if<ArrayValue>(&*result.value);
     QVERIFY(array);
-    QCOMPARE(array->dimensions, dimensions);
-    QCOMPARE(array->shape, shape);
-    QCOMPARE(array->values.size(), values.size());
+    QCOMPARE(array->dimensions(), dimensions);
+    QCOMPARE(array->shape(), shape);
+    QCOMPARE(array->values().size(), values.size());
     for (std::size_t index = 0; index < values.size(); ++index)
-        QVERIFY(qAbs(array->values[index] - values[index]) < 1e-12);
+        QVERIFY(qAbs(array->values()[index] - values[index]) < 1e-12);
 }
 
 void TestArrayEvaluation::subscriptAndSlices()
@@ -184,6 +185,15 @@ void TestArrayEvaluation::conditionsAndErrors()
     context.scope.indices = {0, 0};
     context.scope.dimensions.clear();
     QVERIFY(!evaluate("Location").value);
+
+    const ArrayValue first {{"n"}, {1}, {std::numeric_limits<double>::quiet_NaN()}};
+    const ArrayValue shared = first;
+    QVERIFY(first == shared);
+    const ArrayValue second {{"n"}, {1}, {std::numeric_limits<double>::quiet_NaN()}};
+    QVERIFY(!(first == second));
+    const ArrayValue third {{"n"}, {1}, {1.0}};
+    const ArrayValue fourth {{"n"}, {1}, {1.0}};
+    QVERIFY(third == fourth);
 }
 
 } // namespace
