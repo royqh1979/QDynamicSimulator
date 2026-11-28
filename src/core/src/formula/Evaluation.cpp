@@ -506,6 +506,22 @@ private:
             else if (arrayOf(right))
                 dimensions = arrayOf(right)->dimensions();
         }
+        const auto *leftScalar = std::get_if<double>(&left);
+        const auto *rightScalar = std::get_if<double>(&right);
+        if ((leftScalar && arrayOf(right)) || (rightScalar && arrayOf(left))) {
+            const Value &arrayValue = leftScalar ? right : left;
+            EvaluationResult arrayResult = broadcast(arrayValue, dimensions, node);
+            if (!arrayResult.value)
+                return arrayResult;
+            const ArrayValue &array = *arrayOf(*arrayResult.value);
+            QVector<double> outputValues;
+            outputValues.reserve(array.values().size());
+            for (const double value : array.values()) {
+                outputValues.push_back(leftScalar ? operation(*leftScalar, value)
+                    : operation(value, *rightScalar));
+            }
+            return success(ArrayValue {array.dimensions(), array.shape(), std::move(outputValues)});
+        }
         EvaluationResult lhs = broadcast(left, dimensions, node);
         if (!lhs.value)
             return lhs;
@@ -514,11 +530,11 @@ private:
             return rhs;
         const ArrayValue &leftArray = *arrayOf(*lhs.value);
         const ArrayValue &rightArray = *arrayOf(*rhs.value);
-        ArrayValue output {leftArray.dimensions(), leftArray.shape(), {}};
-        output.values().reserve(leftArray.values().size());
+        QVector<double> outputValues;
+        outputValues.reserve(leftArray.values().size());
         for (std::size_t index = 0; index < leftArray.values().size(); ++index)
-            output.values().push_back(operation(leftArray.values()[index], rightArray.values()[index]));
-        return success(std::move(output));
+            outputValues.push_back(operation(leftArray.values()[index], rightArray.values()[index]));
+        return success(ArrayValue {leftArray.dimensions(), leftArray.shape(), std::move(outputValues)});
     }
 
     template <typename Operation>

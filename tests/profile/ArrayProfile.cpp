@@ -5,11 +5,17 @@
 #include <QElapsedTimer>
 #include <QTextStream>
 
+#include <atomic>
 #include <cmath>
+#include <cstdlib>
+#include <new>
 
 using namespace qds::core;
 
 namespace {
+
+std::atomic<std::size_t> allocationCount {0};
+std::atomic<std::size_t> allocationBytes {0};
 
 struct Scenario {
     QString name;
@@ -18,6 +24,31 @@ struct Scenario {
 };
 
 } // namespace
+
+void *operator new(std::size_t size)
+{
+    if (void *memory = std::malloc(size)) {
+        allocationCount.fetch_add(1, std::memory_order_relaxed);
+        allocationBytes.fetch_add(size, std::memory_order_relaxed);
+        return memory;
+    }
+    throw std::bad_alloc();
+}
+
+void *operator new[](std::size_t size)
+{
+    if (void *memory = std::malloc(size)) {
+        allocationCount.fetch_add(1, std::memory_order_relaxed);
+        allocationBytes.fetch_add(size, std::memory_order_relaxed);
+        return memory;
+    }
+    throw std::bad_alloc();
+}
+
+void operator delete(void *memory) noexcept { std::free(memory); }
+void operator delete[](void *memory) noexcept { std::free(memory); }
+void operator delete(void *memory, std::size_t) noexcept { std::free(memory); }
+void operator delete[](void *memory, std::size_t) noexcept { std::free(memory); }
 
 int main(int argc, char **argv)
 {
@@ -59,11 +90,13 @@ int main(int argc, char **argv)
         {"array_subscript", "input[2]", false}
     };
     QTextStream out(stdout);
-    out << "scenario,iterations,array_size,total_ms,ns_per_iteration,checksum\n";
+    out << "scenario,iterations,array_size,total_ms,ns_per_iteration,checksum,allocations,allocated_bytes\n";
     for (const Scenario &scenario : scenarios) {
         const Formula formula = analyzeFormula(scenario.equation);
         if (!formula.root() || !formula.issues().isEmpty())
             return 4;
+        allocationCount.store(0, std::memory_order_relaxed);
+        allocationBytes.store(0, std::memory_order_relaxed);
         QElapsedTimer timer;
         timer.start();
         double checksum = 0.0;
@@ -92,7 +125,9 @@ int main(int argc, char **argv)
         out << scenario.name << ',' << iterations << ',' << arraySize << ','
             << QString::number(elapsedNs / 1e6, 'f', 6) << ','
             << QString::number(elapsedNs / double(iterations), 'f', 3) << ','
-            << QString::number(checksum / iterations, 'g', 17) << '\n';
+            << QString::number(checksum / iterations, 'g', 17) << ','
+            << allocationCount.load(std::memory_order_relaxed) << ','
+            << allocationBytes.load(std::memory_order_relaxed) << '\n';
     }
     return 0;
 }

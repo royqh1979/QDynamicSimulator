@@ -120,6 +120,8 @@ void TestArrayEvaluation::transposeAndBroadcast()
     expectArray(evaluate("A'"), {"n", "location"}, {2, 3}, {1, 3, 5, 2, 4, 6});
     expectArray(evaluate("A + B"), {"location", "n"}, {3, 2}, {11, 22, 33, 44, 55, 66});
     expectArray(evaluate("A * 2"), {"location", "n"}, {3, 2}, {2, 4, 6, 8, 10, 12});
+    expectArray(evaluate("2 * A"), {"location", "n"}, {3, 2}, {2, 4, 6, 8, 10, 12});
+    expectArray(evaluate("12 / A"), {"location", "n"}, {3, 2}, {12, 6, 4, 3, 2.4, 2});
     expectArray(evaluate("A > 3"), {"location", "n"}, {3, 2}, {0, 0, 0, 1, 1, 1});
     QVERIFY(!evaluate("A + C").value);
 }

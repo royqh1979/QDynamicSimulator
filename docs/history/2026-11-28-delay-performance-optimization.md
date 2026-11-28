@@ -84,4 +84,11 @@
 - Evaluator 两轮对比：身份读取约下降 18.2%/21.8%（16/4 元素），嵌套宏下降 8.3%/10.0%，下标下降 5.8%/8.8%；广播因 ArrayData 发布分配增加而回退 10.6%/5.4%。未隐藏不利场景。
 - 数组 Delay 的 C++ 分配从 13 次/Run 增至 2018 次/Run，反映每个变量发布的 ArrayData；当前负载下收益大于成本。完整数据见 `docs/profile/array-values.md`。
 - 最终相等性审查避免以句柄相同替代内容比较；测试区分共享 NaN 数组与独立 NaN 数组，保持 QVector 既有语义。`all-profile-targets` 构建通过。
-- Release 与 Debug 均重新构建 `all-test-targets`，18/18 CTest 和完整 XMILE corpus 通过。按用户要求只报告阶段二 profile，尚未提交、合并或推送。
+- Release 与 Debug 均重新构建 `all-test-targets`，18/18 CTest 和完整 XMILE corpus 通过。阶段二在 profile 审核后提交为 `93adc4f`，未合并、未推送。
+
+## 广播归因补充实验
+
+- 在 `perf/array-broadcast-analysis` 以 `93adc4f` 为基线，A 仅将二元输出改为局部 QVector 一次性发布，16/4 元素仅改善约 1.4%/0.9%，重复句柄检查不是主因。
+- B 在 A 上移除标量临时广播数组，operator new 从每次迭代 2 次降为 1 次，16/4 元素相比当前基线改善 27.3%/22.9%。
+- 原 QVector COW 实现也会创建标量临时 values。B 同时移除临时 values 和 ArrayData，不能将回退单独归因于 ArrayData；B 比原 COW 基线还快约 19.8%/17.6%。结论限定为完整标量临时数组是当前最大可避免成本。
+- 标量左乘和标量除以数组测试加入，B 上 Release/Debug 18/18 CTest 与完整 XMILE corpus 通过。实验尚未提交。
