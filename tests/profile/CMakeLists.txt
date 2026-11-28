@@ -16,6 +16,12 @@ add_executable(profile-simulation
 target_link_libraries(profile-simulation PRIVATE QDS::IO Qt5::Core)
 add_dependencies(all-profile-targets profile-simulation)
 
+add_executable(random-samples
+    RandomSamples.cpp
+)
+target_link_libraries(random-samples PRIVATE QDS::Core Qt5::Core)
+add_dependencies(all-profile-targets random-samples)
+
 add_executable(profile-mdl
     MdlProfile.cpp
 )

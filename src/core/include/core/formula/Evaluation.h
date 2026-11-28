@@ -9,6 +9,8 @@
 #include <QString>
 #include <variant>
 #include <QVector>
+#include <QHash>
+#include <random>
 #include <utility>
 
 namespace qds::core {
@@ -72,6 +74,20 @@ private:
     QVector<Frame> m_frames;
 };
 
+class RandomStreamState
+{
+public:
+    static constexpr quint32 defaultNoiseSeed = 4487556;
+
+    void setDefaultSeed(quint32 seed);
+    std::mt19937 &stream(quint32 id);
+    std::size_t streamCount() const { return m_streams.size(); }
+
+private:
+    quint32 m_defaultSeed = defaultNoiseSeed;
+    QHash<quint32, std::mt19937> m_streams;
+};
+
 struct EvaluationScope {
     QVector<QString> dimensions;
     QVector<std::size_t> indices;
@@ -91,6 +107,7 @@ struct EvaluationContext {
     DimensionReader readDimension;
     MacroReader readMacro;
     mutable ExecutionStack executionStack;
+    mutable RandomStreamState randomStreams;
     EvaluationScope scope;
 };
 

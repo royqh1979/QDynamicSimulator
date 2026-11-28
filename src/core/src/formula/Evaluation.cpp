@@ -16,6 +16,8 @@
 
 namespace qds::core {
 
+constexpr int maximumRandomAttempts = 2000;
+
 ExecutionStack::ExecutionStack()
 {
     m_frames.reserve(maximumFrameDepth);
@@ -35,6 +37,20 @@ void ExecutionStack::pushFrame(std::size_t base, const MacroDefinition *source)
 void ExecutionStack::pushFrame(std::size_t base, const CompiledMacroDefinition *compiled)
 {
     m_frames.push_back({base, nullptr, compiled});
+}
+
+void RandomStreamState::setDefaultSeed(quint32 seed)
+{
+    m_defaultSeed = seed;
+    m_streams.remove(0);
+}
+
+std::mt19937 &RandomStreamState::stream(quint32 id)
+{
+    auto found = m_streams.find(id);
+    if (found == m_streams.end())
+        found = m_streams.insert(id, std::mt19937(id == 0 ? m_defaultSeed : id));
+    return found.value();
 }
 
 namespace {
@@ -831,8 +847,18 @@ private:
         return success(std::move(output));
     }
 
+    EvaluationResult mappedResult(const FormulaNode &node, double value)
+    {
+        return success(value);
+    }
+
+    EvaluationResult mappedResult(const FormulaNode &node, const std::optional<double> &value)
+    {
+        return value ? success(*value) : failure(&node, "Invalid random distribution parameters");
+    }
+
     template <typename Call, typename Operation>
-    EvaluationResult timeFunction(const Call &node, Operation operation)
+    EvaluationResult mappedFunction(const Call &node, Operation operation)
     {
         ExecutionStack &stack = m_context.executionStack;
         const ExecutionStackGuard guard(stack);
@@ -852,7 +878,7 @@ private:
         if (dimensions.isEmpty()) {
             for (int position = 0; position < node.argumentCount(); ++position)
                 values[position] = std::get<double>(stack.value(base + position));
-            return success(operation(values));
+            return mappedResult(node, operation(values));
         }
         for (int position = 0; position < node.argumentCount(); ++position) {
             EvaluationResult broadcasted = broadcast(stack.value(base + position), dimensions, node);
@@ -865,9 +891,26 @@ private:
         for (int flat = 0; flat < output.values.size(); ++flat) {
             for (int position = 0; position < node.argumentCount(); ++position)
                 values[position] = arrayOf(stack.value(base + position))->values[flat];
-            output.values[flat] = operation(values);
+            EvaluationResult mapped = mappedResult(node, operation(values));
+            if (!mapped.value)
+                return mapped;
+            output.values[flat] = std::get<double>(*mapped.value);
         }
         return success(std::move(output));
+    }
+
+    std::optional<quint32> streamId(double value) const
+    {
+        if (!std::isfinite(value) || value < 0.0 || std::floor(value) != value || value > 2147483647.0)
+            return std::nullopt;
+        return static_cast<quint32>(value);
+    }
+
+    template <typename Call>
+    std::optional<quint32> streamId(const Call &node, const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values) const
+    {
+        const int position = node.nameKey() == "poisson" || node.nameKey() == "exprnd" ? 1 : 2;
+        return node.argumentCount() > position ? streamId(values[position]) : std::optional<quint32>(0);
     }
 
     EvaluationResult call(const CallNode &node)
@@ -921,19 +964,19 @@ private:
             return select(*condition.value, node.argument(1), node.argument(2), node);
         }
         if (node.nameKey() == "step") {
-            return timeFunction(node, [this](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values) {
+            return mappedFunction(node, [this](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values) {
                 return m_context.inputTime + m_context.inputDt / 2.0 > values[1] ? values[0] : 0.0;
             });
         }
         if (node.nameKey() == "pulse") {
-            return timeFunction(node, [this](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values) {
+            return mappedFunction(node, [this](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values) {
                 const double width = values[1] == 0.0 ? m_context.inputDt : values[1];
                 const double time = m_context.inputTime + m_context.inputDt / 2.0;
                 return time > values[0] && time < values[0] + width ? 1.0 : 0.0;
             });
         }
         if (node.nameKey() == "pulse_train") {
-            return timeFunction(node, [this](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values) {
+            return mappedFunction(node, [this](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values) {
                 const double time = m_context.inputTime + m_context.inputDt / 2.0;
                 const double width = values[1] <= m_context.inputDt ? m_context.inputDt : values[1];
                 if (time <= values[0] || time > values[3])
@@ -947,12 +990,91 @@ private:
             });
         }
         if (node.nameKey() == "ramp") {
-            return timeFunction(node, [this](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values) {
+            return mappedFunction(node, [this](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values) {
                 if (m_context.inputTime <= values[1])
                     return 0.0;
                 if (m_context.inputTime < values[2])
                     return values[0] * (m_context.inputTime - values[1]);
                 return values[0] * (values[2] - values[1]);
+            });
+        }
+        if (node.nameKey() == "random") {
+            return mappedFunction(node, [this, &node](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values)
+                -> std::optional<double> {
+                if (!std::isfinite(values[0]) || !std::isfinite(values[1]) || values[0] >= values[1])
+                    return std::nullopt;
+                const auto id = streamId(node, values);
+                if (!id)
+                    return std::nullopt;
+                auto &random = m_context.randomStreams.stream(*id);
+                std::uniform_real_distribution<double> distribution(0.0, 1.0);
+                for (int attempt = 0; attempt < maximumRandomAttempts; ++attempt) {
+                    const double unit = distribution(random);
+                    if (unit <= 0.0 || unit >= 1.0)
+                        continue;
+                    const double value = values[0] + (values[1] - values[0]) * unit;
+                    if (value > values[0] && value < values[1])
+                        return value;
+                }
+                return std::nullopt;
+            });
+        }
+        if (node.nameKey() == "normal") {
+            return mappedFunction(node, [this, &node](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values)
+                -> std::optional<double> {
+                if (!std::isfinite(values[0]) || !std::isfinite(values[1]) || values[1] < 0.0)
+                    return std::nullopt;
+                const auto id = streamId(node, values);
+                if (!id)
+                    return std::nullopt;
+                if (values[1] == 0.0)
+                    return values[0];
+                return std::normal_distribution<double>(values[0], values[1])(m_context.randomStreams.stream(*id));
+            });
+        }
+        if (node.nameKey() == "lognormal") {
+            return mappedFunction(node, [this, &node](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values)
+                -> std::optional<double> {
+                if (!std::isfinite(values[0]) || !std::isfinite(values[1]) || values[1] < 0.0
+                    || values[0] < 0.0 || (values[0] == 0.0 && values[1] != 0.0))
+                    return std::nullopt;
+                const auto id = streamId(node, values);
+                if (!id)
+                    return std::nullopt;
+                if (values[0] == 0.0 || values[1] == 0.0)
+                    return values[0];
+                const double ratio = values[1] / values[0];
+                const double sigmaSquared = std::log1p(ratio * ratio);
+                const double mu = std::log(values[0]) - sigmaSquared / 2.0;
+                const double transformed = std::normal_distribution<double>(mu, std::sqrt(sigmaSquared))(
+                    m_context.randomStreams.stream(*id));
+                return std::exp(transformed);
+            });
+        }
+        if (node.nameKey() == "poisson") {
+            return mappedFunction(node, [this, &node](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values)
+                -> std::optional<double> {
+                if (!std::isfinite(values[0]) || values[0] < 0.0)
+                    return std::nullopt;
+                const auto id = streamId(node, values);
+                if (!id)
+                    return std::nullopt;
+                if (values[0] == 0.0)
+                    return 0.0;
+                return static_cast<double>(std::poisson_distribution<int>(values[0])(
+                    m_context.randomStreams.stream(*id)));
+            });
+        }
+        if (node.nameKey() == "exprnd") {
+            return mappedFunction(node, [this, &node](const std::array<double, ExecutionStack::maximumTimeFunctionArguments> &values)
+                -> std::optional<double> {
+                if (!std::isfinite(values[0]) || values[0] <= 0.0)
+                    return std::nullopt;
+                const auto id = streamId(node, values);
+                if (!id)
+                    return std::nullopt;
+                return std::exponential_distribution<double>(1.0 / values[0])(
+                    m_context.randomStreams.stream(*id));
             });
         }
         const bool arrayReduction = node.nameKey() == "sum" || node.nameKey() == "mean" || node.nameKey() == "stddev"

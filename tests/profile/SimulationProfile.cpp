@@ -311,6 +311,50 @@ int main(int argc, char **argv)
     if (std::abs(macroChecksum / macroRunCount - steps * 0.02) > 1e-9)
         return 31;
 
+    Document randomDocument;
+    const auto addRandom = [&randomDocument](const QString &name, const QString &equation) {
+        const EntityId id = randomDocument.createVariable(ElementKind::Variable);
+        randomDocument.rename(id, name);
+        randomDocument.setEquation(id, equation);
+    };
+    addRandom("uniform_output", "RANDOM(0, 10)");
+    addRandom("normal_output", "NORMAL(2, 1)");
+    addRandom("lognormal_output", "LOGNORMAL(10, 1)");
+    addRandom("poisson_output", "POISSON(3)");
+    addRandom("exponential_output", "EXPRND(1)");
+    randomDocument.setSimulationSettings({0.0, steps * 0.01, 0.01, 0.01});
+    timer.restart();
+    int randomCompileCount = 0;
+    for (int index = 0; index < count; ++index) {
+        if (!compileSimulation(randomDocument).plan)
+            return 32;
+        ++randomCompileCount;
+    }
+    const qint64 randomCompileNs = timer.nsecsElapsed();
+    const SimulationCompileResult randomCompiled = compileSimulation(randomDocument);
+    if (!randomCompiled.plan)
+        return 33;
+    timer.restart();
+    int randomRunCount = 0;
+    double randomChecksum = 0.0;
+    double randomExpected = 0.0;
+    for (int index = 0; index < count; ++index) {
+        const SimulationRun run = SimulationRunner(randomDocument, *randomCompiled.plan).run();
+        if (run.status() != SimulationRunStatus::Completed || run.times().size() != steps + 1)
+            return 34;
+        double checksum = 0.0;
+        for (const QString &name : {QStringLiteral("uniform_output"), QStringLiteral("normal_output"),
+                 QStringLiteral("lognormal_output"), QStringLiteral("poisson_output"), QStringLiteral("exponential_output")})
+            checksum += run.series(name).back();
+        if (randomRunCount == 0)
+            randomExpected = checksum;
+        else if (checksum != randomExpected)
+            return 35;
+        randomChecksum += checksum;
+        ++randomRunCount;
+    }
+    const qint64 randomRunNs = timer.nsecsElapsed();
+
     QTextStream output(stdout);
     output << "operation,count,total_ms,per_operation_us\n";
     output << "settings_validate," << validationCount << ',' << validationNs / 1.0e6 << ','
@@ -366,5 +410,13 @@ int main(int argc, char **argv)
     output << "simulation_macro_evaluations," << macroRunCount * steps << ',' << macroRunNs / 1.0e6 << ','
            << macroRunNs / 1000.0 / (macroRunCount * steps) << "\n";
     output << "simulation_macro_checksum," << macroChecksum << ",\n";
+    output << "simulation_random_compile," << randomCompileCount << ',' << randomCompileNs / 1.0e6 << ','
+           << randomCompileNs / 1000.0 / randomCompileCount << "\n";
+    output << "simulation_random_functions," << randomRunCount << ',' << randomRunNs / 1.0e6 << ','
+           << randomRunNs / 1000.0 / randomRunCount << "\n";
+    output << "simulation_random_evaluations," << randomRunCount * steps * 5 << ',' << randomRunNs / 1.0e6 << ','
+           << randomRunNs / 1000.0 / (randomRunCount * steps * 5) << "\n";
+    output << "simulation_random_checksum," << randomChecksum << ",\n";
+    output << "simulation_random_checksum_per_run," << randomExpected << ",\n";
     return 0;
 }
